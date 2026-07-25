@@ -288,13 +288,17 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.beginPin()
 		}
-	case "tab":
-		m.filter = (m.filter + 1) % 7
-		m.resetWorktreeTab()
-		m.rebuildRows()
-	case "shift+tab":
-		m.filter = (m.filter + 6) % 7
-		m.resetWorktreeTab()
+	case "tab", "shift+tab":
+		// Worktrees is a drill-in surface, not a cycle filter: ignore Tab there
+		// and let esc return to the originating filter.
+		if m.filter == filterWorktrees {
+			return m, m.queuePreview()
+		}
+		step := 1
+		if key == "shift+tab" {
+			step = -1
+		}
+		m.filter = cycleFilter(m.filter, step)
 		m.rebuildRows()
 	}
 	return m, m.queuePreview()

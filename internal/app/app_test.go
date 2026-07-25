@@ -409,20 +409,32 @@ func TestWindowIconsOnlyAppearOnWindowRows(t *testing.T) {
 }
 
 func TestRowsShowSecondDetailColumnOnlyWhenSpaceAllows(t *testing.T) {
-	m := model{entries: []entry{{
-		key: "repo", name: "repo", detail: "/workspace/repo", path: "/workspace/repo",
-		tabs: []tabItem{{title: "code", detail: "1 window", windows: []windowItem{{title: "editor", detail: "/workspace/repo", cwd: "/workspace/repo", command: "nvim"}}}},
-	}}}
+	m := model{entries: []entry{
+		{
+			key: "repo", name: "repo", detail: "/workspace/repo", path: "/workspace/repo",
+			tabs: []tabItem{{title: "code", detail: "1 window", windows: []windowItem{{title: "editor", detail: "/workspace/repo", cwd: "/workspace/repo", command: "nvim"}}}},
+		},
+		// A closed project (no tabs) is not a live session, so its folder path
+		// stays accurate and remains eligible for the detail column.
+		{key: "/workspace/other", name: "other", detail: "/workspace/other", path: "/workspace/other"},
+	}}
 	tests := []row{
 		{entryIndex: 0, tabIndex: -1, windowIndex: -1},
 		{entryIndex: 0, tabIndex: 0, windowIndex: -1},
 		{entryIndex: 0, tabIndex: 0, windowIndex: 0},
 	}
-	if rendered := ansi.Strip(m.renderRow(tests[0], 100, false)); !strings.Contains(rendered, "/workspace/repo") {
-		t.Fatalf("entry row is missing wide detail column: %q", rendered)
+	// A live session row hides the misleading single path; only its name shows.
+	if rendered := ansi.Strip(m.renderRow(tests[0], 100, false)); strings.Contains(rendered, "/workspace/repo") {
+		t.Fatalf("session row should hide folder path: %q", rendered)
 	}
-	if rendered := ansi.Strip(m.renderRow(tests[1], 100, false)); !strings.Contains(rendered, "1 window") {
-		t.Fatalf("tab row lost window count: %q", rendered)
+	// A closed project row still shows its path as the wide detail column.
+	closedRow := row{entryIndex: 1, tabIndex: -1, windowIndex: -1}
+	if rendered := ansi.Strip(m.renderRow(closedRow, 100, false)); !strings.Contains(rendered, "/workspace/other") {
+		t.Fatalf("closed entry row is missing wide detail column: %q", rendered)
+	}
+	// Tab rows no longer carry a window count (the ▸/▾ arrow signals windows).
+	if rendered := ansi.Strip(m.renderRow(tests[1], 100, false)); strings.Contains(rendered, "1 window") {
+		t.Fatalf("tab row should hide window count: %q", rendered)
 	}
 	if rendered := ansi.Strip(m.renderRow(tests[2], 100, false)); !strings.Contains(rendered, "") || !strings.Contains(rendered, "/workspace/repo") {
 		t.Fatalf("window row is missing process icon/path detail: %q", rendered)
@@ -431,6 +443,9 @@ func TestRowsShowSecondDetailColumnOnlyWhenSpaceAllows(t *testing.T) {
 		if rendered := ansi.Strip(m.renderRow(selected, 40, false)); strings.Contains(rendered, "/workspace/repo") {
 			t.Fatalf("narrow row retained detail column: %q", rendered)
 		}
+	}
+	if rendered := ansi.Strip(m.renderRow(closedRow, 40, false)); strings.Contains(rendered, "/workspace/other") {
+		t.Fatalf("narrow closed row retained detail column: %q", rendered)
 	}
 }
 
@@ -3042,8 +3057,10 @@ func TestWorktreeTabNotableBugFixes(t *testing.T) {
 	t.Run("shift-tab moves back one filter", func(t *testing.T) {
 		m := model{filter: filterAll}
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-		if got := updated.(model).filter; got != filterWorktrees {
-			t.Fatalf("shift-tab filter = %d, want %d", got, filterWorktrees)
+		// Worktrees is no longer a cycle filter, so wrapping backwards from All
+		// lands on the last flat filter (Saved), not on Worktrees.
+		if got := updated.(model).filter; got != filterSaved {
+			t.Fatalf("shift-tab filter = %d, want %d", got, filterSaved)
 		}
 	})
 
@@ -3289,7 +3306,11 @@ func TestToggleExpandAllFromTabRowTogglesOnlyThatTab(t *testing.T) {
 	}
 }
 
-func TestTabIntoWorktreesWithoutSelectionIsEmpty(t *testing.T) {
+// TestTabNeverCyclesIntoWorktrees locks in the fix for the empty-by-default
+// Worktrees tab: Worktrees is a project-scoped drill-in surface opened with w,
+// not a flat filter, so cycling Tab/Shift-tab must never land on it. Reaching it
+// by cycling used to render an empty list because no project was selected.
+func TestTabNeverCyclesIntoWorktrees(t *testing.T) {
 	m := model{
 		filter: filterAll,
 		entries: []entry{
@@ -3300,25 +3321,30 @@ func TestTabIntoWorktreesWithoutSelectionIsEmpty(t *testing.T) {
 		worktreeFilterEntryIndex: -1,
 	}
 	m.rebuildRows()
-	// Cycle Tab until we land on the Worktrees tab.
-	for i := 0; i < 7 && m.filter != filterWorktrees; i++ {
+	// A full cycle of the flat filters never visits Worktrees.
+	for i := 0; i < len(cycleFilters); i++ {
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 		m = updated.(model)
+		if m.filter == filterWorktrees {
+			t.Fatalf("Tab cycled into Worktrees after %d presses", i+1)
+		}
 	}
-	if m.filter != filterWorktrees {
-		t.Fatalf("expected to cycle into Worktrees, filter=%d", m.filter)
+	if m.filter != filterAll {
+		t.Fatalf("after a full cycle, filter = %d, want %d", m.filter, filterAll)
 	}
-	// Arriving by Tab carries no project: no folder name index and an empty list.
-	if m.worktreeFilterEntryIndex != -1 {
-		t.Fatalf("expected worktreeFilterEntryIndex=-1, got %d", m.worktreeFilterEntryIndex)
+
+	// Tab while already in Worktrees is a no-op (esc is the exit), so a session
+	// scoped with w is not silently dropped by an stray Tab.
+	scoped := model{
+		filter:                   filterWorktrees,
+		previousFilter:           filterAll,
+		worktreeFilterEntryIndex: 0,
+		entries:                  []entry{{name: "first", kind: "project", path: "/p/first"}},
 	}
-	if len(m.rows) != 0 {
-		t.Fatalf("expected empty worktree list, got %d rows", len(m.rows))
-	}
-	// The header must not leak the top session's name as the folder.
-	view := ansi.Strip(m.View())
-	if strings.Contains(view, "first") && strings.Contains(view, "󰉋") {
-		t.Fatalf("header should not show a project folder for an unselected Worktrees tab:\n%s", view)
+	updated, _ := scoped.Update(tea.KeyMsg{Type: tea.KeyTab})
+	result := updated.(model)
+	if result.filter != filterWorktrees || result.worktreeFilterEntryIndex != 0 {
+		t.Fatalf("Tab inside Worktrees should be a no-op: filter=%d entry=%d", result.filter, result.worktreeFilterEntryIndex)
 	}
 }
 

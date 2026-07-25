@@ -535,6 +535,32 @@ const (
 	filterWorktrees
 )
 
+// cycleFilters are the flat filters reachable by cycling Tab/Shift+tab.
+// filterWorktrees is deliberately excluded: it is a project-scoped drill-in
+// surface opened with w and closed with esc, not a flat list. Cycling into it
+// without a selected project only ever rendered an empty list, so it is reached
+// solely through w, which scopes it to a project and records the filter to
+// return to.
+var cycleFilters = []int{
+	filterAll, filterAgents, filterOpen, filterProjects, filterSSH, filterSaved,
+}
+
+// cycleFilter advances current by step positions within cycleFilters. A current
+// filter outside the cycle (such as filterWorktrees) has no defined neighbor
+// there, so the caller gates cycling on being inside the cycle.
+func cycleFilter(current, step int) int {
+	for index, value := range cycleFilters {
+		if value == current {
+			next := (index + step) % len(cycleFilters)
+			if next < 0 {
+				next += len(cycleFilters)
+			}
+			return cycleFilters[next]
+		}
+	}
+	return current
+}
+
 const (
 	prStatusCacheVersion = state.CurrentPRCacheVersion
 	prStatusThrottle     = time.Minute

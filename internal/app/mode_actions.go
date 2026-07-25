@@ -57,16 +57,6 @@ func (m model) selectedEntries() []entry {
 	return entries
 }
 
-// resetWorktreeTab clears the Worktree tab's project context and selection. The
-// tab is only meaningful when a project is chosen with w; arriving by cycling
-// Tab/Shift+tab carries no selection, so it must render empty with no folder
-// name rather than reusing a stale (or default 0) entry index.
-func (m *model) resetWorktreeTab() {
-	m.worktreeFilterEntryIndex = -1
-	m.worktreeFilterRows = nil
-	m.wtBulkSelected = nil
-}
-
 // worktreeEntries resolves the projects a worktree action targets. In the
 // Worktree tab it is the project whose tab is open; otherwise selection drives
 // multi-project worktrees, and with nothing selected the project under the

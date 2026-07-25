@@ -47,7 +47,7 @@ func (m model) View() string {
 		listHeight = max(5, bodyHeight-detailHeight-1)
 	}
 
-	tabs := []string{"All", "Agents", "Open", "Projects", "SSH", "Saved", "Worktrees"}
+	tabs := []string{"All", "Agents", "Open", "Projects", "SSH", "Saved"}
 	for i := range tabs {
 		if i == m.filter {
 			tabs[i] = accentStyle.Render("[" + tabs[i] + "]")
@@ -63,11 +63,10 @@ func (m model) View() string {
 		promptValue = accentStyle.Render(m.query+"█") + "  " + dimStyle.Render("SEARCH")
 	}
 	header := accentStyle.Render("Kesh") + "  " + strings.Join(tabs, " ")
-	if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
-		entry := m.entries[m.worktreeFilterEntryIndex]
-		name := truncate(entry.name, max(12, workspaceWidth-lipgloss.Width(header)-2))
-		label := projectStyle.Render("󰉋 " + name)
-		header += "  " + label
+	if m.filter == filterWorktrees {
+		// Worktrees is not a cycle tab, so name the surface explicitly. The
+		// scoped project is shown as the list title instead.
+		header += "  " + accentStyle.Render("[Worktrees]")
 		if n := len(m.wtBulkSelected); n > 0 {
 			header += "  " + accentStyle.Render(fmt.Sprintf("Selected (%d)", n))
 		}
@@ -89,7 +88,24 @@ func (m model) View() string {
 		start = m.cursor - available + 1
 	}
 	end := min(len(m.rows), start+available)
-	listLines := []string{accentStyle.Render(fmt.Sprintf("List (%d)", len(m.rows)))}
+	// On the Worktrees surface the list is one project's worktrees, so title it
+	// with that folder and its count rather than the generic "List".
+	listTitle := accentStyle.Render(fmt.Sprintf("List (%d)", len(m.rows)))
+	if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
+		entry := m.entries[m.worktreeFilterEntryIndex]
+		name := truncate(entry.name, max(8, listWidth-8))
+		listTitle = projectStyle.Render(fmt.Sprintf("󰉋 %s (%d)", name, len(m.rows)))
+	}
+	listLines := []string{listTitle}
+	if m.filter == filterWorktrees && len(m.rows) > 0 {
+		// Label the columns so the branch reads as a first-class table column
+		// rather than an unlabeled leading field. padColumns mirrors the row
+		// layout (branch left, path right) and the 2-space indent matches the
+		// non-focused row prefix so the labels land under their columns.
+		rowWidth := max(8, listWidth-4)
+		header := padColumns(dimStyle.Render("Branch"), dimStyle.Render("Path"), rowWidth)
+		listLines = append(listLines, "  "+header)
+	}
 	for i := start; i < end; i++ {
 		row := m.rows[i]
 		focused := i == m.cursor
@@ -108,10 +124,10 @@ func (m model) View() string {
 	if len(m.rows) == 0 {
 		empty := "  No matching sessions"
 		if m.filter == filterWorktrees {
-			// The Worktree tab is empty when no project is selected (e.g. arrived
-			// by cycling Tab). Tell the user how to populate it rather than
-			// implying their search matched nothing.
-			empty = "  No project selected — open a project and press w"
+			// Worktrees is only ever opened scoped to a project (via w), so an
+			// empty list means that project has no worktrees yet — not that a
+			// search matched nothing.
+			empty = "  No worktrees — press n to create one"
 		}
 		listLines = append(listLines, dimStyle.Render(empty))
 	}
@@ -677,7 +693,7 @@ func (m model) renderRow(r row, width int, focused bool) string {
 		}
 		sync := worktreeSyncBadge(wt)
 
-		branchWidth := max(12, width*40/100)
+		branchWidth := max(12, width*46/100)
 		branchPart := selected + current + " " + truncate(wt.branch, branchWidth-lipgloss.Width(selected)-lipgloss.Width(current)-1)
 
 		statusWidth := max(8, width*20/100)
@@ -741,13 +757,9 @@ func (m model) renderRow(r row, width int, focused bool) string {
 				arrow = "▾"
 			}
 		}
-		windowCount := dimStyle.Render(fmt.Sprintf("%d window%s", len(tab.windows), plural(len(tab.windows))))
 		nameWidth := max(8, width*45/100-17)
 		left := fmt.Sprintf("       %s %s %s %s", branch, arrow, projectStyle.Render("󱂬"), truncate(tab.title, nameWidth))
-		if width >= 52 {
-			return padColumns(left, windowCount, width)
-		}
-		return ansi.Truncate(left+"  "+windowCount, width, "…")
+		return ansi.Truncate(left, width, "…")
 	}
 	selection := " "
 	if m.selected[e.key] {
@@ -785,6 +797,14 @@ func (m model) renderRow(r row, width int, focused bool) string {
 		arrow = focusStyle.Render(arrow)
 	}
 	left := fmt.Sprintf("%s   %s %s %s %s", selection, pin, arrow, icon, name)
+	// A live session (tabs present) can span multiple tabs and windows across
+	// different directories, so a single folder path on the row misrepresents
+	// it. Show only the name and let the detail panel list every window's
+	// directory. Closed projects, saved sessions, and SSH targets keep their
+	// accurate detail.
+	if len(e.tabs) > 0 && e.kind != "ssh" {
+		return ansi.Truncate(left, width, "…")
+	}
 	detail := dimStyle.Render(e.detail)
 	if focused && e.open {
 		detail = focusStyle.Render(ansi.Strip(detail))
