@@ -3,9 +3,9 @@ package catalog
 import (
 	"testing"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/state"
+	"github.com/alienxp03/kesh/internal/domain"
+	"github.com/alienxp03/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/state"
 )
 
 func TestAssembleMergesKittySavedAndSSHEntries(t *testing.T) {

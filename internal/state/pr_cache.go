@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
+	"github.com/alienxp03/kesh/internal/domain"
 )
 
 const CurrentPRCacheVersion = 2

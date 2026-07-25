@@ -1,4 +1,4 @@
-module github.com/alienxp03/dotfiles/apps/kesh
+module github.com/alienxp03/kesh
 
 go 1.24.0
 

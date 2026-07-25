@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/system"
+	"github.com/alienxp03/kesh/internal/system"
 )
 
 type Repository struct {

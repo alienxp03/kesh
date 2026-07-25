@@ -1,6 +1,6 @@
 package git
 
-import "github.com/alienxp03/dotfiles/apps/kesh/internal/system"
+import "github.com/alienxp03/kesh/internal/system"
 
 type Wktree struct {
 	Executable string

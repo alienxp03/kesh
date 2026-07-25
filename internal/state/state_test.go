@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
+	"github.com/alienxp03/kesh/internal/domain"
 )
 
 func fixture(t *testing.T, name string, replacements map[string]string) []byte {

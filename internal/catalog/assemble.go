@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/state"
+	"github.com/alienxp03/kesh/internal/domain"
+	"github.com/alienxp03/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/state"
 )
 
 var unsafeSessionName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)

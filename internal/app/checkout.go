@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/catalog"
-	gitx "github.com/alienxp03/dotfiles/apps/kesh/internal/git"
-	githubx "github.com/alienxp03/dotfiles/apps/kesh/internal/github"
+	"github.com/alienxp03/kesh/internal/catalog"
+	gitx "github.com/alienxp03/kesh/internal/git"
+	githubx "github.com/alienxp03/kesh/internal/github"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

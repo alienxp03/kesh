@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
+	"github.com/alienxp03/kesh/internal/domain"
 )
 
 func TestComposedSessionContent(t *testing.T) {

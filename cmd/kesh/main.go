@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/app"
+	"github.com/alienxp03/kesh/internal/app"
 )
 
 func main() {

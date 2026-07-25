@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
+	"github.com/alienxp03/kesh/internal/domain"
 )
 
 // ComposedSessionContent renders one Kitty tab per domain session entry.

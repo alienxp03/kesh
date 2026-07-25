@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	kittyx "github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/system"
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/system"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"

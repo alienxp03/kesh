@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	kittyx "github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

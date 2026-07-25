@@ -6,20 +6,27 @@ A single-project Kitty session and its zoxide source are one logical folder row,
 
 ## Build and install
 
-Kesh source lives in `apps/kesh`; Kitty always launches the installed artifact
-at `~/.local/bin/kesh` rather than code in the Kitty configuration tree.
+Kitty always launches the installed artifact at `~/.local/bin/kesh`.
+
+### Homebrew (release binary)
 
 ```sh
-cd ~/.dotfiles
-mise run kesh
+brew install alienxp03/tap/kesh
+brew upgrade kesh
 ```
 
-The task builds to a temporary file and atomically replaces the installed
-binary only after a successful build. For development-only builds:
+### From source (development)
 
 ```sh
-cd ~/.dotfiles/apps/kesh
 go build -o "${TMPDIR:-/tmp}/kesh-dev" ./cmd/kesh
+```
+
+Releases are cut locally with GoReleaser and published to the
+`alienxp03/homebrew-tap` tap (see `.goreleaser.yaml`):
+
+```sh
+git tag v0.1.0
+goreleaser release
 ```
 
 ## Architecture
@@ -44,7 +51,6 @@ adapter that invokes the installed binary.
 ## Validation
 
 ```sh
-cd ~/.dotfiles/apps/kesh
 test -z "$(gofmt -l $(find . -name '*.go' -type f))"
 go test -race ./...
 go vet ./...

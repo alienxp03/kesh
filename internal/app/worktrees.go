@@ -10,14 +10,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/catalog"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/config"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
-	gitx "github.com/alienxp03/dotfiles/apps/kesh/internal/git"
-	githubx "github.com/alienxp03/dotfiles/apps/kesh/internal/github"
-	kittyx "github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/state"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/system"
+	"github.com/alienxp03/kesh/internal/catalog"
+	"github.com/alienxp03/kesh/internal/config"
+	"github.com/alienxp03/kesh/internal/domain"
+	gitx "github.com/alienxp03/kesh/internal/git"
+	githubx "github.com/alienxp03/kesh/internal/github"
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/state"
+	"github.com/alienxp03/kesh/internal/system"
 	tea "github.com/charmbracelet/bubbletea"
 )
 

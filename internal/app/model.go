@@ -4,9 +4,9 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
-	kittyx "github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/state"
+	"github.com/alienxp03/kesh/internal/domain"
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/state"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )

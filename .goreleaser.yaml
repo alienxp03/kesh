@@ -1,0 +1,57 @@
+version: 2
+
+project_name: kesh
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: kesh
+    main: ./cmd/kesh
+    binary: kesh
+    env:
+      - CGO_ENABLED=0
+    targets:
+      - darwin_arm64
+      - darwin_amd64
+      - linux_amd64
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Title .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: alienxp03
+    name: kesh
+  draft: false
+  prerelease: auto
+
+brews:
+  - name: kesh
+    repository:
+      owner: alienxp03
+      name: homebrew-tap
+      branch: main
+    directory: Formula
+    homepage: https://github.com/alienxp03/kesh
+    description: "Bubble Tea picker for zoxide projects, Kitty workspaces, SSH hosts, and agents."
+    license: MIT
+    test: |
+      assert_predicate "#{bin}/kesh", :executable?
+    install: |
+      bin.install "kesh"

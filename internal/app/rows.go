@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/catalog"
-	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
-	gitx "github.com/alienxp03/dotfiles/apps/kesh/internal/git"
-	kittyx "github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/catalog"
+	"github.com/alienxp03/kesh/internal/domain"
+	gitx "github.com/alienxp03/kesh/internal/git"
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/sahilm/fuzzy"
 )
