@@ -524,6 +524,7 @@ func sortEntries(entries []entry) {
 func buildZoxideEntries(output []byte, ctx zoxideMergeContext) []entry {
 	return fromDomainEntries(catalog.MergeZoxide(output, domain.CatalogContext{
 		LivePaths: ctx.livePaths, MergedPaths: ctx.merged, SessionNames: ctx.sessionNames, Home: ctx.home,
+		OpenTabs: ctx.openTabs,
 	}))
 }
 
@@ -549,7 +550,7 @@ func loadEntriesFast(kitty string) ([]entry, zoxideMergeContext, error) {
 	domainEntries, context := catalog.Assemble(kittyState, savedStore, sshHosts, selfID, home)
 	return fromDomainEntries(domainEntries), zoxideMergeContext{
 		livePaths: context.LivePaths, merged: context.MergedPaths,
-		sessionNames: context.SessionNames, home: context.Home,
+		sessionNames: context.SessionNames, home: context.Home, openTabs: context.OpenTabs,
 	}, nil
 }
 

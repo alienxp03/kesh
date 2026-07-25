@@ -66,3 +66,43 @@ func TestMergeZoxideSkipsRepresentedPathsAndAddsLivePaths(t *testing.T) {
 		t.Fatalf("session-name collision was not preserved: %#v", entries[0])
 	}
 }
+
+func TestMergeZoxideAttachesOpenStateToKnownProject(t *testing.T) {
+	context := domain.CatalogContext{
+		Home:     "/Users/stan",
+		OpenTabs: map[string]domain.OpenTabState{
+			"/workspace/repo": {Tabs: []domain.Tab{{ID: 7, Title: "repo-code"}}, LastFocused: 42},
+		},
+	}
+	entries := MergeZoxide([]byte("/workspace/repo\n"), context)
+	if len(entries) != 1 {
+		t.Fatalf("entries = %#v", entries)
+	}
+	got := entries[0]
+	if !got.Open || got.LastFocused != 42 || len(got.Tabs) != 1 || got.Tabs[0].Title != "repo-code" {
+		t.Fatalf("open state not attached: %#v", got)
+	}
+}
+
+func TestAssembleHidesUnscopedWindowsThatAreNotSessions(t *testing.T) {
+	// A live window at $HOME with no session_name is not a session and must not
+	// become a catalog entry. It only surfaces if zoxide knows the path.
+	kittyState := kitty.State{{Tabs: []kitty.Tab{{
+		ID:    1,
+		Title: "home",
+		Windows: []kitty.Window{{
+			ID: 11, CWD: "/Users/stan", LastFocusedAt: 5,
+			Env: map[string]string{"PWD": "/Users/stan"},
+		}},
+	}}}}
+	entries, context := Assemble(kittyState, state.SavedSessions{}, nil, 999, "/Users/stan")
+	if len(entries) != 0 {
+		t.Fatalf("unscoped home window became an entry: %#v", entries)
+	}
+	if _, ok := context.LivePaths["/Users/stan"]; ok {
+		t.Fatalf("unscoped window leaked into LivePaths: %#v", context.LivePaths)
+	}
+	if _, ok := context.OpenTabs["/Users/stan"]; !ok {
+		t.Fatalf("unscoped window open state not carried via OpenTabs: %#v", context.OpenTabs)
+	}
+}

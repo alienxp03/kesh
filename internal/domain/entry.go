@@ -55,6 +55,18 @@ type CatalogContext struct {
 	MergedPaths  map[string]bool
 	SessionNames map[string]bool
 	Home         string
+	// OpenTabs carries live Kitty tabs whose windows have no session_name. A
+	// window without a session is not a session, so these never become catalog
+	// entries on their own; their open state is attached to the matching zoxide
+	// project so the picker can still mark known projects as open.
+	OpenTabs map[string]OpenTabState
+}
+
+// OpenTabState is the live open state for an unscoped path, merged onto the
+// matching zoxide project entry.
+type OpenTabState struct {
+	Tabs        []Tab
+	LastFocused float64
 }
 
 // EntryCategoryRank orders closed entries as saved sessions, source projects,

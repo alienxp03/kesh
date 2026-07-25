@@ -333,6 +333,7 @@ type zoxideMergeContext struct {
 	merged       map[string]bool
 	sessionNames map[string]bool
 	home         string
+	openTabs     map[string]domain.OpenTabState
 }
 
 type wktreeRecipe struct {
