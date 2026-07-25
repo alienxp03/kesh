@@ -2121,6 +2121,54 @@ func TestKittyRunLifecycleClearsPinsAfterUncleanExit(t *testing.T) {
 	}
 }
 
+func TestClearStalePinsIfNeededClearsAfterDeadKitty(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("HOME", stateHome)
+	t.Setenv("KESH_KITTY_PID", "") // picker path resolves Kitty via parent PID
+
+	if err := savePins(pinStore{"2": {Key: "/projects/stale", Name: "stale"}}); err != nil {
+		t.Fatal(err)
+	}
+	marker := kittyRunPath()
+	if err := os.WriteFile(marker, []byte("999999\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearStalePinsIfNeeded(); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := loadPins()
+	if err != nil || len(pins) != 0 {
+		t.Fatalf("stale pins were not cleared: %#v, err = %v", pins, err)
+	}
+	markerContent, err := os.ReadFile(marker)
+	if err != nil || strings.TrimSpace(string(markerContent)) != strconv.Itoa(currentKittyPID()) {
+		t.Fatalf("run marker = %q, err = %v", markerContent, err)
+	}
+}
+
+func TestClearStalePinsIfNeededKeepsPinsWhileKittyAlive(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("HOME", stateHome)
+
+	if err := savePins(pinStore{"3": {Key: "/projects/current", Name: "current"}}); err != nil {
+		t.Fatal(err)
+	}
+	marker := kittyRunPath()
+	// Own PID is, by definition, still running — pins must survive.
+	if err := os.WriteFile(marker, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := clearStalePinsIfNeeded(); err != nil {
+		t.Fatal(err)
+	}
+	pins, err := loadPins()
+	if err != nil || len(pins) != 1 || pins["3"].Key != "/projects/current" {
+		t.Fatalf("pins from active run were cleared: %#v, err = %v", pins, err)
+	}
+}
+
 func TestSavedSessionFilePreservesKittySessionName(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)

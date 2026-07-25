@@ -39,10 +39,14 @@ func Run(args []string) error {
 
 	fmt.Print("\033]2;kesh\007")
 	entries, zoxideCtx, loadErr := loadEntriesFast(kitty)
+	staleErr := clearStalePinsIfNeeded()
 	pins, pinErr := loadPins()
 	names, nameErr := loadNames()
 	if loadErr == nil && pinErr != nil {
 		loadErr = pinErr
+	}
+	if loadErr == nil && staleErr != nil {
+		loadErr = staleErr
 	}
 	if loadErr == nil && nameErr != nil {
 		loadErr = nameErr
@@ -337,6 +341,31 @@ func currentKittyPID() int {
 		return pid
 	}
 	return os.Getppid()
+}
+
+// clearStalePinsIfNeeded resets pins left by a previous Kitty run when this is
+// the first picker launch of a new run. Without the Kitty watcher, the picker
+// is the only Kesh component that runs during a Kitty session, so it owns
+// detecting that the previous Kitty (whether it quit normally or was
+// force-killed) is gone. It only clears the persisted store; the picker's
+// normal shortcut sync propagates the empty state to Kitty's keybindings.
+func clearStalePinsIfNeeded() error {
+	marker := kittyRunPath()
+	if content, err := os.ReadFile(marker); err == nil {
+		previousPID, parseErr := strconv.Atoi(strings.TrimSpace(string(content)))
+		if parseErr == nil && previousPID > 0 && kittyProcessRunning(previousPID) {
+			return nil
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("read Kitty run marker: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(marker), 0o700); err != nil {
+		return fmt.Errorf("create Kesh state directory: %w", err)
+	}
+	if err := os.WriteFile(marker, []byte(strconv.Itoa(currentKittyPID())+"\n"), 0o600); err != nil {
+		return fmt.Errorf("save Kitty run marker: %w", err)
+	}
+	return savePins(pinStore{})
 }
 
 func beginKittyRun(kitty string, pid int) error {
