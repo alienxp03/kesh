@@ -1,6 +1,9 @@
 package system
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 type recordingRunner struct {
 	output   Spec
@@ -24,24 +27,27 @@ func TestCommandPassesCompleteSpecToRunner(t *testing.T) {
 
 	command := Command("git", "-C", "/repo", "status")
 	command.Dir = "/work"
+	command.Env = []string{"KESH_TEST=1"}
+	command.Stdin = []byte("input\n")
 	output, err := command.Output()
 	if err != nil || string(output) != "output" {
 		t.Fatalf("Output() = %q, %v", output, err)
 	}
-	want := Spec{Name: "git", Args: []string{"-C", "/repo", "status"}, Dir: "/work"}
-	if runner.output.Name != want.Name || runner.output.Dir != want.Dir || len(runner.output.Args) != len(want.Args) {
-		t.Fatalf("runner received %#v, want %#v", runner.output, want)
+	want := Spec{
+		Name:  "git",
+		Args:  []string{"-C", "/repo", "status"},
+		Dir:   "/work",
+		Env:   []string{"KESH_TEST=1"},
+		Stdin: []byte("input\n"),
 	}
-	for i := range want.Args {
-		if runner.output.Args[i] != want.Args[i] {
-			t.Fatalf("runner args = %#v, want %#v", runner.output.Args, want.Args)
-		}
+	if !reflect.DeepEqual(runner.output, want) {
+		t.Fatalf("runner received %#v, want %#v", runner.output, want)
 	}
 
 	if output, err := command.CombinedOutput(); err != nil || string(output) != "combined" {
 		t.Fatalf("CombinedOutput() = %q, %v", output, err)
 	}
-	if runner.combined.Name != want.Name || runner.combined.Dir != want.Dir {
+	if !reflect.DeepEqual(runner.combined, want) {
 		t.Fatalf("combined runner received %#v, want %#v", runner.combined, want)
 	}
 }

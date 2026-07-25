@@ -1,0 +1,9 @@
+{
+  "1": {
+    "key": "workspace:kesh-dotfiles",
+    "name": "Dotfiles",
+    "kind": "workspace",
+    "session_file": "SESSION_FILE",
+    "version": 2
+  }
+}

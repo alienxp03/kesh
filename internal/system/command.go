@@ -3,15 +3,20 @@
 package system
 
 import (
+	"bytes"
+	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 )
 
 // Spec is a complete, serializable description of a process invocation.
 type Spec struct {
-	Name string
-	Args []string
-	Dir  string
+	Name  string
+	Args  []string
+	Dir   string
+	Env   []string
+	Stdin []byte
 }
 
 // Runner executes commands. Consumers should define narrower interfaces when
@@ -23,16 +28,22 @@ type Runner interface {
 
 type osRunner struct{}
 
-func (osRunner) Output(spec Spec) ([]byte, error) {
+func commandFor(spec Spec) *exec.Cmd {
 	cmd := exec.Command(spec.Name, spec.Args...)
 	cmd.Dir = spec.Dir
-	return cmd.Output()
+	if len(spec.Env) > 0 {
+		cmd.Env = append(os.Environ(), spec.Env...)
+	}
+	if len(spec.Stdin) > 0 {
+		cmd.Stdin = bytes.NewReader(spec.Stdin)
+	}
+	return cmd
 }
 
+func (osRunner) Output(spec Spec) ([]byte, error) { return commandFor(spec).Output() }
+
 func (osRunner) CombinedOutput(spec Spec) ([]byte, error) {
-	cmd := exec.Command(spec.Name, spec.Args...)
-	cmd.Dir = spec.Dir
-	return cmd.CombinedOutput()
+	return commandFor(spec).CombinedOutput()
 }
 
 var (
@@ -64,9 +75,11 @@ func currentRunner() Runner {
 // Command mirrors the small portion of os/exec.Cmd used by Kesh while keeping
 // os/exec out of the application package.
 type Process struct {
-	name string
-	args []string
-	Dir  string
+	name  string
+	args  []string
+	Dir   string
+	Env   []string
+	Stdin []byte
 }
 
 // NewCommand constructs a command description.
@@ -75,7 +88,13 @@ func Command(name string, args ...string) *Process {
 }
 
 func (c *Process) spec() Spec {
-	return Spec{Name: c.name, Args: append([]string(nil), c.args...), Dir: c.Dir}
+	return Spec{
+		Name:  c.name,
+		Args:  append([]string(nil), c.args...),
+		Dir:   c.Dir,
+		Env:   append([]string(nil), c.Env...),
+		Stdin: append([]byte(nil), c.Stdin...),
+	}
 }
 
 func (c *Process) Output() ([]byte, error) { return currentRunner().Output(c.spec()) }
@@ -85,3 +104,9 @@ func (c *Process) CombinedOutput() ([]byte, error) {
 
 // LookPath preserves Kesh's command-discovery behavior behind this boundary.
 func LookPath(name string) (string, error) { return exec.LookPath(name) }
+
+// ProcessRunning reports whether a process exists without sending it a signal.
+func ProcessRunning(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
+}

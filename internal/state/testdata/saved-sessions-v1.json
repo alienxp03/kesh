@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "sessions": {
+    "SESSION_FILE": {
+      "name": "Dotfiles",
+      "session_name": "kesh-dotfiles",
+      "session_file": "SESSION_FILE",
+      "projects": [
+        "/workspace/dotfiles"
+      ],
+      "saved_at": "2026-07-22T15:00:00Z"
+    }
+  }
+}

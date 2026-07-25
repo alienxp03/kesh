@@ -1,0 +1,414 @@
+package catalog
+
+import (
+	"fmt"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/alienxp03/dotfiles/apps/kesh/internal/domain"
+	"github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
+	"github.com/alienxp03/dotfiles/apps/kesh/internal/state"
+)
+
+var unsafeSessionName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+
+// Assemble builds the fast first-paint catalog from live Kitty state, saved
+// sessions, and SSH configuration. Zoxide projects are merged separately.
+func Assemble(
+	kittyState kitty.State,
+	saved state.SavedSessions,
+	sshHosts []SSHHost,
+	selfID int,
+	home string,
+) ([]domain.Entry, domain.CatalogContext) {
+	type openSession struct {
+		path    string
+		focused float64
+		tabs    []domain.Tab
+	}
+	sessions := map[string]*openSession{}
+	sessionNames := map[string]bool{}
+	livePaths := map[string]bool{}
+	unscopedTabs := map[string][]domain.Tab{}
+	unscopedFocus := map[string]float64{}
+	openSSH := map[string]float64{}
+
+	for _, osWindow := range kittyState {
+		for _, tab := range osWindow.Tabs {
+			if IsKeshTab(tab.Windows) {
+				continue
+			}
+			sessionName := ""
+			canonicalPath := ""
+			var windows []domain.Window
+			focused := float64(0)
+			for _, window := range tab.Windows {
+				if window.ID == selfID {
+					continue
+				}
+				path := WindowPath(window)
+				if path != "" {
+					livePaths[path] = true
+				}
+				if canonicalPath == "" {
+					canonicalPath = path
+				}
+				if sessionName == "" && window.SessionName != "" {
+					sessionName = window.SessionName
+					canonicalPath = path
+				}
+				focused = max(focused, window.LastFocusedAt)
+				windows = append(windows, WindowFromKitty(window, home))
+			}
+			if len(windows) > 0 {
+				agent := MergedWindowAgents(windows)
+				title := CleanAgentTitle(tab.Title, agent)
+				if title == "" {
+					title = "tab " + strconv.Itoa(tab.ID)
+				}
+				item := domain.Tab{
+					ID: tab.ID, Title: title,
+					Detail: fmt.Sprintf("%d window%s", len(windows), plural(len(windows))),
+					Agent:  agent, Windows: windows,
+				}
+				if sessionName == "" && canonicalPath != "" {
+					unscopedTabs[canonicalPath] = append(unscopedTabs[canonicalPath], item)
+					unscopedFocus[canonicalPath] = max(unscopedFocus[canonicalPath], focused)
+				} else if sessionName != "" {
+					sessionNames[sessionName] = true
+					session := sessions[sessionName]
+					if session == nil {
+						session = &openSession{path: canonicalPath}
+						sessions[sessionName] = session
+					}
+					session.focused = max(session.focused, focused)
+					session.tabs = append(session.tabs, item)
+				}
+			}
+			for _, window := range tab.Windows {
+				if window.ID == selfID {
+					continue
+				}
+				if host := SSHHostFromWindow(window); host != "" {
+					openSSH[host] = max(openSSH[host], window.LastFocusedAt)
+				}
+			}
+		}
+	}
+
+	var entries []domain.Entry
+	order := 0
+	mergedProjects := map[string]bool{}
+	namedWorkspaces := make([]string, 0, len(sessions))
+	for name := range sessions {
+		if !strings.HasPrefix(name, "ssh-") {
+			namedWorkspaces = append(namedWorkspaces, name)
+		}
+	}
+	sort.Strings(namedWorkspaces)
+	seenSavedSessions := map[string]bool{}
+	for _, sessionName := range namedWorkspaces {
+		session := sessions[sessionName]
+		name := sessionName
+		if session.path != "" {
+			name = filepath.Base(session.path)
+		}
+		_, composed := domain.ComposedSessionName(sessionName)
+		if composedName, ok := domain.ComposedSessionName(sessionName); ok {
+			name = composedName
+		}
+		record, savedSession := state.SavedSessionForName(saved, sessionName)
+		sessionFile := ""
+		if savedSession {
+			name = record.Name
+			sessionFile = record.SessionFile
+			seenSavedSessions[record.SessionFile] = true
+			composed = composed || len(record.Projects) > 1
+		}
+		detail := DisplayPath(session.path, home)
+		if session.path == "" {
+			detail = fmt.Sprintf("%d tab%s", len(session.tabs), plural(len(session.tabs)))
+		}
+		kind := "workspace"
+		key := "workspace:" + sessionName
+		if !composed && session.path != "" && !mergedProjects[session.path] {
+			kind = "project"
+			key = session.path
+			mergedProjects[session.path] = true
+		}
+		entries = append(entries, domain.Entry{
+			Key: key, Name: name, OriginalName: name, Detail: detail,
+			Kind: kind, Path: session.path, Session: sessionName, SessionFile: sessionFile, Saved: savedSession,
+			Open: true, LastFocused: session.focused,
+			Agent: MergedTabAgents(session.tabs), Tabs: session.tabs, Order: order,
+		})
+		order++
+	}
+
+	unscopedPaths := make([]string, 0, len(unscopedTabs))
+	for path := range unscopedTabs {
+		unscopedPaths = append(unscopedPaths, path)
+	}
+	sort.Strings(unscopedPaths)
+	for _, path := range unscopedPaths {
+		tabs := unscopedTabs[path]
+		if mergedProjects[path] {
+			continue
+		}
+		name := filepath.Base(path)
+		entries = append(entries, domain.Entry{
+			Key: path, Name: name, OriginalName: name, Detail: DisplayPath(path, home),
+			Kind: "project", Path: path, Open: true, LastFocused: unscopedFocus[path],
+			Agent: MergedTabAgents(tabs), Tabs: tabs, Order: order,
+		})
+		mergedProjects[path] = true
+		order++
+	}
+
+	savedFiles := make([]string, 0, len(saved.Sessions))
+	for file := range saved.Sessions {
+		savedFiles = append(savedFiles, file)
+	}
+	sort.Strings(savedFiles)
+	for _, file := range savedFiles {
+		if seenSavedSessions[file] {
+			continue
+		}
+		record := saved.Sessions[file]
+		path := ""
+		if len(record.Projects) > 0 {
+			path = record.Projects[0]
+		}
+		detail := "saved session"
+		if path != "" {
+			detail = DisplayPath(path, home)
+		}
+		_, composed := domain.ComposedSessionName(record.SessionName)
+		composed = composed || len(record.Projects) > 1 || path == ""
+		kind := "workspace"
+		key := "workspace:" + record.SessionName
+		if !composed && !mergedProjects[path] {
+			kind = "project"
+			key = path
+			mergedProjects[path] = true
+		}
+		entries = append(entries, domain.Entry{
+			Key: key, Name: record.Name, OriginalName: record.Name, Detail: detail,
+			Kind: kind, Path: path, Session: record.SessionName, SessionFile: record.SessionFile,
+			Saved: true, Order: order,
+		})
+		sessionNames[record.SessionName] = true
+		order++
+	}
+
+	for _, host := range sshHosts {
+		var tabs []domain.Tab
+		sessionName := ""
+		if _, ok := openSSH[host.Name]; ok {
+			sessionName = "ssh-" + SafeName(host.Name)
+			if session := sessions[sessionName]; session != nil {
+				tabs = session.tabs
+			}
+		}
+		entries = append(entries, domain.Entry{
+			Key: "ssh://" + host.Name, Name: host.Name, OriginalName: host.Name, Detail: host.Target, Kind: "ssh",
+			Session: sessionName, Open: sessionName != "", LastFocused: openSSH[host.Name],
+			Agent: MergedTabAgents(tabs), Tabs: tabs, Order: order,
+		})
+		order++
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		return domain.EntryLess(
+			domain.EntryOrder{
+				Open: entries[i].Open, LastFocused: entries[i].LastFocused, Saved: entries[i].Saved,
+				Kind: entries[i].Kind, Order: entries[i].Order,
+			},
+			domain.EntryOrder{
+				Open: entries[j].Open, LastFocused: entries[j].LastFocused, Saved: entries[j].Saved,
+				Kind: entries[j].Kind, Order: entries[j].Order,
+			},
+		)
+	})
+	return entries, domain.CatalogContext{
+		LivePaths: livePaths, MergedPaths: mergedProjects, SessionNames: sessionNames, Home: home,
+	}
+}
+
+// MergeZoxide converts a zoxide query into source-project catalog entries.
+func MergeZoxide(output []byte, context domain.CatalogContext) []domain.Entry {
+	paths := strings.FieldsFunc(string(output), func(character rune) bool {
+		return character == '\n' || character == '\r'
+	})
+	known := map[string]bool{}
+	for _, path := range paths {
+		known[path] = true
+	}
+	for path := range context.LivePaths {
+		if !known[path] {
+			paths = append(paths, path)
+		}
+	}
+	var entries []domain.Entry
+	order := 0
+	for _, path := range paths {
+		if path == "" || path == "/" || context.MergedPaths[path] {
+			continue
+		}
+		name := filepath.Base(path)
+		entries = append(entries, domain.Entry{
+			Key: path, Name: name, OriginalName: name, Detail: DisplayPath(path, context.Home),
+			Kind: "project", Path: path, NameTaken: context.SessionNames[SafeName(name)], Order: order,
+		})
+		order++
+	}
+	return entries
+}
+
+func IsKeshTab(windows []kitty.Window) bool {
+	if len(windows) == 0 {
+		return false
+	}
+	for _, window := range windows {
+		commands := append([][]string{window.Cmdline}, foregroundCmdlines(window)...)
+		found := false
+		for _, command := range commands {
+			if len(command) > 0 && filepath.Base(command[0]) == "kesh" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func WindowPath(window kitty.Window) string {
+	if path := window.Env["PWD"]; path != "" {
+		return path
+	}
+	return window.CWD
+}
+
+func WindowFromKitty(window kitty.Window, home string) domain.Window {
+	command := ""
+	fullCommand := ""
+	detail := WindowPath(window)
+	if len(window.ForegroundProcesses) > 0 {
+		process := window.ForegroundProcesses[len(window.ForegroundProcesses)-1]
+		if len(process.Cmdline) > 0 {
+			command = filepath.Base(process.Cmdline[0])
+			fullCommand = strings.TrimSpace(strings.Join(process.Cmdline, " "))
+		}
+		if process.CWD != "" {
+			detail = process.CWD
+		}
+	}
+	agent := AgentFromWindow(window)
+	title := CleanAgentTitle(window.Title, agent)
+	if title == "" {
+		title = command
+	}
+	if title == "" {
+		title = "window " + strconv.Itoa(window.ID)
+	}
+	return domain.Window{
+		ID: window.ID, Title: title, Detail: DisplayPath(detail, home), Command: command,
+		FullCommand: fullCommand, Agent: agent, LastFocused: window.LastFocusedAt, CWD: detail,
+	}
+}
+
+func CleanAgentTitle(title, agent string) string {
+	if strings.Contains(agent, "pi") {
+		if _, cleanTitle, found := strings.Cut(title, "π - "); found {
+			title = cleanTitle
+		}
+	}
+	if strings.Contains(agent, "codex") {
+		if _, cleanTitle, found := strings.Cut(title, "󰚩 - "); found {
+			title = cleanTitle
+		}
+	}
+	return title
+}
+
+func AgentFromWindow(window kitty.Window) string {
+	pi, codex := false, false
+	for _, process := range window.ForegroundProcesses {
+		command := " " + strings.ToLower(strings.Join(process.Cmdline, " ")) + " "
+		pi = pi || strings.Contains(command, " pi ") || strings.Contains(command, "/pi ")
+		codex = codex || strings.Contains(command, " codex ") || strings.Contains(command, "/codex ")
+	}
+	return mergedAgentFlags(pi, codex)
+}
+
+func MergedWindowAgents(windows []domain.Window) string {
+	pi, codex := false, false
+	for _, window := range windows {
+		pi = pi || strings.Contains(window.Agent, "pi")
+		codex = codex || strings.Contains(window.Agent, "codex")
+	}
+	return mergedAgentFlags(pi, codex)
+}
+
+func MergedTabAgents(tabs []domain.Tab) string {
+	pi, codex := false, false
+	for _, tab := range tabs {
+		pi = pi || strings.Contains(tab.Agent, "pi")
+		codex = codex || strings.Contains(tab.Agent, "codex")
+	}
+	return mergedAgentFlags(pi, codex)
+}
+
+func SSHHostFromWindow(window kitty.Window) string {
+	for _, process := range window.ForegroundProcesses {
+		if len(process.Cmdline) > 1 && filepath.Base(process.Cmdline[0]) == "ssh" {
+			return process.Cmdline[1]
+		}
+	}
+	return ""
+}
+
+func DisplayPath(path, home string) string {
+	if path == home {
+		return "~"
+	}
+	if strings.HasPrefix(path, home+string(filepath.Separator)) {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
+}
+
+func SafeName(value string) string { return unsafeSessionName.ReplaceAllString(value, "_") }
+
+func foregroundCmdlines(window kitty.Window) [][]string {
+	commands := make([][]string, 0, len(window.ForegroundProcesses))
+	for _, process := range window.ForegroundProcesses {
+		commands = append(commands, process.Cmdline)
+	}
+	return commands
+}
+
+func mergedAgentFlags(pi, codex bool) string {
+	if pi && codex {
+		return "pi,codex"
+	}
+	if pi {
+		return "pi"
+	}
+	if codex {
+		return "codex"
+	}
+	return ""
+}
+
+func plural(count int) string {
+	if count == 1 {
+		return ""
+	}
+	return "s"
+}

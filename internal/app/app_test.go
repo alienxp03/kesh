@@ -11,11 +11,151 @@ import (
 	"testing"
 	"time"
 
+	kittyx "github.com/alienxp03/dotfiles/apps/kesh/internal/kitty"
+	"github.com/alienxp03/dotfiles/apps/kesh/internal/system"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"gopkg.in/yaml.v3"
 )
+
+func run(name string, args ...string) error {
+	if name == "" {
+		return fmt.Errorf("required command was not found")
+	}
+	output, err := system.Command(name, args...).CombinedOutput()
+	if err != nil && len(output) > 0 {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return err
+}
+
+type countingRunner struct {
+	calls int
+}
+
+func (r *countingRunner) Output(system.Spec) ([]byte, error) {
+	r.calls++
+	return nil, fmt.Errorf("unexpected process execution")
+}
+
+func (r *countingRunner) CombinedOutput(system.Spec) ([]byte, error) {
+	r.calls++
+	return nil, fmt.Errorf("unexpected process execution")
+}
+
+func TestUpdateSchedulesIOWithoutExecutingItSynchronously(t *testing.T) {
+	runner := &countingRunner{}
+	restore := system.SetRunner(runner)
+	t.Cleanup(restore)
+
+	worktreeModel := model{
+		filter: filterWorktrees, worktreeFilterEntryIndex: 0,
+		entries: []entry{{
+			key: "/repo", path: "/repo", kind: "project",
+			worktrees: []worktreeItem{{path: "/tree", branch: "feature"}}, worktreesLoaded: true,
+		}},
+		worktreeFilterRows: []worktreeFilterRow{{worktree: worktreeItem{path: "/tree", branch: "feature"}}},
+		rows:               []row{{entryIndex: 0, section: "wt-filter"}},
+	}
+	if _, command := worktreeModel.Update(tea.KeyMsg{Type: tea.KeyEnter}); command == nil {
+		t.Fatal("worktree open command was not scheduled")
+	}
+	if runner.calls != 0 {
+		t.Fatalf("worktree enter executed %d process(es) during Update", runner.calls)
+	}
+
+	destroyModel := model{
+		entries: []entry{{key: "/repo", path: "/repo", kind: "project"}},
+		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
+	}
+	if _, command := destroyModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}}); command == nil {
+		t.Fatal("destroy-plan command was not scheduled")
+	}
+	if runner.calls != 0 {
+		t.Fatalf("destroy planning executed %d process(es) during Update", runner.calls)
+	}
+
+	pinModel := model{
+		modeState: modeState{mode: modePin, pinMode: &pinMode{pinEntry: 0}},
+		entries:   []entry{{key: "/repo", path: "/repo", name: "repo", kind: "project"}},
+		pins:      pinStore{},
+	}
+	if _, command := pinModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'1'}}); command == nil {
+		t.Fatal("pin persistence command was not scheduled")
+	}
+	if runner.calls != 0 {
+		t.Fatalf("pinning executed %d process(es) during Update", runner.calls)
+	}
+
+	formModel := model{
+		modeState: modeState{
+			mode:               modeWorktreeCreate,
+			worktreeCreateForm: &worktreeCreateForm{worktreeRepositories: map[string]repoIdentity{}},
+		},
+		filter: filterWorktrees, worktreeFilterEntryIndex: 0, worktreeRoot: "/worktrees",
+		entries: []entry{{key: "/repo", path: "/repo", kind: "project"}},
+	}
+	if _, command := formModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("feature")}); command != nil {
+		t.Fatal("editing a worktree form unexpectedly scheduled a command")
+	}
+	if runner.calls != 0 {
+		t.Fatalf("worktree editing executed %d process(es) during Update", runner.calls)
+	}
+
+	refreshModel := model{entries: []entry{{key: "/repo", path: "/repo", kind: "project"}}}
+	if _, command := refreshModel.Update(worktreeListMsg{dir: "/repo", worktrees: []worktreeItem{{path: "/repo"}}}); command == nil {
+		t.Fatal("PR cache lookup command was not scheduled")
+	}
+	if runner.calls != 0 {
+		t.Fatalf("PR refresh executed %d process(es) during Update", runner.calls)
+	}
+}
+
+func TestEveryModeCancelsToCleanNormalState(t *testing.T) {
+	modes := []modeKind{
+		modeSearch,
+		modeRename,
+		modeCreateSession,
+		modeClone,
+		modeCheckoutPR,
+		modePin,
+		modeSaveConfirm,
+		modeCloseConfirm,
+		modeWorktreeCreate,
+	}
+	for _, kind := range modes {
+		t.Run(strconv.Itoa(int(kind)), func(t *testing.T) {
+			m := model{}
+			m.activateMode(kind)
+			payloads := 0
+			for _, present := range []bool{
+				m.searchMode != nil,
+				m.renameForm != nil,
+				m.createSessionForm != nil,
+				m.cloneForm != nil,
+				m.checkoutForm != nil,
+				m.pinMode != nil,
+				m.saveConfirmation != nil,
+				m.closeConfirmation != nil,
+				m.worktreeCreateForm != nil,
+			} {
+				if present {
+					payloads++
+				}
+			}
+			if payloads != 1 {
+				t.Fatalf("mode %d has %d active payloads", kind, payloads)
+			}
+
+			updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			got := updated.(model)
+			if !reflect.DeepEqual(got.modeState, modeState{}) {
+				t.Fatalf("mode %d retained payload after cancel: %#v", kind, got.modeState)
+			}
+		})
+	}
+}
 
 func TestParseArgs(t *testing.T) {
 	tests := []struct {
@@ -310,10 +450,10 @@ func TestCleanAgentTitleOmitsAgentPrefixes(t *testing.T) {
 func TestPiWindowTitleOmitsPiPrefixInKesh(t *testing.T) {
 	window := kittyWindow{
 		ID: 1, Title: "⠋ π - .dotfiles", CWD: "/Users/azuan/.dotfiles",
-		ForegroundProcesses: []struct {
-			Cmdline []string `json:"cmdline"`
-			CWD     string   `json:"cwd"`
-		}{{Cmdline: []string{"pi"}, CWD: "/Users/azuan/.dotfiles"}},
+		ForegroundProcesses: []kittyx.ForegroundProcess{{
+			Cmdline: []string{"pi"},
+			CWD:     "/Users/azuan/.dotfiles",
+		}},
 	}
 	if got := windowItemFromKitty(window).title; got != ".dotfiles" {
 		t.Fatalf("Pi window title = %q, want %q", got, ".dotfiles")
@@ -335,19 +475,23 @@ func TestProcessIcon(t *testing.T) {
 }
 
 func TestWorktreeRowUsesResponsivePathColumn(t *testing.T) {
-	m := model{entries: []entry{{worktrees: []worktreeItem{{
-		path: "/workspace/worktrees/repo/feature", branch: "feat/feature", prStatus: "open", prNumber: 42,
-	}}}}}
-	rendered := ansi.Strip(m.renderRow(row{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-item", wt: 0}, 80, false))
+	worktree := worktreeItem{path: "/workspace/worktrees/repo/feature", branch: "feat/feature", prStatus: "open", prNumber: 42}
+	m := model{
+		filter:             filterWorktrees,
+		entries:            []entry{{worktrees: []worktreeItem{worktree}}},
+		worktreeFilterRows: []worktreeFilterRow{{worktree: worktree}},
+	}
+	worktreeRow := row{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-filter", wt: 0}
+	rendered := ansi.Strip(m.renderRow(worktreeRow, 80, false))
 	if !strings.Contains(rendered, "#42") || !strings.Contains(rendered, "feat/feature") {
 		t.Fatalf("worktree row = %q", rendered)
 	}
 	if !strings.Contains(rendered, "/workspace/worktrees") {
 		t.Fatalf("wide worktree row is missing path column: %q", rendered)
 	}
-	narrow := ansi.Strip(m.renderRow(row{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-item", wt: 0}, 50, false))
-	if strings.Contains(narrow, "/workspace/worktrees") {
-		t.Fatalf("narrow worktree row retained path column: %q", narrow)
+	narrow := ansi.Strip(m.renderRow(worktreeRow, 50, false))
+	if lipgloss.Width(narrow) > 50 || !strings.Contains(narrow, "feat/feature") {
+		t.Fatalf("narrow worktree row is not width-safe: %q", narrow)
 	}
 }
 
@@ -459,6 +603,7 @@ func TestDetailPanelSupportsEveryRowType(t *testing.T) {
 			},
 		}}}},
 	}}}
+	m.worktreeFilterRows = []worktreeFilterRow{{worktree: m.entries[0].worktrees[0]}}
 	tests := []struct {
 		name string
 		row  row
@@ -467,11 +612,14 @@ func TestDetailPanelSupportsEveryRowType(t *testing.T) {
 		{name: "entry", row: row{entryIndex: 0, tabIndex: -1, windowIndex: -1}, want: "Project"},
 		{name: "tab", row: row{entryIndex: 0, tabIndex: 0, windowIndex: -1}, want: "Tab"},
 		{name: "window", row: row{entryIndex: 0, tabIndex: 0, windowIndex: 0}, want: "Window"},
-		{name: "worktree header", row: row{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-head"}, want: "Worktrees"},
-		{name: "worktree", row: row{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-item", wt: 0}, want: "Worktree"},
+		{name: "worktree", row: row{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-filter", wt: 0}, want: "Worktree"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			m.filter = filterAll
+			if test.name == "worktree" {
+				m.filter = filterWorktrees
+			}
 			m.rows = []row{test.row}
 			m.cursor = 0
 			panel := ansi.Strip(m.detailPanelView(80, 8, false))
@@ -539,16 +687,16 @@ func TestFixedDetailPanelFitsSmallSplitForEntry(t *testing.T) {
 }
 
 func TestWorktreeInfoFitsSmallSplit(t *testing.T) {
+	worktree := worktreeItem{path: "/workspace/worktrees/repo/feature", branch: "feat/feature", prStatus: "open", prNumber: 42}
 	m := model{
-		width: 50, height: 12,
+		width: 50, height: 12, filter: filterWorktrees, worktreeFilterEntryIndex: 0,
 		entries: []entry{{
 			name: "repo", kind: "project", path: "/workspace/repo",
-			worktrees:     []worktreeItem{{path: "/workspace/worktrees/repo/feature", branch: "feat/feature", prStatus: "open", prNumber: 42}},
-			worktreesOpen: true, worktreesLoaded: true,
+			worktrees: []worktreeItem{worktree}, worktreesLoaded: true,
 		}},
+		worktreeFilterRows: []worktreeFilterRow{{worktree: worktree}},
 	}
-	m.rebuildRows()
-	m.cursor = 2
+	m.rebuildWorktreeRows()
 	view := m.View()
 	if got := lipgloss.Width(view); got > m.width {
 		t.Fatalf("small split view width = %d, want <= %d", got, m.width)
@@ -580,13 +728,12 @@ func TestSortWorktreesPrioritizesDefaultAndPRStatus(t *testing.T) {
 
 func TestPRStatusReorderPreservesFocusedWorktree(t *testing.T) {
 	const repoKey = "git@github.com:example/repo.git"
-	m := model{entries: []entry{{
+	m := model{filter: filterWorktrees, worktreeFilterEntryIndex: 0, entries: []entry{{
 		worktrees:       []worktreeItem{{path: "/selected", branch: "z-selected", head: "aaa", prRepoKey: repoKey}, {path: "/open", branch: "a-open", head: "bbb", prRepoKey: repoKey}},
-		worktreesOpen:   true,
 		worktreesLoaded: true,
 	}}}
-	m.rebuildRows()
-	m.cursor = 2 // The first worktree item after the entry and section header.
+	m.rebuildWorktreeRows()
+	m.cursor = 0
 	focused := m.focusedWorktreePath()
 	m.applyPRStatuses(repoKey, map[string]prInfo{prStatusKey("a-open", "bbb"): {Status: "open"}})
 	m.rebuildRows()
@@ -623,9 +770,6 @@ func TestApplyPRStatusesPrefersExactHeadAndFallsBackToBranch(t *testing.T) {
 			{branch: "feat/open", head: "aaa", prRepoKey: repoKey},
 			{branch: "feat/open", head: "newer", prRepoKey: repoKey, prStatus: "closed"},
 		},
-		tabs: []tabItem{{windows: []windowItem{{worktrees: []worktreeItem{
-			{branch: "fix/merged", head: "bbb", prRepoKey: repoKey},
-		}}}}},
 	}}}
 	m.applyPRStatuses(repoKey, map[string]prInfo{
 		prStatusKey("feat/open", "aaa"):  {Status: "open", URL: "https://github.com/loveholidays/aurora/pull/1", Number: 1},
@@ -646,9 +790,6 @@ func TestApplyPRStatusesPrefersExactHeadAndFallsBackToBranch(t *testing.T) {
 	if !m.entries[0].worktrees[0].prExact {
 		t.Fatal("exact PR HEAD was not marked exact")
 	}
-	if got := m.entries[0].tabs[0].windows[0].worktrees[0].prStatus; got != "merged" {
-		t.Fatalf("merged status = %q", got)
-	}
 }
 
 func TestOpenWorktreePROpensExactCachedURL(t *testing.T) {
@@ -660,8 +801,13 @@ func TestOpenWorktreePROpensExactCachedURL(t *testing.T) {
 	}
 	const pullRequestURL = "https://github.com/loveholidays/aurora/pull/9801"
 	m := model{
-		entries: []entry{{worktrees: []worktreeItem{{branch: "fix/vite-websocket-port", prURL: pullRequestURL}}}},
-		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-item", wt: 0}},
+		filter:                   filterWorktrees,
+		worktreeFilterEntryIndex: 0,
+		entries:                  []entry{{worktrees: []worktreeItem{{branch: "fix/vite-websocket-port", prURL: pullRequestURL}}}},
+		worktreeFilterRows: []worktreeFilterRow{{
+			worktree: worktreeItem{branch: "fix/vite-websocket-port", prURL: pullRequestURL},
+		}},
+		rows: []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-filter", wt: 0}},
 	}
 	command := m.openWorktreePR()
 	if command == nil {
@@ -738,7 +884,11 @@ printf '%s\n' '[{"headRefName":"feat/open","headRefOid":"bbb","state":"OPEN","me
 	if refreshCommand == nil {
 		t.Fatal("background PR refresh was not started")
 	}
-	refreshedModel, _ := listed.Update(refreshCommand())
+	cachedModel, queryCommand := listed.Update(refreshCommand())
+	if queryCommand == nil {
+		t.Fatal("PR query was not started after the cache lookup")
+	}
+	refreshedModel, _ := cachedModel.(model).Update(queryCommand())
 	refreshed := refreshedModel.(model)
 	if got := refreshed.entries[0].worktrees[1].prStatus; got != "open" {
 		t.Fatalf("PR status = %q, want open", got)
@@ -843,38 +993,29 @@ printf '%s\n' '[]'
 	}
 }
 
-func TestClosedEntryWorktreeListRendersInlineHierarchy(t *testing.T) {
-	for _, kind := range []string{"project", "workspace"} {
-		t.Run(kind, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), kind)
-			m := model{
-				entries: []entry{{name: kind, kind: kind, path: path}},
-				rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
-			}
+func TestWorktreeResultStaysOutOfMainHierarchyAndWOpensPrimarySurface(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "project")
+	m := model{
+		entries: []entry{{name: "project", kind: "project", path: path}},
+		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
+	}
 
-			updatedModel, _ := m.Update(worktreeListMsg{
-				entryIndex: 0, tabIndex: -1, windowIndex: -1, dir: path,
-				worktrees: []worktreeItem{{path: path, branch: "main", current: true}},
-			})
-			updated := updatedModel.(model)
-			if !updated.entries[0].worktreesOpen || !updated.entries[0].worktreesLoaded {
-				t.Fatalf("closed entry worktree state = %#v", updated.entries[0])
-			}
-			if len(updated.rows) != 3 || updated.rows[1].section != "wt-head" || updated.rows[2].section != "wt-item" {
-				t.Fatalf("rows = %#v, want entry with worktree section", updated.rows)
-			}
-			header := ansi.Strip(updated.renderRow(updated.rows[1], 100, false))
-			item := ansi.Strip(updated.renderRow(updated.rows[2], 100, false))
-			if !strings.HasPrefix(header, "            └─ worktrees") || !strings.HasPrefix(item, "                └─ ") {
-				t.Fatalf("closed worktree hierarchy is misaligned:\n%q\n%q", header, item)
-			}
+	updatedModel, _ := m.Update(worktreeListMsg{
+		entryIndex: 0, tabIndex: -1, windowIndex: -1, dir: path,
+		worktrees: []worktreeItem{{path: path, branch: "main", current: true}},
+	})
+	updated := updatedModel.(model)
+	if !updated.entries[0].worktreesLoaded {
+		t.Fatalf("worktree cache was not populated: %#v", updated.entries[0])
+	}
+	if len(updated.rows) != 1 || updated.rows[0].section != "" {
+		t.Fatalf("main hierarchy contains duplicate worktree rows: %#v", updated.rows)
+	}
 
-			updated.cursor = 2
-			updated.beginClose()
-			if updated.mode != modeCloseConfirm || updated.closeRow.section != "wt-item" {
-				t.Fatalf("closed entry worktree could not be selected for removal: err=%v", updated.err)
-			}
-		})
+	opened, _ := updated.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	worktrees := opened.(model)
+	if worktrees.filter != filterWorktrees || len(worktrees.rows) != 1 || worktrees.rows[0].section != "wt-filter" {
+		t.Fatalf("w did not route to the primary Worktrees surface: filter=%d rows=%#v", worktrees.filter, worktrees.rows)
 	}
 }
 
@@ -1315,13 +1456,54 @@ func TestPreviewRefreshFetchesCurrentAgentScreen(t *testing.T) {
 		entries: []entry{{tabs: []tabItem{{windows: []windowItem{{id: 11, agent: "codex"}}}}}},
 	}
 	m.rebuildRows()
-	_, command := m.Update(previewRefreshMsg{windowID: 11})
+	_, command := m.Update(previewRefreshMsg{windowID: 11, request: m.previewRequest})
 	if command == nil {
 		t.Fatal("current agent preview did not schedule a refresh")
 	}
 	msg := command().(previewMsg)
 	if msg.err != nil || msg.content != "refreshed" {
 		t.Fatalf("refresh result = %#v, want refreshed screen", msg)
+	}
+}
+
+func TestPreviewIgnoresOlderRequestForSameWindow(t *testing.T) {
+	m := model{previewID: 11, previewRequest: 2, previewBusy: true}
+	updated, _ := m.Update(previewMsg{windowID: 11, request: 1, content: "old"})
+	got := updated.(model)
+	if got.preview != "" || !got.previewBusy {
+		t.Fatalf("older same-window preview changed model: %#v", got)
+	}
+}
+
+func TestRenameResultResolvesStableWindowAfterEntryReorder(t *testing.T) {
+	m := model{entries: []entry{
+		{key: "other", tabs: []tabItem{{id: 2, windows: []windowItem{{id: 20, title: "other"}}}}},
+		{key: "target", tabs: []tabItem{{id: 1, windows: []windowItem{{id: 10, title: "old"}}}}},
+	}}
+	updated, _ := m.Update(renameMsg{
+		selected: row{entryIndex: 0, tabIndex: 0, windowIndex: 0},
+		target:   renameTarget{entryKey: "target", tabID: 1, windowID: 10},
+		title:    "renamed",
+	})
+	got := updated.(model)
+	if got.entries[1].tabs[0].windows[0].title != "renamed" || got.entries[0].tabs[0].windows[0].title != "other" {
+		t.Fatalf("rename targeted wrong entry after reorder: %#v", got.entries)
+	}
+}
+
+func TestWorktreeResultResolvesStableDirectoryAfterEntryReorder(t *testing.T) {
+	m := model{entries: []entry{
+		{key: "other", path: "/other"},
+		{key: "target", path: "/repo"},
+	}}
+	updated, _ := m.Update(worktreeListMsg{
+		entryIndex: 0,
+		dir:        "/repo",
+		worktrees:  []worktreeItem{{path: "/repo", branch: "main"}},
+	})
+	got := updated.(model)
+	if !got.entries[1].worktreesLoaded || got.entries[0].worktreesLoaded {
+		t.Fatalf("worktree result targeted wrong entry after reorder: %#v", got.entries)
 	}
 }
 
@@ -1504,15 +1686,15 @@ func TestParsePullRequestInput(t *testing.T) {
 }
 
 func TestViewHeightStaysStableForWorktreeRows(t *testing.T) {
+	worktrees := []worktreeItem{{branch: "master", path: "/workspace/repo"}, {branch: "fix/a-long-branch-name", path: "/workspace/worktree/repo/fix-a-long-branch-name"}}
 	m := model{
-		width: 100, height: 24,
+		width: 100, height: 24, filter: filterWorktrees, worktreeFilterEntryIndex: 0,
 		entries: []entry{{
 			key: "repo", name: "repo", path: "/workspace/repo", open: true,
-			worktreesOpen: true, worktreesLoaded: true,
-			worktrees: []worktreeItem{{branch: "master", path: "/workspace/repo"}, {branch: "fix/a-long-branch-name", path: "/workspace/worktree/repo/fix-a-long-branch-name"}},
+			worktreesLoaded: true, worktrees: worktrees,
 		}},
 	}
-	m.rebuildRows()
+	m.rebuildWorktreeRows()
 	for cursor := range m.rows {
 		m.cursor = cursor
 		if got := lipgloss.Height(m.View()); got != m.height {
@@ -1547,9 +1729,10 @@ func TestCloneFormShowsAndUpdatesBothFields(t *testing.T) {
 	t.Setenv("HOME", home)
 	root := filepath.Join(home, "workspace")
 	m := model{
-		mode:             modeClone,
-		cloneRoot:        root,
-		cloneDestination: "~/workspace",
+		modeState: modeState{
+			mode:      modeClone,
+			cloneForm: &cloneForm{cloneRoot: root, cloneDestination: "~/workspace"},
+		},
 	}
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("git@github.com:example/project.git"), Paste: true})
@@ -1588,9 +1771,10 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := model{
-		mode:         modeCheckoutPR,
-		checkoutRoot: checkoutRoot,
-		cloneRoot:    cloneRoot,
+		modeState: modeState{
+			mode:         modeCheckoutPR,
+			checkoutForm: &checkoutForm{checkoutRoot: checkoutRoot, checkoutCloneRoot: cloneRoot},
+		},
 		worktreeRoot: worktreeRoot,
 	}
 
@@ -1599,7 +1783,10 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	if cmd == nil || m.prCheckoutValue == "" {
 		t.Fatalf("PR input not captured or preview lookup not started: %q (cmd=%v)", m.prCheckoutValue, cmd)
 	}
-	updated, _ = m.Update(prPreviewMsg{value: m.prCheckoutValue, branch: "feature/checkout"})
+	updated, _ = m.Update(prPreviewMsg{
+		value: m.prCheckoutValue, branch: "feature/checkout",
+		repoPath: filepath.Join(checkoutRoot, "owner", "repo"),
+	})
 	m = updated.(model)
 	popup := ansi.Strip(m.popupView(100))
 	if !strings.Contains(popup, "Checkout pull request") || !strings.Contains(popup, "Root repo path: ~/workspace/owner/repo") {
@@ -1614,7 +1801,12 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	m = updated.(model)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("https://github.com/other/widget/pull/7")})
 	m = updated.(model)
-	updated, _ = m.Update(prPreviewMsg{value: m.prCheckoutValue, branch: "fix/widget"})
+	updated, _ = m.Update(prPreviewMsg{
+		value:    m.prCheckoutValue,
+		branch:   "fix/widget",
+		repoPath: filepath.Join(checkoutRoot, "other", "widget"),
+		newClone: true,
+	})
 	m = updated.(model)
 	popup = ansi.Strip(m.popupView(100))
 	if !strings.Contains(popup, "Root repo path: ~/workspace/other/widget (new clone)") || !strings.Contains(popup, "Worktree path: ~/worktree/other/widget/fix-widget (new clone)") {
@@ -2426,7 +2618,7 @@ func TestSpaceTogglesTopLevelSelection(t *testing.T) {
 	if m.mode != modeCreateSession {
 		t.Fatal("n did not open the create-session prompt")
 	}
-	m.mode = modeNormal
+	m.cancelMode()
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
 	m = updated.(model)
 	if len(m.selected) != 0 {
@@ -2481,7 +2673,10 @@ func worktreeSelectedTestRecipe(t *testing.T) *wktreeRecipe {
 
 func TestWorktreeTabCyclesNativeTemplateAndWorkspaces(t *testing.T) {
 	recipe := worktreeSelectedTestRecipe(t)
-	m := model{mode: modeWorktreeCreate, worktreeRecipe: recipe, worktreeRecipeMode: "none"}
+	m := model{modeState: modeState{
+		mode:               modeWorktreeCreate,
+		worktreeCreateForm: &worktreeCreateForm{worktreeRecipe: recipe, worktreeRecipeMode: "none"},
+	}}
 	m.ensureWorktreeSelection()
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // native -> template
@@ -2516,7 +2711,13 @@ func TestWorktreeTabCyclesNativeTemplateAndWorkspaces(t *testing.T) {
 
 func TestWorktreeSelectedSpaceAndEnterGuard(t *testing.T) {
 	recipe := worktreeSelectedTestRecipe(t)
-	m := model{mode: modeWorktreeCreate, worktreeRecipe: recipe, worktreeRecipeMode: "selected", worktreeCustomWorkspaces: true, worktreeBranch: "feat/x"}
+	m := model{modeState: modeState{
+		mode: modeWorktreeCreate,
+		worktreeCreateForm: &worktreeCreateForm{
+			worktreeRecipe: recipe, worktreeRecipeMode: "selected",
+			worktreeCustomWorkspaces: true, worktreeBranch: "feat/x",
+		},
+	}}
 	m.ensureWorktreeSelection()
 	// Defaults: [backend on, frontend off, worker on]. Cursor at backend; toggle it off.
 	if !reflect.DeepEqual(m.selectedWorkspaceNames(), []string{"backend", "worker"}) {
@@ -2636,7 +2837,7 @@ esac
 	if tab.mode != modeCloseConfirm {
 		t.Fatal("x in the Worktree tab should open the confirm popup")
 	}
-	if tab.closeRow.section != "wt-item" || tab.closeRow.worktreePath != "/wt/feat" {
+	if tab.closeRow.section != "wt-filter" || tab.closeRow.worktreePath != "/wt/feat" {
 		t.Fatalf("closeRow should target the selected worktree by path, got %#v", tab.closeRow)
 	}
 	// The popup must describe the selected worktree, not the entry's first one.
@@ -2697,9 +2898,14 @@ esac
 	if cmd == nil {
 		t.Fatal("enter should open the worktree")
 	}
-	if msg := cmd().(actionMsg); msg.err != nil {
+	lookedUp, actionCmd := m.Update(cmd())
+	if actionCmd == nil {
+		t.Fatal("worktree lookup did not schedule an open action")
+	}
+	if msg := actionCmd().(actionMsg); msg.err != nil {
 		t.Fatalf("enter failed: %v", msg.err)
 	}
+	_ = lookedUp
 
 	sessionFile := filepath.Join(directory, "kitty-zoxide-sessions", "feat.kitty-session")
 	content, err := os.ReadFile(sessionFile)
@@ -2754,7 +2960,7 @@ func TestWorktreeTabDTargetsSelectedWorktreeNotProject(t *testing.T) {
 	if tab.destroyPlan.branch != "feat/x" {
 		t.Fatalf("D should target the feat/x branch, got %q", tab.destroyPlan.branch)
 	}
-	if tab.closeRow.worktreePath != "/wt/feat" || tab.closeRow.section != "wt-item" {
+	if tab.closeRow.worktreePath != "/wt/feat" || tab.closeRow.section != "wt-filter" {
 		t.Fatalf("closeRow should address the worktree: %#v", tab.closeRow)
 	}
 }

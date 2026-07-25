@@ -19,14 +19,22 @@ binary only after a successful build. For development-only builds:
 
 ```sh
 cd ~/.dotfiles/apps/kesh
-go build ./cmd/kesh
+go build -o "${TMPDIR:-/tmp}/kesh-dev" ./cmd/kesh
 ```
 
 ## Architecture
 
 - `cmd/kesh` owns process startup and exit codes.
-- `internal/app` owns the Bubble Tea model, input routing, and rendering. Its single explicit mode state makes search, forms, pinning, save confirmation, close confirmation, and worktree creation mutually exclusive.
-- `internal/system` owns process execution behind a testable runner boundary.
+- `internal/app` owns the Bubble Tea model, message and mode routing, command scheduling, and pure rendering. Its single explicit mode state makes search, forms, pinning, confirmations, and worktree creation mutually exclusive.
+- `internal/domain` owns pure entry ranking, pull-request/worktree matching and sorting, session composition, and destruction planning.
+- `internal/config` and `internal/state` own XDG path/config loading and the versioned JSON formats, including legacy pin migration and atomic writes.
+- `internal/kitty`, `internal/git`, and `internal/github` own intent-oriented integrations and output decoding; `internal/catalog` assembles Kitty, saved-session, SSH, and asynchronous zoxide sources.
+- `internal/system` owns process execution and platform URL opening behind testable boundaries.
+
+Dependencies point from `cmd/kesh` to `internal/app`, then toward the domain,
+storage, and integration packages. Platform packages never import the app, and
+neither the app nor domain packages invoke subprocesses directly. Bubble Tea
+views are pure; filesystem and external-command work runs through commands.
 
 User configuration remains in `~/.config/kesh`; state, sessions, and caches
 remain under the XDG paths described below. The Kitty watcher at
@@ -40,7 +48,7 @@ cd ~/.dotfiles/apps/kesh
 test -z "$(gofmt -l $(find . -name '*.go' -type f))"
 go test -race ./...
 go vet ./...
-go build ./cmd/kesh
+go build -o "${TMPDIR:-/tmp}/kesh-dev" ./cmd/kesh
 ```
 
 See `docs/manual-smoke.md` for the real-Kitty checks that automated tests
@@ -63,11 +71,12 @@ The picker starts in normal mode:
 - `p`, then `0`–`9`: pin the selected session to a shortcut slot; repeat an occupied slot to confirm its replacement
 - `p`, then `x`: unpin the selected session
 - `r`: rename the selected workspace, tab, or window; submitting an empty workspace name resets it
-- `e`: show or hide Git worktrees for a window, or for a closed project or saved session
+- `e`: expand or collapse the selected session or tab in the main hierarchy
+- `w`: open the selected project's primary Worktrees management surface
 - `o`: open the exact pull request associated with the selected worktree in the browser
 - `X`, then `y`: remove every non-current worktree merged by Git ancestry or by a GitHub pull request at the same branch HEAD
-- `D`, then `y`: destroy the focused entry — close its Kitty session, remove its worktree (only when it is a linked worktree), delete its local branch, and delete its saved record; the confirmation lists exactly which layers apply. On a revealed worktree row, destroys that worktree and its branch
-- `x`, then `y`: close the selected workspace, tab, or window; on a revealed worktree, remove it
+- `D`, then `y`: destroy the focused entry — close its Kitty session, remove its worktree (only when it is a linked worktree), delete its local branch, and delete its saved record; the confirmation lists exactly which layers apply. In Worktrees, destroys the selected worktree and its branch
+- `x`, then `y`: close the selected workspace, tab, or window; in Worktrees, remove the selected worktree
 - `/`: enter search mode and fuzzy-filter sessions as you type
 - `enter` / `esc`: return to command mode while retaining the filter
 - `tab` / `shift+tab`: change filter
@@ -75,7 +84,14 @@ The picker starts in normal mode:
 
 Arrow keys remain available for moving through rows and the hierarchy.
 
-Worktree rows are ordered by default branch, open PR, merged PR, closed PR, then entries without a matching PR. The list keeps a concise second column for paths, commands, counts, and other scan-friendly context when space allows. A detail panel follows every selected row—project, workspace, tab, window, agent, worktree group, or worktree—and adapts its fields to that row type. Wide layouts keep the list on the left and details immediately beside it on the right inside a centered, width-capped workspace; narrow layouts stack details below the list. Long detail values wrap across lines with a hanging indent under their field label. Session details show each unique window directory instead of treating the first tab's directory as representative, deduplicating paths and summarizing overflow. Rows backed by a Git checkout lazily load its branch and PR summary when focused, keeping Kesh startup fast and showing a warning when local HEAD differs from the PR head. Worktree details include the branch, shortened path, and PR summary. They show GitHub pull-request lifecycle status when the branch and PR head SHA match: green for open, purple for merged, and red for closed without merging. Kesh displays cached status immediately from `${XDG_CACHE_HOME:-~/.cache}/kesh/pr-status.json`, refreshes it in the background when worktrees are opened, and throttles refreshes to once per minute per repository. Capital `X` always bypasses the cache and revalidates merged status before offering removal.
+Worktrees are managed in one surface, opened with `w` from a project and
+closed with `esc`. Its rows are ordered by default branch, open PR, merged PR,
+closed PR, then entries without a matching PR. Use `n` to create, `enter` to
+open/focus, `r` to fetch and refresh, `p` to pull, `g` to open the exact PR,
+`x` to remove, `D` to destroy the worktree and branch, or `X` to remove merged
+worktrees. `space` enables bulk pull/removal.
+
+The list keeps a concise second column for paths, commands, counts, and other scan-friendly context when space allows. A detail panel follows every selected row—project, workspace, tab, window, agent, or worktree—and adapts its fields to that row type. Wide layouts keep the list on the left and details immediately beside it on the right inside a centered, width-capped workspace; narrow layouts stack details below the list. Long detail values wrap across lines with a hanging indent under their field label. Session details show each unique window directory instead of treating the first tab's directory as representative, deduplicating paths and summarizing overflow. Rows backed by a Git checkout lazily load its branch and PR summary when focused, keeping Kesh startup fast and showing a warning when local HEAD differs from the PR head. Worktree details include the branch, shortened path, and PR summary. They show GitHub pull-request lifecycle status when the branch and PR head SHA match: green for open, purple for merged, and red for closed without merging. Kesh displays cached status immediately from `${XDG_CACHE_HOME:-~/.cache}/kesh/pr-status.json`, refreshes it in the background when Worktrees opens, and throttles refreshes to once per minute per repository. Capital `X` always bypasses the cache and revalidates merged status before offering removal.
 
 The `Agents` filter is a flat, most-recently-focused list of Kitty windows running Codex or pi. Its preview refreshes the selected window's visible terminal screen once per second:
 

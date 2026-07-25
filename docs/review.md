@@ -139,25 +139,20 @@ or mis-target work; fix before anything else.
 
 ## 🏗 Architecture
 
-- [ ] **Reconcile inline worktree rendering with the Worktree tab** —
-  `renderRow` still handles `wt-head`/`wt-item` (~4018) for inline
-  expansion in the main list, duplicating the (richer) tab with a weaker
-  action set. Not fully dead — reachable via an in-flight-fetch race after
-  `esc` — but two paths render/mutate the same `worktreeItem` data. Pick
-  one primary surface and demote or remove the other.
-- [ ] **Split the single file** — model struct with 20+ modal bool flags
-  (~327), the ~600-line nested `Update()` (~1277), all rendering, git/
-  kitty/gh IO, and the PR cache live in one file. Split into
-  `model.go` / `update.go` / `view.go` / `worktree.go` / `pr.go` /
-  `kitty_io.go`. Mechanical, but lowers the cost of every item above
-  (this is what let the reverted-`e`-but-still-advertised drift slip in).
+- [x] **Reconcile inline worktree rendering with the Worktree tab** —
+  the inline `wt-head`/`wt-item` projection, cache, renderer, and action path
+  have been removed. `w` now routes a selected project into the sole
+  Worktrees management surface, and `esc` returns to the originating filter.
+- [x] **Split the single file** — Kesh now has a composition-only
+  `cmd/kesh`, a routed `internal/app` with explicit mutually exclusive modes
+  and separately owned update/view files, pure `domain`, versioned
+  `config/state`, and narrow `kitty/git/github/catalog/system` integration
+  packages. Async preview, rename, save, and worktree results use stable
+  identities or request IDs rather than mutable row positions.
 
-## Test gaps (why the critical bugs survived)
+## Regression coverage
 
-No tests exercise these worktree-tab paths — add coverage as each is fixed:
-
-- `x` in `filterWorktrees` mode (critical #1)
-- `enter` in `filterWorktrees` with zero open windows (#2)
-- main-mode `tab`/`shift+tab` cycling after the 7th filter was added
-- `X` and `D` from within `filterWorktrees` mode (#4, #5)
-- cursor preservation across a PR refresh (#8) and during search typing (#7)
+The formerly missing Worktrees paths now have regression coverage for enter,
+create, pull, PR open, single and merged removal, destroy, bulk selection,
+search, cursor preservation, filter cycling, and return to the originating
+filter. Late asynchronous mode results are also ignored after cancellation.

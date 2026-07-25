@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "repositories": {
+    "git@github.com:alienxp03/dotfiles.git": {
+      "fetched_at": "2026-07-22T15:00:00Z",
+      "entries": [
+        {
+          "branch": "feature",
+          "head": "abc123",
+          "status": "OPEN",
+          "url": "https://github.com/alienxp03/dotfiles/pull/1",
+          "number": 1
+        }
+      ]
+    }
+  }
+}

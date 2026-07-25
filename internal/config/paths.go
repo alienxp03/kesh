@@ -11,6 +11,7 @@ import (
 type Paths struct {
 	StateDirectory  string
 	ConfigDirectory string
+	CacheDirectory  string
 }
 
 // FromEnvironment resolves XDG paths with the same HOME fallbacks used by
@@ -25,9 +26,14 @@ func FromEnvironment() Paths {
 	if configHome == "" {
 		configHome = filepath.Join(home, ".config")
 	}
+	cacheHome := os.Getenv("XDG_CACHE_HOME")
+	if cacheHome == "" {
+		cacheHome = filepath.Join(home, ".cache")
+	}
 	return Paths{
 		StateDirectory:  filepath.Join(stateHome, "kesh"),
 		ConfigDirectory: filepath.Join(configHome, "kesh"),
+		CacheDirectory:  filepath.Join(cacheHome, "kesh"),
 	}
 }
 
@@ -38,3 +44,4 @@ func (p Paths) PinShortcuts() string  { return filepath.Join(p.StateDirectory, "
 func (p Paths) KittyRun() string      { return filepath.Join(p.StateDirectory, "kitty-run") }
 func (p Paths) File() string          { return filepath.Join(p.ConfigDirectory, "config.toml") }
 func (p Paths) Names() string         { return filepath.Join(p.ConfigDirectory, "names.json") }
+func (p Paths) PRCache() string       { return filepath.Join(p.CacheDirectory, "pr-status.json") }
