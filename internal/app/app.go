@@ -52,6 +52,7 @@ func Run(args []string) error {
 		loadErr = nameErr
 	}
 	applyNames(entries, names)
+	unmergeRenamedSessionSources(entries, names, &zoxideCtx)
 	if loadErr == nil {
 		var migrated bool
 		pins, migrated = migrateLegacyPins(entries, pins)

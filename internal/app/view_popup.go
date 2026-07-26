@@ -128,10 +128,6 @@ func (m model) popupView(width int) string {
 				menuWidth = 14
 				previewWidth = fieldWidth - menuWidth - 2
 			}
-			repoPath := ""
-			if entries := m.worktreeEntries(); len(entries) == 1 {
-				repoPath = entries[0].path
-			}
 			preview := ""
 			switch {
 			case launchAction && m.worktreeRecipeMode == "none":
@@ -140,12 +136,6 @@ func (m model) popupView(width int) string {
 				preview = dimStyle.Render("Creates a plain Kesh worktree.")
 			default:
 				preview = dimStyle.Render("Template: " + displayPath(m.worktreeRecipePath, os.Getenv("HOME")))
-				// Worktree-create shows the auto-derived session name (from the
-				// branch); launch types its own session name at the top of the
-				// popup, so don't repeat it here.
-				if !launchAction {
-					preview += "\n" + dimStyle.Render("Session: ") + focusStyle.Render(sessionPreview(m.worktreeRecipe, repoPath, m.worktreeBranch))
-				}
 				preview += "\n"
 				selected := m.worktreePreviewSelection()
 				preview += m.renderWorktreeChecklist(selected, m.worktreeCustomWorkspaces)

@@ -528,6 +528,24 @@ func buildZoxideEntries(output []byte, ctx zoxideMergeContext) []entry {
 	}))
 }
 
+// unmergeRenamedSessionSources keeps a renamed single-project session distinct
+// from the zoxide source it originated from. Without this, the session's alias
+// hides its original folder row, making the original path impossible to find.
+func unmergeRenamedSessionSources(entries []entry, names nameStore, ctx *zoxideMergeContext) {
+	for index := range entries {
+		entry := &entries[index]
+		if entry.path == "" || entry.session == "" || names["workspace:"+entry.session] == "" {
+			continue
+		}
+		// The catalog normally merges a single-project session into its project
+		// entry. Give an aliased session its own identity before restoring the
+		// source path, otherwise both rows would share the project key.
+		entry.key = "workspace:" + entry.session
+		entry.kind = "workspace"
+		delete(ctx.merged, entry.path)
+	}
+}
+
 // loadEntriesFast builds entries from live Kitty state, saved sessions, and SSH
 // hosts only — everything obtainable without the (sometimes slow) zoxide query.
 // Zoxide-sourced source projects are returned separately via the async
@@ -563,6 +581,11 @@ func loadEntries(kitty, zoxide string) ([]entry, error) {
 	if err != nil {
 		return nil, err
 	}
+	names, err := loadNames()
+	if err != nil {
+		return nil, err
+	}
+	unmergeRenamedSessionSources(entries, names, &ctx)
 	if zoxide != "" {
 		output, zerr := (catalog.Zoxide{Executable: zoxide}).Query()
 		if zerr != nil {

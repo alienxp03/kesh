@@ -1203,6 +1203,49 @@ func TestLoadEntriesMergesNamedSingleProjectSession(t *testing.T) {
 	}
 }
 
+func TestLoadEntriesKeepsRenamedSessionSeparateFromSourceProject(t *testing.T) {
+	directory := t.TempDir()
+	t.Setenv("HOME", directory)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(directory, ".config"))
+	t.Setenv("XDG_STATE_HOME", directory)
+	project := "/Users/stan/.dotfiles"
+	if err := saveNames(nameStore{"workspace:.dotfiles": "dotfiles-project"}); err != nil {
+		t.Fatal(err)
+	}
+	kitty := filepath.Join(directory, "kitty")
+	kittyState := `[{"tabs":[{"id":6,"title":"dotfiles","windows":[{"id":70,"cwd":"/Users/stan/.dotfiles","session_name":".dotfiles","last_focused_at":12}]}]}]`
+	if err := os.WriteFile(kitty, []byte("#!/bin/sh\nprintf '%s\\n' '"+kittyState+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	zoxide := filepath.Join(directory, "zoxide")
+	if err := os.WriteFile(zoxide, []byte("#!/bin/sh\nprintf '%s\\n' '"+project+"'\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := loadEntries(kitty, zoxide)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %#v, want renamed session and source project", entries)
+	}
+	var session, source *entry
+	for index := range entries {
+		switch entries[index].key {
+		case "workspace:.dotfiles":
+			session = &entries[index]
+		case project:
+			source = &entries[index]
+		}
+	}
+	if session == nil || session.kind != "workspace" || !session.open {
+		t.Fatalf("renamed session = %#v", session)
+	}
+	if source == nil || source.kind != "project" || source.open {
+		t.Fatalf("source project = %#v", source)
+	}
+}
+
 func TestLoadEntriesKeepsComposedWorkspaceSeparateFromProjectSources(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", directory)
@@ -2842,6 +2885,29 @@ func TestWorktreeSelectedSpaceAndEnterGuard(t *testing.T) {
 	}
 }
 
+func TestWorktreePopupOmitsDerivedSessionName(t *testing.T) {
+	recipe := worktreeSelectedTestRecipe(t)
+	m := model{
+		filter:                   filterWorktrees,
+		worktreeFilterEntryIndex: 0,
+		entries:                  []entry{{key: "/repo", name: "repo", path: "/repo", kind: "project"}},
+		modeState: modeState{
+			mode: modeWorktreeCreate,
+			worktreeCreateForm: &worktreeCreateForm{
+				worktreeRecipe: recipe, worktreeRecipePath: "/repo/.kesh.yaml",
+				worktreeRecipeMode: "selected", worktreeBranch: "feature",
+			},
+		},
+	}
+	view := ansi.Strip(m.popupView(100))
+	if !strings.Contains(view, "Template: /repo/.kesh.yaml") {
+		t.Fatalf("worktree popup is missing template: %s", view)
+	}
+	if strings.Contains(view, "Session:") {
+		t.Fatalf("worktree popup leaked derived session name: %s", view)
+	}
+}
+
 func TestLaunchLayoutGuardsEmptyWorkspaceSelection(t *testing.T) {
 	recipe := worktreeSelectedTestRecipe(t)
 	dir := t.TempDir()
@@ -3460,6 +3526,26 @@ func TestTabNeverCyclesIntoWorktrees(t *testing.T) {
 	result := updated.(model)
 	if result.filter != filterWorktrees || result.worktreeFilterEntryIndex != 0 {
 		t.Fatalf("Tab inside Worktrees should be a no-op: filter=%d entry=%d", result.filter, result.worktreeFilterEntryIndex)
+	}
+}
+
+func TestRenamedSessionSupportsWorktreeCreation(t *testing.T) {
+	m := model{
+		filter:  filterAll,
+		entries: []entry{{key: "workspace:dotfiles", name: "dotfiles-project", kind: "workspace", path: "/p/dotfiles", session: "dotfiles", worktreesLoaded: true}},
+	}
+	m.rebuildRows()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	m = updated.(model)
+	if m.filter != filterWorktrees {
+		t.Fatalf("w on renamed session filter = %d, want Worktrees", m.filter)
+	}
+
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	m = updated.(model)
+	if m.mode != modeWorktreeCreate || command == nil || m.err != nil {
+		t.Fatalf("n in renamed session Worktrees = mode %d, command %v, err %v", m.mode, command != nil, m.err)
 	}
 }
 

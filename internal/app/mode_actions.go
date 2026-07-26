@@ -63,7 +63,18 @@ func (m model) selectedEntries() []entry {
 // cursor is used so a single worktree needs no explicit selection.
 func (m *model) worktreeEntries() []entry {
 	if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
-		if e := m.entries[m.worktreeFilterEntryIndex]; e.kind == "project" && e.path != "" {
+		e := m.entries[m.worktreeFilterEntryIndex]
+		if e.path == "" {
+			return nil
+		}
+		if e.kind == "project" {
+			return []entry{e}
+		}
+		if e.kind == "workspace" {
+			// A renamed single-project session is displayed as a workspace so its
+			// source folder can remain separate, but its path is still a valid
+			// project target for every Worktrees operation.
+			e.kind = "project"
 			return []entry{e}
 		}
 	}
