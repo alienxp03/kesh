@@ -235,6 +235,9 @@ func (m model) popupView(width int) string {
 		}
 	} else {
 		title = "Close"
+		if m.unsave {
+			title = "Unsave"
+		}
 		if m.destroyPlan != nil {
 			title = "Destroy"
 		} else if len(m.mergedWorktrees) > 0 {
@@ -248,6 +251,8 @@ func (m model) popupView(width int) string {
 			help = "Removing…"
 		case m.worktreeForcePrompt:
 			help = "Press f to force  •  Esc cancel"
+		case m.unsave:
+			help = "Press y to confirm  •  Esc cancel"
 		case m.destroyPlan != nil:
 			help = "y destroy  •  Esc cancel"
 		default:

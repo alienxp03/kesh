@@ -82,6 +82,9 @@ func (m model) updateCloseConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closeBusy = true
 		m.err = nil
 		selected := m.closeRow
+		if m.unsave {
+			return m, runUnsave(m.kitty, m.zoxide, m.entries[selected.entryIndex], selected.entryIndex)
+		}
 		return m, runClose(m.kitty, m.zoxide, m.entries[selected.entryIndex], selected)
 	case "f":
 		if len(m.mergedWorktrees) > 0 && m.worktreeForcePrompt {

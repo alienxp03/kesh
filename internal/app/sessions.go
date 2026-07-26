@@ -185,6 +185,16 @@ func workspaceForegroundCommands(e entry) []string {
 	return commands
 }
 
+func runUnsave(kitty, zoxide string, e entry, entryIndex int) tea.Cmd {
+	return func() tea.Msg {
+		if err := deleteSavedSession(e); err != nil {
+			return closeMsg{err: err}
+		}
+		entries, err := loadEntries(kitty, zoxide)
+		return closeMsg{entries: entries, deletedSavedKey: e.key, err: err}
+	}
+}
+
 func runSaveSession(kitty string, e entry, entryIndex int, name string, foregroundCommands bool) tea.Cmd {
 	return func() tea.Msg {
 		sessionName := e.session

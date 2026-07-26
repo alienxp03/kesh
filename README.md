@@ -57,6 +57,16 @@ map --when-focus-on title:kesh ctrl+j
 map --when-focus-on title:kesh ctrl+k
 ```
 
+If your `.kesh.yaml` uses nested pane splits (for example, one pane beside
+vertically stacked panes), keep Kitty's `tall` layout enabled:
+
+```conf
+enabled_layouts splits:split_axis=horizontal,tall,stack
+```
+
+Kitty reloads the active layout when its config is reloaded. If `tall` is not
+enabled, `Cmd+R` can fall back to `splits` and flatten the nested pane layout.
+
 ## Keys
 
 The picker starts in normal mode. Green means an entry is currently open.
@@ -136,9 +146,10 @@ alias and the original project or SSH name.
 
 ## How it works
 
-Each row is one source: a single-project Kitty session and its zoxide entry
-share a folder row; multi-project sessions stay as separate session rows;
-SSH locations are marked distinctly. A detail panel follows the selected row
+Each open single-project Kitty session has its own workspace row, while its
+zoxide source remains available as a closed project row so another session can
+be created from the same repository. Multi-project sessions stay as separate
+session rows; SSH locations are marked distinctly. A detail panel follows the selected row
 and adapts to its type — project, workspace, tab, window, agent, or worktree.
 
 Pins (`Cmd+0`–`Cmd+9`) switch sessions through Kitty's native `goto_session`

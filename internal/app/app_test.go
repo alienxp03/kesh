@@ -1182,7 +1182,7 @@ func TestLoadEntriesIncludesUnscopedTabs(t *testing.T) {
 	}
 }
 
-func TestLoadEntriesMergesNamedSingleProjectSession(t *testing.T) {
+func TestLoadEntriesKeepsSingleProjectSessionSource(t *testing.T) {
 	directory := t.TempDir()
 	t.Setenv("HOME", directory)
 	t.Setenv("XDG_STATE_HOME", directory)
@@ -1201,12 +1201,23 @@ func TestLoadEntriesMergesNamedSingleProjectSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 {
-		t.Fatalf("entries = %#v, want one merged project", entries)
+	if len(entries) != 2 {
+		t.Fatalf("entries = %#v, want live session and source project", entries)
 	}
-	projectEntry := entries[0]
-	if projectEntry.kind != "project" || projectEntry.key != project || projectEntry.session != "aurora" || !projectEntry.open {
-		t.Fatalf("project = %#v, want merged live aurora project", projectEntry)
+	var session, source *entry
+	for index := range entries {
+		switch entries[index].key {
+		case "workspace:aurora":
+			session = &entries[index]
+		case project:
+			source = &entries[index]
+		}
+	}
+	if session == nil || session.kind != "workspace" || session.session != "aurora" || !session.open {
+		t.Fatalf("session = %#v", session)
+	}
+	if source == nil || source.kind != "project" || source.open {
+		t.Fatalf("source = %#v", source)
 	}
 }
 
@@ -1911,6 +1922,33 @@ func TestSaveOpenProjectUsesUserFacingName(t *testing.T) {
 	m = updated.(model)
 	if m.mode == modeSaveConfirm || m.saving || cmd != nil {
 		t.Fatalf("escape did not cancel save confirmation: %#v, cmd:%v", m, cmd)
+	}
+}
+
+func TestSavedFilterXUnsaveConfirmation(t *testing.T) {
+	m := model{
+		filter:  filterSaved,
+		entries: []entry{{key: "workspace:dotfiles", name: "dot-4", saved: true, open: true}},
+		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	got := updated.(model)
+	if got.mode != modeCloseConfirm || !got.unsave || cmd != nil {
+		t.Fatalf("x in Saved opened close instead of unsave confirmation: mode=%v unsave=%t cmd=%v", got.mode, got.unsave, cmd)
+	}
+	if prompt := got.closePrompt(); !strings.Contains(prompt, "Unsave workspace") {
+		t.Fatalf("prompt = %q, want unsave prompt", prompt)
+	}
+}
+
+func TestSavedSessionNameWinsOverWorkspaceAlias(t *testing.T) {
+	entries := []entry{{
+		key: "workspace:.dotfiles", name: "dot-4", originalName: "dot-4",
+		kind: "workspace", session: ".dotfiles", saved: true,
+	}}
+	applyNames(entries, nameStore{"workspace:.dotfiles": "dotfiles-project"})
+	if entries[0].name != "dot-4" {
+		t.Fatalf("saved name = %q, want dot-4", entries[0].name)
 	}
 }
 

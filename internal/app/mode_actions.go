@@ -104,6 +104,7 @@ func (m *model) beginClose() {
 	m.activateMode(modeCloseConfirm)
 	m.closeRow = selected
 	m.closeBusy = false
+	m.unsave = false
 	m.worktreeForcePrompt = false
 	m.mergedWorktrees = nil
 	m.err = nil

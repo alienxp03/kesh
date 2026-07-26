@@ -508,6 +508,8 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		entry := &m.entries[entryIndex]
 		entry.saved = true
+		entry.name = msg.record.Name
+		entry.originalName = msg.record.Name
 		entry.sessionFile = msg.record.SessionFile
 		updatedPins := copyPins(m.pins)
 		pinsChanged := false

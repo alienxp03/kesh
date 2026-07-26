@@ -636,6 +636,9 @@ func (m model) closePrompt() string {
 		}
 		return fmt.Sprintf("%s worktree?\n\nBranch: %s\nPath:   %s", prefix, wt.branch, displayPath(wt.path, os.Getenv("HOME")))
 	}
+	if m.unsave {
+		return fmt.Sprintf("Unsave workspace %q?", entry.name)
+	}
 	if entry.saved && !entry.open {
 		return fmt.Sprintf("Delete saved workspace %q?", entry.name)
 	}

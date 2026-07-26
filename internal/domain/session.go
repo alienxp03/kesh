@@ -1,6 +1,11 @@
 package domain
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
+
+var composedSessionID = regexp.MustCompile(`^(.+)--[0-9a-f]{12}$`)
 
 // SessionEntry is the platform-neutral input for a generated terminal session.
 type SessionEntry struct {
@@ -12,5 +17,11 @@ type SessionEntry struct {
 // ComposedSessionName extracts a user-facing name from Kesh's session prefix.
 func ComposedSessionName(session string) (string, bool) {
 	name := strings.TrimPrefix(session, "kesh-")
-	return name, name != session && name != ""
+	if name == session || name == "" {
+		return name, false
+	}
+	if match := composedSessionID.FindStringSubmatch(name); len(match) == 2 {
+		name = match[1]
+	}
+	return name, true
 }

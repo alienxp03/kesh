@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"os"
@@ -84,7 +86,12 @@ func runCreateSession(kitty string, entries []entry, name string) tea.Cmd {
 		if len(entries) == 0 {
 			return createMsg{err: fmt.Errorf("select at least one project or SSH host")}
 		}
-		path := composedSessionPath(name)
+		id := make([]byte, 6)
+		if _, err := rand.Read(id); err != nil {
+			return createMsg{err: fmt.Errorf("generate session id: %w", err)}
+		}
+		internalName := "kesh-" + name + "--" + hex.EncodeToString(id)
+		path := composedSessionPath(internalName)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return createMsg{err: fmt.Errorf("create session directory: %w", err)}
 		}
@@ -96,7 +103,7 @@ func runCreateSession(kitty string, entries []entry, name string) tea.Cmd {
 			return createMsg{err: fmt.Errorf("create session file: %w", err)}
 		}
 		defer os.Remove(path)
-		if _, err := file.WriteString(composedSessionContent(name, entries)); err != nil {
+		if _, err := file.WriteString(composedSessionContent(internalName, entries)); err != nil {
 			file.Close()
 			return createMsg{err: fmt.Errorf("write session file: %w", err)}
 		}

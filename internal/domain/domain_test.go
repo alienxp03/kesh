@@ -74,6 +74,9 @@ func TestComposedSessionName(t *testing.T) {
 	if name, ok := ComposedSessionName("kesh-release"); !ok || name != "release" {
 		t.Fatalf("name = %q, ok = %t", name, ok)
 	}
+	if name, ok := ComposedSessionName("kesh-release--0123456789ab"); !ok || name != "release" {
+		t.Fatalf("unique name = %q, ok = %t", name, ok)
+	}
 	if _, ok := ComposedSessionName("release"); ok {
 		t.Fatal("non-Kesh session was accepted")
 	}

@@ -274,6 +274,11 @@ func applyNames(entries []entry, names nameStore) {
 		if entries[index].originalName == "" {
 			entries[index].originalName = entries[index].name
 		}
+		// A saved session has its own explicitly chosen display name. Do not
+		// let an alias for the live Kitty session it came from overwrite it.
+		if entries[index].saved {
+			continue
+		}
 		entries[index].name = entries[index].originalName
 		if entries[index].kind == "project" {
 			if entries[index].session != "" {

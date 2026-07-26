@@ -382,6 +382,7 @@ type saveConfirmation struct {
 
 type closeConfirmation struct {
 	closeBusy           bool
+	unsave              bool
 	closeRow            row
 	destroyPlan         *destroyPlan
 	worktreeForcePrompt bool

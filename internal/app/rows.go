@@ -528,18 +528,18 @@ func buildZoxideEntries(output []byte, ctx zoxideMergeContext) []entry {
 	}))
 }
 
-// unmergeRenamedSessionSources keeps a renamed single-project session distinct
-// from the zoxide source it originated from. Without this, the session's alias
-// hides its original folder row, making the original path impossible to find.
+// unmergeSessionSources keeps every single-project session distinct from the
+// zoxide source it originated from. The source must remain discoverable so a
+// second session can be created from the same repository.
 func unmergeRenamedSessionSources(entries []entry, names nameStore, ctx *zoxideMergeContext) {
 	for index := range entries {
 		entry := &entries[index]
-		if entry.path == "" || entry.session == "" || names["workspace:"+entry.session] == "" {
+		if entry.path == "" || entry.session == "" || entry.kind != "project" || !entry.open || entry.saved {
 			continue
 		}
 		// The catalog normally merges a single-project session into its project
-		// entry. Give an aliased session its own identity before restoring the
-		// source path, otherwise both rows would share the project key.
+		// entry. Give the live session its own identity before restoring the
+		// source path; names.json aliases remain cosmetic only.
 		entry.key = "workspace:" + entry.session
 		entry.kind = "workspace"
 		delete(ctx.merged, entry.path)

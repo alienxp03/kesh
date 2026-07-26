@@ -76,6 +76,12 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.filter == filterWorktrees {
 			return m, m.beginWorktreeCreate()
 		}
+		if len(m.selected) == 0 && len(m.rows) > 0 {
+			entry := m.entries[m.rows[m.cursor].entryIndex]
+			if entry.kind == "project" || entry.kind == "ssh" {
+				m.selected = map[string]bool{entry.key: true}
+			}
+		}
 		if len(m.selected) == 0 {
 			m.err = fmt.Errorf("select at least one project or SSH host first")
 			return m, nil
@@ -209,6 +215,18 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.closeBusy = false
 			m.worktreeForcePrompt = false
 			m.mergedWorktrees = nil
+			m.err = nil
+			return m, nil
+		}
+		if m.filter == filterSaved && len(m.rows) > 0 {
+			selected := m.rows[m.cursor]
+			m.activateMode(modeCloseConfirm)
+			m.closeRow = selected
+			m.closeBusy = false
+			m.unsave = true
+			m.worktreeForcePrompt = false
+			m.mergedWorktrees = nil
+			m.destroyPlan = nil
 			m.err = nil
 			return m, nil
 		}
