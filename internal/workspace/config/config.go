@@ -131,7 +131,7 @@ workspaces:
     #       - pnpm run dev
     #     split: horizontal
     #   - commands:
-    #       - kesh-agent
+    #       - codex
     #     split: vertical # splits the immediately preceding pane
 
 `, workspaceName, workspaceName)
