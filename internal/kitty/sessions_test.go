@@ -26,8 +26,11 @@ func TestPinShortcutsRoundTripAndPermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "kitty-pins.conf")
 	pins := PinSessionFiles{"1": "/sessions/project one.kitty-session"}
 	content := string(PinShortcutsContent(pins))
-	if !strings.Contains(content, `map cmd+1 goto_session "/sessions/project one.kitty-session"`) {
+	if !strings.Contains(content, `action_alias kesh_pin_1 goto_session "/sessions/project one.kitty-session"`) {
 		t.Fatalf("content = %q", content)
+	}
+	if !strings.Contains(content, "action_alias kesh_pin_0 discard_event\n") {
+		t.Fatalf("empty slot alias missing from content = %q", content)
 	}
 	changed, err := SavePinShortcuts(path, pins)
 	if err != nil || !changed {

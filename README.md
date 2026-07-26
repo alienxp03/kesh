@@ -43,12 +43,22 @@ tab_bar_filter session:~
 # Cycle to the previous session.
 map cmd+p goto_session -1
 
-# Free Cmd+0..9 for Kesh pins; switch tabs with Ctrl+number instead.
-# map ctrl+1..9 goto_tab 1..9
-
-# Kesh writes Cmd+0..9 → goto_session mappings here.
-# map cmd+0..9   (blanked so Kesh can bind them)
+# Kesh generates the kesh_pin_0…kesh_pin_9 action aliases here. Keep this
+# include before the mappings so you can choose any Kitty key or chord.
 include ~/.local/state/kesh/kitty-pins.conf
+map cmd+0 kesh_pin_0
+map cmd+1 kesh_pin_1
+map cmd+2 kesh_pin_2
+map cmd+3 kesh_pin_3
+map cmd+4 kesh_pin_4
+map cmd+5 kesh_pin_5
+map cmd+6 kesh_pin_6
+map cmd+7 kesh_pin_7
+map cmd+8 kesh_pin_8
+map cmd+9 kesh_pin_9
+
+# Switch tabs with Ctrl+number instead.
+# map ctrl+1 goto_tab 1
 
 # Let the pickers handle Ctrl+J/K instead of moving panes.
 map --when-focus-on title:project-picker ctrl+j
@@ -152,9 +162,10 @@ be created from the same repository. Multi-project sessions stay as separate
 session rows; SSH locations are marked distinctly. A detail panel follows the selected row
 and adapts to its type — project, workspace, tab, window, agent, or worktree.
 
-Pins (`Cmd+0`–`Cmd+9`) switch sessions through Kitty's native `goto_session`
-without starting Kesh each time; they live for the current Kitty run and clear
-on quit. Saved states restore tabs, splits, and working directories (and
+Pins expose Kitty action aliases (`kesh_pin_0`–`kesh_pin_9`) that users bind
+in `kitty.conf`; the suggested bindings use `Cmd+0`–`Cmd+9`. They switch
+sessions through Kitty's native `goto_session` without starting Kesh each time,
+live for the current Kitty run, and clear on quit. Saved states restore tabs, splits, and working directories (and
 optionally rerun commands); closed saved entries stay available to reopen.
 
 ### Filters & launch commands

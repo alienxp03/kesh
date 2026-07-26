@@ -73,8 +73,9 @@ non-default `XDG_STATE_HOME` will desync kesh's writes from kitty's read.
 ### Pin lifecycle
 
 Pinned sessions are stored in `pins.json`; kesh also generates `kitty-pins.conf`
-beside it and reloads Kitty whenever pins change. `Cmd+0`–`Cmd+9` invoke
-Kitty's native `goto_session` directly, without starting kesh on every switch.
+beside it and reloads Kitty whenever pins change. The generated `kesh_pin_0`–
+`kesh_pin_9` action aliases invoke Kitty's native `goto_session` directly;
+users choose their own Kitty mappings without starting kesh on every switch.
 
 Pins apply only to the current Kitty run. On a confirmed normal quit, Kitty
 notifies kesh, which clears its state and mappings. Kesh records the active

@@ -2162,7 +2162,7 @@ func TestClearAllPinsResetsStateAndKittyMappings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(shortcuts), "goto_session") || !strings.Contains(string(shortcuts), "map cmd+2\n") {
+	if strings.Contains(string(shortcuts), "goto_session") || !strings.Contains(string(shortcuts), "action_alias kesh_pin_2 discard_event\n") {
 		t.Fatalf("shortcuts after clear:\n%s", shortcuts)
 	}
 	command, err := os.ReadFile(kittyLog)
@@ -2343,7 +2343,7 @@ func TestDeleteSavedSessionRemovesCatalogAndSnapshot(t *testing.T) {
 	}
 }
 
-func TestPinShortcutsGenerateNativeKittyMappings(t *testing.T) {
+func TestPinShortcutsGenerateNativeKittyAliases(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	pins := pinStore{
@@ -2353,9 +2353,9 @@ func TestPinShortcutsGenerateNativeKittyMappings(t *testing.T) {
 
 	content := string(pinShortcutsContent(pins))
 	for _, expected := range []string{
-		"map cmd+0\n",
-		"map cmd+1 goto_session \"" + pins["1"].SessionFile + "\"\n",
-		"map cmd+9 goto_session \"" + pins["9"].SessionFile + "\"\n",
+		"action_alias kesh_pin_0 discard_event\n",
+		"action_alias kesh_pin_1 goto_session \"" + pins["1"].SessionFile + "\"\n",
+		"action_alias kesh_pin_9 goto_session \"" + pins["9"].SessionFile + "\"\n",
 	} {
 		if !strings.Contains(content, expected) {
 			t.Errorf("shortcut config does not contain %q:\n%s", expected, content)
