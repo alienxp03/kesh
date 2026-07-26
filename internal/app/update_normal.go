@@ -12,6 +12,10 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "ctrl+c", "q":
 		return m, tea.Quit
+	case "?":
+		m.activateMode(modeHelp)
+		m.err = nil
+		return m, nil
 	case "esc":
 		// Escape returns to command mode from transient modes; once there,
 		// it is intentionally a no-op so a repeated key cannot close Kesh.

@@ -508,6 +508,7 @@ type modeKind uint8
 
 const (
 	modeNormal modeKind = iota
+	modeHelp
 	modeSearch
 	modeRename
 	modeCreateSession

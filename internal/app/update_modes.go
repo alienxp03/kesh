@@ -16,6 +16,8 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch m.mode {
+	case modeHelp:
+		return m.updateHelpKey(msg)
 	case modeSaveConfirm:
 		return m.updateSaveConfirmKey(msg)
 	case modePin:
@@ -37,6 +39,14 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	default:
 		return m.updateNormalKey(msg)
 	}
+}
+
+func (m model) updateHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc", "?", "q":
+		m.cancelMode()
+	}
+	return m, nil
 }
 
 func (m model) updateCloseConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

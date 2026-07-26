@@ -148,19 +148,19 @@ func (m model) View() string {
 
 	footer := "j/k move  space select  n new  c clone  w worktrees  X remove merged  D delete closed  g PR  h/l expand  e expand  enter open  s/S save  p pin  r rename  x close  / search  tab filter  ctrl+d/u g/G  q quit"
 	if showAgentPreview || (m.filter == filterAgents && m.hasSelectedAgentWindow()) {
-		footer = "j/k move  enter focus  p preview  r rename  x close  / search  tab filter  q quit"
+		footer = "j/k move  enter focus  p preview  r rename  x close  / search  tab filter  ? help  q quit"
 	} else if m.filter == filterWorktrees {
-		footer = "j/k move  space select  enter focus  n create  p pull  r refresh  g PR  x remove  X merged  G end  esc back  / search  q quit"
+		footer = "j/k move  space select  enter focus  n create  p pull  r refresh  g PR  x remove  X merged  G end  esc back  / search  ? help  q quit"
 	} else if workspaceWidth < 100 {
-		footer = "j/k move  enter open  h/l expand  x close  / search  q quit"
+		footer = "j/k move  enter open  h/l expand  x close  / search  ? help  q quit"
 		if hasSelectedPR {
-			footer = "j/k move  enter open  g PR  h/l expand  x close  / search  q quit"
+			footer = "j/k move  enter open  g PR  h/l expand  x close  / search  ? help  q quit"
 		}
 	}
 	if workspaceWidth < 64 {
-		footer = "j/k move  enter open  q quit"
+		footer = "j/k move  enter open  ? help  q quit"
 		if hasSelectedPR {
-			footer = "j/k move  enter open  g PR  q quit"
+			footer = "j/k move  enter open  g PR  ? help  q quit"
 		}
 	}
 	if m.mode == modeSearch {

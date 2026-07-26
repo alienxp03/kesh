@@ -9,8 +9,11 @@ import (
 )
 
 func (m model) popupView(width int) string {
-	if m.mode != modeRename && m.mode != modeCreateSession && m.mode != modeClone && m.mode != modeSaveConfirm && m.mode != modePin && m.mode != modeCloseConfirm && m.mode != modeWorktreeCreate && m.mode != modeCheckoutPR && !m.mergedWorktreeBusy && !m.worktreePullBusy {
+	if m.mode != modeHelp && m.mode != modeRename && m.mode != modeCreateSession && m.mode != modeClone && m.mode != modeSaveConfirm && m.mode != modePin && m.mode != modeCloseConfirm && m.mode != modeWorktreeCreate && m.mode != modeCheckoutPR && !m.mergedWorktreeBusy && !m.worktreePullBusy {
 		return ""
+	}
+	if m.mode == modeHelp {
+		return m.helpPopupView(width)
 	}
 	popupWidth := min(50, max(28, width-10))
 	if m.mode == modeClone || (m.mode == modeSaveConfirm && m.saveForeground) || m.mode == modeWorktreeCreate || (m.mode == modeCloseConfirm && m.closeRow.section == "wt-filter") {
