@@ -98,12 +98,26 @@ func (m model) popupView(width int) string {
 		field = selectedStyle.Width(popupWidth - 6).Render(m.renameValue + "█")
 		help = "Enter save  •  Esc cancel"
 	} else if m.mode == modeWorktreeCreate {
-		title = "Create worktree"
+		launchAction := m.launchOnFolder
+		if launchAction {
+			title = "Launch layout"
+		} else {
+			title = "Create worktree"
+		}
 		cursor := "█"
 		if m.worktreeBranch != "" && !m.worktreeBusy {
 			cursor = ""
 		}
+		// Launch mode has no branch: show the target folder instead so the
+		// popup still has a header line while the recipe loads.
 		branchField := dimStyle.Render("Branch: ") + focusStyle.Render(m.worktreeBranch+cursor)
+		if launchAction {
+			target := ""
+			if entries := m.worktreeEntries(); len(entries) == 1 {
+				target = entries[0].path
+			}
+			branchField = dimStyle.Render("Folder: ") + focusStyle.Render(displayPath(target, os.Getenv("HOME")))
+		}
 		fieldWidth := popupWidth - 6
 
 		var pathsField string
@@ -119,7 +133,7 @@ func (m model) popupView(width int) string {
 				repoPath = entries[0].path
 			}
 			preview := ""
-			if m.worktreeRecipeMode == "none" {
+			if !launchAction && m.worktreeRecipeMode == "none" {
 				preview = dimStyle.Render("Creates a simple Kesh worktree.")
 			} else {
 				preview = dimStyle.Render("Template: "+displayPath(m.worktreeRecipePath, os.Getenv("HOME"))) + "\n" +
@@ -133,6 +147,8 @@ func (m model) popupView(width int) string {
 				m.worktreeModeMenuView(menuWidth), "  ",
 				lipgloss.NewStyle().Width(previewWidth).Render(preview),
 			)
+		} else if launchAction {
+			pathsField = "\n\n" + dimStyle.Render("No .kesh.yaml — Enter opens the folder directly.")
 		} else if len(m.worktreePaths) > 0 {
 			if m.worktreeRecipe != nil {
 				pathsField = "\n\n" + dimStyle.Render("Mode: none (native Kesh worktree)")
@@ -157,14 +173,22 @@ func (m model) popupView(width int) string {
 		}
 
 		field = lipgloss.NewStyle().Width(fieldWidth).Render(branchField + pathsField)
+		actionVerb := "create"
+		if launchAction {
+			actionVerb = "launch"
+		}
 		if m.worktreeBusy {
-			help = "Creating…"
+			if launchAction {
+				help = "Launching…"
+			} else {
+				help = "Creating…"
+			}
 		} else if m.worktreeRecipe != nil && m.worktreeCustomWorkspaces {
-			help = "↑↓/Ctrl+J/K choose workspace  •  space toggle  •  Tab/Shift+Tab mode  •  Enter create  •  Esc cancel"
+			help = "↑↓/Ctrl+J/K choose workspace  •  space toggle  •  Tab/Shift+Tab mode  •  Enter " + actionVerb + "  •  Esc cancel"
 		} else if m.worktreeRecipe != nil {
-			help = "Tab/Shift+Tab mode  •  Enter create  •  Esc cancel"
+			help = "Tab/Shift+Tab mode  •  Enter " + actionVerb + "  •  Esc cancel"
 		} else {
-			help = "Enter create  •  Esc cancel"
+			help = "Enter " + actionVerb + "  •  Esc cancel"
 		}
 	} else if m.mode == modeCheckoutPR {
 		title = "Checkout pull request"

@@ -216,9 +216,12 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 	case "tab", "shift+tab":
 		if m.worktreeRecipe != nil {
-			modes := []string{"native", "template"}
+			modes := []string{"template"}
 			if len(m.worktreeRecipe.Workspaces) > 1 {
 				modes = append(modes, "workspaces")
+			}
+			if !m.launchOnFolder {
+				modes = append([]string{"native"}, modes...)
 			}
 			current := "template"
 			if m.worktreeRecipeMode == "none" {
@@ -263,6 +266,9 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.worktreeWorkspaceCursor++
 		}
 	case "enter":
+		if m.launchOnFolder {
+			return m.confirmLaunchLayout()
+		}
 		if m.worktreeBranch == "" {
 			m.err = fmt.Errorf("branch name is required")
 			return m, nil

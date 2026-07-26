@@ -84,6 +84,20 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.createValue = ""
 		m.err = nil
 		return m, nil
+	case "o":
+		// Launch the project's .kesh.yaml layout on its existing folders — no
+		// worktree. Additive to Enter (bare folder open); requires a project
+		// entry under the cursor, not a worktree or window row.
+		if len(m.rows) == 0 {
+			m.err = fmt.Errorf("no entry selected")
+			return m, nil
+		}
+		selected := m.rows[m.cursor]
+		if selected.section != "" {
+			m.err = fmt.Errorf("select a project entry, not a worktree or window")
+			return m, nil
+		}
+		return m, m.beginLaunchLayout()
 	case "c":
 		if m.cloneBaseRoot == "" {
 			m.err = fmt.Errorf("clone root is not configured")

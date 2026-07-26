@@ -38,6 +38,10 @@ func dirExists(path string) bool {
 // or Kitty.
 var worktreeCreate = workspace.Create
 
+// workspaceOpen is the no-worktree launch entry point used by runLaunchLayout.
+// Like worktreeCreate, it is a package-level variable for test substitution.
+var workspaceOpen = workspace.Open
+
 // runWktreeNew drives recipe-driven worktree creation and Kitty layout setup
 // through the in-process workspace package. Kesh owns the interactive branch
 // prompt and refresh afterward.
@@ -51,6 +55,21 @@ func runWktreeNew(recipePath, mode, branch string, selected []string) tea.Cmd {
 			Cwd:      filepath.Dir(recipePath),
 			Branch:   branch,
 			Home:     worktreeHome,
+			Mode:     mode,
+			Selected: selected,
+		})
+		return worktreeMsg{err: err}
+	}
+}
+
+// runLaunchLayout drives the no-worktree launch: it opens the .kesh.yaml
+// layout against each selected workspace's existing folder through the
+// in-process workspace package. Kesh owns the workspace picker; refresh
+// afterward reuses the worktreeMsg completion path.
+func runLaunchLayout(cwd, mode string, selected []string) tea.Cmd {
+	return func() tea.Msg {
+		err := workspaceOpen(context.Background(), workspace.OpenOptions{
+			Cwd:      cwd,
 			Mode:     mode,
 			Selected: selected,
 		})
@@ -434,6 +453,76 @@ func (m *model) beginWorktreeCreate() tea.Cmd {
 	}
 	m.err = nil
 	return nil
+}
+
+// beginLaunchLayout opens the launch-layout form for the project under the
+// cursor (or the Worktree-tab project). It reuses the worktree-create form's
+// recipe loading and workspace picker, but sets launchOnFolder so the form
+// hides the branch field and Enter dispatches to runLaunchLayout instead of
+// worktree creation.
+func (m *model) beginLaunchLayout() tea.Cmd {
+	entries := m.worktreeEntries()
+	if len(entries) == 0 {
+		m.err = fmt.Errorf("no project selected")
+		return nil
+	}
+	if len(entries) != 1 {
+		m.err = fmt.Errorf("launch targets a single project")
+		return nil
+	}
+	if entries[0].kind != "project" || entries[0].path == "" {
+		m.err = fmt.Errorf("select a project entry")
+		return nil
+	}
+	m.activateMode(modeWorktreeCreate)
+	m.launchOnFolder = true
+	m.worktreeBranch = ""
+	m.worktreePaths = nil
+	m.worktreeRecipe = nil
+	m.worktreeRecipePath = ""
+	m.worktreeRecipeMode = ""
+	m.worktreeCustomWorkspaces = false
+	projectPath := entries[0].path
+	m.err = nil
+	return func() tea.Msg {
+		recipe, recipePath, err := loadRecipe(projectPath)
+		return worktreeRecipeMsg{
+			projectPath: projectPath, recipe: recipe, recipePath: recipePath,
+			repositories: map[string]repoIdentity{}, err: err,
+		}
+	}
+}
+
+// confirmLaunchLayout validates the picker and dispatches the no-worktree
+// launch. With no recipe it degrades to a plain folder open; otherwise it
+// launches the recipe layout on the selected workspaces' existing folders.
+func (m model) confirmLaunchLayout() (tea.Model, tea.Cmd) {
+	entries := m.worktreeEntries()
+	if len(entries) != 1 || entries[0].path == "" {
+		m.err = fmt.Errorf("select a single project")
+		return m, nil
+	}
+	m.err = nil
+	if m.worktreeRecipe == nil {
+		// No .kesh.yaml: degrade to opening the folder session directly.
+		entry := entries[0]
+		m.cancelMode()
+		return m, func() tea.Msg {
+			return actionMsg{err: openProjectSession(m.kitty, m.zoxide, entry.path, entry.nameTaken)}
+		}
+	}
+	var selected []string
+	mode := ""
+	if m.worktreeCustomWorkspaces {
+		mode = workspace.ModeSelected
+		selected = m.selectedWorkspaceNames()
+		if len(selected) == 0 {
+			m.err = fmt.Errorf("select at least one workspace")
+			return m, nil
+		}
+	}
+	m.worktreeBusy = true
+	return m, runLaunchLayout(entries[0].path, mode, selected)
 }
 
 func prStatusCachePath() string {

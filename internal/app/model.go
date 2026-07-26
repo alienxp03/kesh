@@ -397,6 +397,10 @@ type worktreeCreateForm struct {
 	worktreeSelected         []bool
 	worktreeWorkspaceCursor  int
 	worktreeRepositories     map[string]repoIdentity
+	// launchOnFolder repurposes the form to launch the recipe layout on the
+	// project's existing folders (no worktree). It hides the branch field and
+	// redirects Enter to runLaunchLayout.
+	launchOnFolder bool
 }
 
 type repoIdentity struct {

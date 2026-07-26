@@ -119,3 +119,123 @@ func TestLateWorktreeRecipeResultIsIgnoredAfterCancel(t *testing.T) {
 		t.Fatal("late recipe leaked into the normal view")
 	}
 }
+
+// TestLaunchLayoutOpensRecipeWithoutWorktree drives the `o` flow end-to-end at
+// the app layer: pressing `o` on a project opens the launch form (no branch
+// field), and Enter dispatches workspace.Open — never workspace.Create — with
+// the project folder as Cwd and no branch.
+func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
+	directory := t.TempDir()
+	repository := filepath.Join(directory, "repo")
+	if err := os.Mkdir(repository, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var captured workspace.OpenOptions
+	original := workspaceOpen
+	workspaceOpen = func(ctx context.Context, opts workspace.OpenOptions) error {
+		captured = opts
+		return nil
+	}
+	t.Cleanup(func() { workspaceOpen = original })
+
+	m := model{
+		filter: filterAll,
+		entries: []entry{{
+			key: repository, name: "repo", path: repository, kind: "project",
+		}},
+	}
+	m.rebuildRows()
+
+	// `o` opens the launch form on the cursor entry.
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	m = updated.(model)
+	if m.mode != modeWorktreeCreate || !m.launchOnFolder {
+		t.Fatalf("o transition: mode=%d launchOnFolder=%t", m.mode, m.launchOnFolder)
+	}
+	if cmd != nil {
+		// beginLaunchLayout schedules a recipe load; drain it so the form is
+		// ready. The recipe is irrelevant to the dispatch assertion below.
+		_ = cmd()
+	}
+
+	// Simulate the recipe arriving (template mode, single workspace recipe).
+	updated, _ = m.Update(worktreeRecipeMsg{
+		projectPath: repository,
+		recipe:      &workspace.Config{WorkspaceMode: "single"},
+		recipePath:  filepath.Join(repository, ".kesh.yaml"),
+	})
+	m = updated.(model)
+	if m.worktreeRecipe == nil {
+		t.Fatalf("recipe did not load into launch form")
+	}
+
+	// Enter must dispatch runLaunchLayout (workspace.Open), not create a worktree.
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if command == nil || !m.worktreeBusy {
+		t.Fatalf("launch transition: command=%v busy=%t", command, m.worktreeBusy)
+	}
+	message := command()
+	if captured.Cwd != repository {
+		t.Fatalf("workspace.Open Cwd = %q, want %q", captured.Cwd, repository)
+	}
+	if captured.Mode != "" && captured.Mode != "single" {
+		t.Fatalf("workspace.Open Mode = %q", captured.Mode)
+	}
+
+	// Completion clears the form and quits (kesh hands off to Kitty).
+	updated, post := m.Update(message)
+	m = updated.(model)
+	if m.mode != modeNormal || m.worktreeCreateForm != nil {
+		t.Fatalf("launch completion: mode=%d form=%#v", m.mode, m.worktreeCreateForm)
+	}
+	if post == nil {
+		t.Fatalf("launch completion should hand off (quit), got nil")
+	}
+	if _, ok := post().(tea.QuitMsg); !ok {
+		t.Fatalf("launch completion should quit, got %T", post())
+	}
+}
+
+// TestLaunchLayoutWithoutRecipeFallsBackToFolderOpen confirms `o` on a project
+// with no .kesh.yaml degrades to opening the folder session directly rather
+// than erroring.
+func TestLaunchLayoutWithoutRecipeFallsBackToFolderOpen(t *testing.T) {
+	directory := t.TempDir()
+	repository := filepath.Join(directory, "repo")
+	if err := os.Mkdir(repository, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := model{
+		filter: filterAll,
+		entries: []entry{{
+			key: repository, name: "repo", path: repository, kind: "project",
+		}},
+		kitty: "kitty", zoxide: "zoxide",
+	}
+	m.rebuildRows()
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	m = updated.(model)
+	// No recipe arrives: the form stays in launch mode with a nil recipe.
+	m.worktreeRecipe = nil
+
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if command == nil {
+		t.Fatal("no command dispatched for recipe-less launch")
+	}
+	msg := command()
+	action, ok := msg.(actionMsg)
+	if !ok {
+		t.Fatalf("recipe-less launch should dispatch actionMsg, got %T", msg)
+	}
+	if action.err != nil {
+		t.Fatalf("folder-open fallback errored: %v", action.err)
+	}
+	if m.mode != modeNormal {
+		t.Fatalf("form should be cancelled after fallback: mode=%d", m.mode)
+	}
+}
