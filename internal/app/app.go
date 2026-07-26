@@ -95,6 +95,14 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 		return filterAll, "", "", nil
 	case len(args) == 1 && args[0] == "agents":
 		return filterAgents, "", "", nil
+	case len(args) == 1 && args[0] == "open":
+		return filterOpen, "", "", nil
+	case len(args) == 1 && args[0] == "projects":
+		return filterProjects, "", "", nil
+	case len(args) == 1 && args[0] == "ssh":
+		return filterSSH, "", "", nil
+	case len(args) == 1 && args[0] == "saved":
+		return filterSaved, "", "", nil
 	case len(args) == 1 && args[0] == "begin-run":
 		return filterAll, "", "begin-run", nil
 	case len(args) == 1 && args[0] == "clear-pins":
@@ -104,7 +112,7 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	case len(args) == 2 && args[0] == "switch" && validSlot(args[1]):
 		return filterAll, args[1], "", nil
 	default:
-		return 0, "", "", &UsageError{message: "usage: kesh [agents | clear-pins | switch SLOT] (SLOT must be 0-9)"}
+		return 0, "", "", &UsageError{message: "usage: kesh [agents | open | projects | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
 	}
 }
 

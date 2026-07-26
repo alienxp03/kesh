@@ -167,6 +167,10 @@ func TestParseArgs(t *testing.T) {
 	}{
 		{wantFilter: filterAll},
 		{args: []string{"agents"}, wantFilter: filterAgents},
+		{args: []string{"open"}, wantFilter: filterOpen},
+		{args: []string{"projects"}, wantFilter: filterProjects},
+		{args: []string{"ssh"}, wantFilter: filterSSH},
+		{args: []string{"saved"}, wantFilter: filterSaved},
 		{args: []string{"begin-run"}, wantFilter: filterAll, wantPinCommand: "begin-run"},
 		{args: []string{"clear-pins"}, wantFilter: filterAll, wantPinCommand: "clear-pins"},
 		{args: []string{"clear-pins", "--on-quit"}, wantFilter: filterAll, wantPinCommand: "end-run"},

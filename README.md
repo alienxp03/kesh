@@ -105,7 +105,7 @@ The `Agents` filter is a flat, most-recently-focused list of Kitty windows runni
 - `p`: show or hide the terminal preview
 - `/`: fuzzy-search agent, project, tab, command, and directory fields
 
-Run `kesh agents` to start directly in this view. Kitty invokes it in a tab for `Cmd+Shift+P`; `Cmd+Shift+O` opens the complete hierarchy in an overlay.
+Run `kesh agents` to start directly in this view. Kitty invokes it in a tab for `Cmd+Shift+P`; `Cmd+Shift+O` opens the complete hierarchy in an overlay. Every filter has a matching launch subcommand: `kesh agents`, `kesh open`, `kesh projects`, `kesh ssh`, and `kesh saved` start directly in that view, while `kesh` alone opens All.
 
 Pinned sessions are stored in `${XDG_STATE_HOME:-~/.local/state}/kesh/pins.json`. Kesh also generates `kitty-pins.conf` beside that file and reloads Kitty whenever pins change. `Cmd+0` through `Cmd+9` therefore invoke Kitty's native `goto_session` action directly, without starting Kesh on every switch. Pins apply only to the current Kitty run: Kitty notifies Kesh on a confirmed normal quit, and Kesh clears its state and mappings. Kesh records the active Kitty process; if Kitty is force-terminated, its next start detects the dead process, clears the leftover pins, and reloads the mappings.
 
