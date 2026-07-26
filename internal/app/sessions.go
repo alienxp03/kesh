@@ -55,6 +55,18 @@ func runRename(kitty string, e entry, selected row, title string, names nameStor
 	}
 }
 
+func clearSessionAlias(e entry, selected row) error {
+	if e.saved || e.session == "" || selected.tabIndex >= 0 || selected.windowIndex >= 0 {
+		return nil
+	}
+	names, err := loadNames()
+	if err != nil {
+		return err
+	}
+	delete(names, "workspace:"+e.session)
+	return saveNames(names)
+}
+
 func closeArgs(e entry, selected row) ([]string, error) {
 	if selected.windowIndex >= 0 {
 		window := e.tabs[selected.tabIndex].windows[selected.windowIndex]
@@ -104,6 +116,9 @@ func runClose(kitty, zoxide string, e entry, selected row) tea.Cmd {
 			args, err = closeArgs(e, selected)
 			if err == nil {
 				err = (kittyx.Client{Executable: kitty}).Run(args...)
+			}
+			if err == nil {
+				err = clearSessionAlias(e, selected)
 			}
 		}
 		if err != nil {

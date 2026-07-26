@@ -81,16 +81,24 @@ func runLaunchLayout(cwd, mode, sessionName string, selected []string) tea.Cmd {
 	}
 }
 
+func uniqueSessionSuffix() (string, error) {
+	id := make([]byte, 6)
+	if _, err := rand.Read(id); err != nil {
+		return "", fmt.Errorf("generate session id: %w", err)
+	}
+	return hex.EncodeToString(id), nil
+}
+
 func runCreateSession(kitty string, entries []entry, name string) tea.Cmd {
 	return func() tea.Msg {
 		if len(entries) == 0 {
 			return createMsg{err: fmt.Errorf("select at least one project or SSH host")}
 		}
-		id := make([]byte, 6)
-		if _, err := rand.Read(id); err != nil {
-			return createMsg{err: fmt.Errorf("generate session id: %w", err)}
+		suffix, err := uniqueSessionSuffix()
+		if err != nil {
+			return createMsg{err: err}
 		}
-		internalName := "kesh-" + name + "--" + hex.EncodeToString(id)
+		internalName := "kesh-" + name + "--" + suffix
 		path := composedSessionPath(internalName)
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return createMsg{err: fmt.Errorf("create session directory: %w", err)}
@@ -166,7 +174,11 @@ func openProjectSession(kitty, zoxide, project string, nameTaken bool) error {
 	}
 	name := safeName(filepath.Base(project))
 	if nameTaken {
-		name += "-" + shortHash(project)
+		suffix, err := uniqueSessionSuffix()
+		if err != nil {
+			return err
+		}
+		name += "-" + suffix
 	}
 	file := filepath.Join(sessionDir, name+".kitty-session")
 	content := fmt.Sprintf("layout splits\ncd %s\nlaunch --title %s\nfocus\nfocus_os_window\n", project, strconv.Quote(filepath.Base(project)))
