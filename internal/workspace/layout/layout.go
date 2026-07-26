@@ -24,7 +24,6 @@ type Window struct {
 }
 
 type PaneCommand struct {
-	Command    string
 	Commands   []string
 	Split      string
 	Focus      bool

@@ -445,7 +445,6 @@ func paneCommands(commands []config.PaneCommand) []layout.PaneCommand {
 	converted := make([]layout.PaneCommand, 0, len(commands))
 	for _, command := range commands {
 		converted = append(converted, layout.PaneCommand{
-			Command:    command.Command,
 			Commands:   append([]string(nil), command.Commands...),
 			Split:      command.Split,
 			Focus:      command.Focus,
@@ -473,7 +472,7 @@ func sessionName(sel selection, branch string) string {
 	}
 	ownerName, repoName := repoSlugParts(sel.ConfigRepoSlug)
 	branchName := nameComponent(branchSlug)
-	configured := config.EffectiveTerminal(sel.Config)
+	configured := sel.Config.Terminal
 	if strings.TrimSpace(configured.SessionName) == "" {
 		return repoName + "/" + branchName
 	}

@@ -22,14 +22,14 @@ func TestProjectTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.WorktreeDir != "" || loaded.Terminal.Provider != TerminalProviderKitty || loaded.Terminal.Mode != DefaultTerminalMode || loaded.WorkspaceMode != "single" {
+	if loaded.WorktreeDir != "" || loaded.Terminal.SessionName != "" || loaded.WorkspaceMode != "single" {
 		t.Fatalf("config = %#v", loaded)
 	}
 	if len(loaded.Workspaces) != 1 || loaded.Workspaces[0].Name != "window_name" || loaded.Workspaces[0].Repo != "." {
 		t.Fatalf("workspaces = %#v", loaded.Workspaces)
 	}
 	template := ProjectTemplate()
-	for _, want := range []string{"# worktree_dir: ~/workspace/worktrees", "# Kitty is the default terminal provider:", "# Tmux opt-in:", "# terminal:", "#   provider: tmux", "#   mode: window", "#   session_name: \"${repo}/${branch}\"", "# workspace_mode: single", "# workspace_mode: selected", "# default_workspaces:", "# files:", "# hooks:", "#   post_create:", "# randomize_ports:", "#       - PORT", "# set_env:", "#       API_URL:", "# panes:"} {
+	for _, want := range []string{"# worktree_dir: ~/workspace/worktrees", "# Kitty session name template:", "# terminal:", "#   session_name: \"${repo}/${branch}\"", "# workspace_mode: single", "# workspace_mode: selected", "# default_workspaces:", "# files:", "# hooks:", "#   post_create:", "# randomize_ports:", "#       - PORT", "# set_env:", "#       API_URL:", "# panes:"} {
 		if !strings.Contains(template, want) {
 			t.Fatalf("template missing %q:\n%s", want, template)
 		}
@@ -125,8 +125,7 @@ func TestLoadProjectConfig(t *testing.T) {
 	write(t, filepath.Join(sourceRoot, ".kesh.yaml"), strings.Join([]string{
 		"worktree_dir: ~/worktree",
 		"terminal:",
-		"  provider: tmux",
-		"  mode: session",
+		"  session_name: ${repo}/${branch}",
 		"workspace_mode: all",
 		"defaults:",
 		"  files:",
@@ -135,7 +134,8 @@ func TestLoadProjectConfig(t *testing.T) {
 		"workspaces:",
 		"  - name: backend",
 		"    panes:",
-		"      - command: nvim",
+		"      - commands:",
+		"          - nvim",
 		"        focus: true",
 		"      - commands:",
 		"          - pnpm install",
@@ -165,14 +165,14 @@ func TestLoadProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.WorktreeDir != "~/worktree" || config.Terminal.Provider != TerminalProviderTmux || config.Terminal.Mode != "session" || config.WorkspaceMode != "all" {
+	if config.WorktreeDir != "~/worktree" || config.Terminal.SessionName != "${repo}/${branch}" || config.WorkspaceMode != "all" {
 		t.Fatalf("config = %#v", config)
 	}
 	if len(config.Workspaces) != 2 || config.Workspaces[0].Name != "backend" || config.Workspaces[1].Repo != "../frontend" {
 		t.Fatalf("workspaces = %#v", config.Workspaces)
 	}
 	panes := WorkspacePanes(config.Workspaces[0])
-	if len(panes) != 2 || panes[0].Command != "nvim" || panes[1].Split != "horizontal" {
+	if len(panes) != 2 || len(panes[0].Commands) != 1 || panes[0].Commands[0] != "nvim" || panes[1].Split != "horizontal" {
 		t.Fatalf("panes = %#v", panes)
 	}
 	if !config.HasSetup() {
@@ -233,7 +233,8 @@ func TestLoadProjectConfigLegacyAliases(t *testing.T) {
 		"workspaces:",
 		"  - name: backend",
 		"    commands:",
-		"      - command: nvim",
+		"      - commands:",
+		"          - nvim",
 		"",
 	}, "\n"))
 
@@ -242,7 +243,7 @@ func TestLoadProjectConfigLegacyAliases(t *testing.T) {
 		t.Fatal(err)
 	}
 	panes := WorkspacePanes(config.Workspaces[0])
-	if len(panes) != 1 || panes[0].Command != "nvim" {
+	if len(panes) != 1 || len(panes[0].Commands) != 1 || panes[0].Commands[0] != "nvim" {
 		t.Fatalf("panes = %#v", panes)
 	}
 	files := WorkspaceFiles(config, config.Workspaces[0])
@@ -272,6 +273,21 @@ func TestLoadFileMissingAndEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadFileAllowsShellOnlyPane(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "shell-only.yaml")
+	write(t, path, "workspaces:\n  - name: app\n    panes:\n      - split: horizontal\n      - commands:\n          - nvim\n")
+
+	config, err := LoadFile(path, filepath.Join(root, "home"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	panes := WorkspacePanes(config.Workspaces[0])
+	if len(panes) != 2 || panes[0].Commands != nil || panes[0].Split != "horizontal" {
+		t.Fatalf("shell-only pane = %#v", panes[0])
+	}
+}
+
 func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	root := t.TempDir()
 	invalidYAML := filepath.Join(root, "invalid.yaml")
@@ -285,12 +301,10 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	duplicateWorkspace := filepath.Join(root, "duplicate-workspace.yaml")
 	duplicateWorkspaceEnv := filepath.Join(root, "duplicate-workspace-env.yaml")
 	emptyWorkspaceEnv := filepath.Join(root, "empty-workspace-env.yaml")
-	missingCommand := filepath.Join(root, "missing-command.yaml")
-	bothCommandShapes := filepath.Join(root, "both-command-shapes.yaml")
+	singularCommand := filepath.Join(root, "singular-command.yaml")
 	bothPaneKeys := filepath.Join(root, "both-pane-keys.yaml")
 	bothDefaultFiles := filepath.Join(root, "both-default-files.yaml")
 	defaultHooks := filepath.Join(root, "default-hooks.yaml")
-	badTerminalMode := filepath.Join(root, "bad-terminal-mode.yaml")
 	badTerminalSessionNameReference := filepath.Join(root, "bad-terminal-session-name-reference.yaml")
 	badTerminalSessionNameSyntax := filepath.Join(root, "bad-terminal-session-name-syntax.yaml")
 	badTerminalKey := filepath.Join(root, "bad-terminal-key.yaml")
@@ -317,17 +331,15 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	write(t, duplicateWorkspace, "workspaces:\n  - name: app\n  - name: app\n")
 	write(t, duplicateWorkspaceEnv, "workspaces:\n  - name: front-end\n  - name: front end\n")
 	write(t, emptyWorkspaceEnv, "workspaces:\n  - name: '---'\n")
-	write(t, missingCommand, "workspaces:\n  - name: app\n    panes:\n      - split: horizontal\n")
-	write(t, bothCommandShapes, "workspaces:\n  - name: app\n    panes:\n      - command: nvim\n        commands:\n          - pnpm install\n")
-	write(t, bothPaneKeys, "workspaces:\n  - name: app\n    panes:\n      - command: nvim\n    commands:\n      - command: codex\n")
+	write(t, singularCommand, "workspaces:\n  - name: app\n    panes:\n      - command: nvim\n")
+	write(t, bothPaneKeys, "workspaces:\n  - name: app\n    panes:\n      - commands:\n          - nvim\n    commands:\n      - commands:\n          - codex\n")
 	write(t, bothDefaultFiles, "defaults:\n  files:\n    copy:\n      - .env\nfiles:\n  copy:\n    - .env.local\n")
 	write(t, defaultHooks, "defaults:\n  hooks:\n    post_create:\n      - pnpm install\n")
-	write(t, badTerminalMode, "terminal:\n  mode: pane\n")
 	write(t, badTerminalSessionNameReference, "terminal:\n  session_name: ${workspace}\n")
 	write(t, badTerminalSessionNameSyntax, "terminal:\n  session_name: ${branch\n")
 	write(t, badTerminalKey, "terminal:\n  name: app\n")
 	write(t, badWorkspaceMode, "workspace_mode: many\n")
-	write(t, badSplit, "workspaces:\n  - name: app\n    panes:\n      - command: nvim\n        split: diagonal\n")
+	write(t, badSplit, "workspaces:\n  - name: app\n    panes:\n      - commands:\n          - nvim\n        split: diagonal\n")
 	write(t, unsafeCopy, "defaults:\n  files:\n    copy:\n      - ../.env\n")
 	write(t, unsafeRandomizePortFile, "workspaces:\n  - name: app\n    randomize_ports:\n      - file: ../.env\n        vars:\n          - PORT\n")
 	write(t, emptyRandomizePortVars, "workspaces:\n  - name: app\n    randomize_ports:\n      - file: .env\n")
@@ -349,12 +361,10 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	loadErrorContains(t, duplicateWorkspace, "duplicate workspace name")
 	loadErrorContains(t, duplicateWorkspaceEnv, "workspace env var")
 	loadErrorContains(t, emptyWorkspaceEnv, "at least one letter or digit")
-	loadErrorContains(t, missingCommand, "must define command or commands")
-	loadErrorContains(t, bothCommandShapes, "not both")
+	loadErrorContains(t, singularCommand, "field command not found")
 	loadErrorContains(t, bothPaneKeys, "panes or commands")
 	loadErrorContains(t, bothDefaultFiles, "defaults.files or files")
 	loadErrorContains(t, defaultHooks, "defaults.hooks is not supported")
-	loadErrorContains(t, badTerminalMode, "terminal.mode")
 	loadErrorContains(t, badTerminalSessionNameReference, "terminal.session_name")
 	loadErrorContains(t, badTerminalSessionNameSyntax, "terminal.session_name")
 	loadErrorContains(t, badTerminalKey, "unsupported terminal key")

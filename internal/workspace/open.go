@@ -192,7 +192,7 @@ func openWindows(folders []openFolder) []layout.Window {
 // shape but drops the empty ${branch} segment so "repo/" never appears.
 func sessionNameOpen(sel selection) string {
 	ownerName, repoName := repoSlugParts(sel.ConfigRepoSlug)
-	configured := config.EffectiveTerminal(sel.Config)
+	configured := sel.Config.Terminal
 	if strings.TrimSpace(configured.SessionName) == "" {
 		return repoName
 	}

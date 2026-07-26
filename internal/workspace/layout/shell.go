@@ -29,10 +29,7 @@ func PaneShellCommand(worktreePath string, command string) string {
 }
 
 func PaneCommandText(command PaneCommand) string {
-	if len(command.Commands) > 0 {
-		return setup.JoinCommands(command.Commands)
-	}
-	return command.Command
+	return setup.JoinCommands(command.Commands)
 }
 
 func SingleQuote(value string) string {

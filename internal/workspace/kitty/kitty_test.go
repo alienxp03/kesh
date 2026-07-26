@@ -17,9 +17,9 @@ func TestRenderSessionEscapesCommandsAndMapsSplits(t *testing.T) {
 			Name:         "back end's",
 			WorktreePath: "/tmp/work tree's",
 			Commands: []layout.PaneCommand{
-				{Command: "nvim"},
+				{Commands: []string{"nvim"}},
 				{Commands: []string{"pnpm install", "pnpm run dev"}, Split: "horizontal", Percentage: 35, Focus: true},
-				{Command: "echo 'ok'", Split: "vertical"},
+				{Commands: []string{"echo 'ok'"}, Split: "vertical"},
 			},
 		},
 		{Name: "frontend", WorktreePath: "/tmp/frontend"},
@@ -58,13 +58,32 @@ func TestRenderSessionEscapesCommandsAndMapsSplits(t *testing.T) {
 	}
 }
 
+func TestRenderSessionAllowsShellOnlySplit(t *testing.T) {
+	session, err := RenderSession("repo/topic", []layout.Window{{
+		Name: "editor", WorktreePath: "/tmp/repo",
+		Commands: []layout.PaneCommand{
+			{Commands: []string{"nvim"}},
+			{Split: "horizontal"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(session, "--location=vsplit") {
+		t.Fatalf("session did not create the split:\n%s", session)
+	}
+	if strings.Count(session, "exec \"${SHELL:-/bin/sh}\" -fc") != 1 {
+		t.Fatalf("shell-only pane should not receive a command wrapper:\n%s", session)
+	}
+}
+
 func TestRenderSessionUsesTallForMainPaneAndRightStack(t *testing.T) {
 	session, err := RenderSession("repo/topic", []layout.Window{{
 		Name: "editor", WorktreePath: "/tmp/repo",
 		Commands: []layout.PaneCommand{
-			{Command: "nvim"},
-			{Command: "echo build", Split: "horizontal"},
-			{Command: "agent", Split: "vertical"},
+			{Commands: []string{"nvim"}},
+			{Commands: []string{"echo build"}, Split: "horizontal"},
+			{Commands: []string{"agent"}, Split: "vertical"},
 		},
 	}})
 	if err != nil {
@@ -82,7 +101,7 @@ func TestRenderSessionRejectsLineBreaks(t *testing.T) {
 	for _, window := range []layout.Window{
 		{Name: "bad\nname", WorktreePath: "/tmp/app"},
 		{Name: "app", WorktreePath: "/tmp/bad\npath"},
-		{Name: "app", WorktreePath: "/tmp/app", Commands: []layout.PaneCommand{{Command: "echo first\necho second"}}},
+		{Name: "app", WorktreePath: "/tmp/app", Commands: []layout.PaneCommand{{Commands: []string{"echo first\necho second"}}}},
 	} {
 		if _, err := RenderSession("repo/feature", []layout.Window{window}); err == nil || !strings.Contains(err.Error(), "line break") {
 			t.Fatalf("window=%#v error=%v", window, err)

@@ -12,14 +12,10 @@ import (
 )
 
 const (
-	ProjectFileName         = ".kesh.yaml"
-	DefaultTerminalProvider = "kitty"
-	TerminalProviderTmux    = "tmux"
-	TerminalProviderKitty   = "kitty"
-	DefaultTerminalMode     = "window"
-	DefaultWorkspaceMode    = "single"
-	WorkspaceModeAll        = "all"
-	WorkspaceModeSelected   = "selected"
+	ProjectFileName       = ".kesh.yaml"
+	DefaultWorkspaceMode  = "single"
+	WorkspaceModeAll      = "all"
+	WorkspaceModeSelected = "selected"
 )
 
 var unsafeEnvNameChars = regexp.MustCompile(`[^A-Za-z0-9]+`)
@@ -43,8 +39,6 @@ type Defaults struct {
 }
 
 type Terminal struct {
-	Provider    string `yaml:"provider"`
-	Mode        string `yaml:"mode"`
 	SessionName string `yaml:"session_name"`
 }
 
@@ -75,7 +69,6 @@ type SetEnv struct {
 }
 
 type PaneCommand struct {
-	Command    string   `yaml:"command"`
 	Commands   []string `yaml:"commands"`
 	Split      string   `yaml:"split"`
 	Focus      bool     `yaml:"focus"`
@@ -103,14 +96,8 @@ func ProjectTemplate() string {
 # Cleanup needs no config.
 
 # worktree_dir: ~/workspace/worktrees
-# Kitty is the default terminal provider:
+# Kitty session name template:
 # terminal:
-#   session_name: "${repo}/${branch}"
-#
-# Tmux opt-in:
-# terminal:
-#   provider: tmux
-#   mode: window
 #   session_name: "${repo}/${branch}"
 # workspace_mode: single
 # To use a subset by default:
@@ -141,13 +128,16 @@ workspaces:
     #     vars:
     #       API_URL: "http://localhost:${window_name:.env.local:PORT}/api"
     # panes:
-    #   - command: nvim
+    #   - commands:
+    #       - nvim
     #     focus: true
+    #   - split: horizontal # omit commands to open an interactive shell
     #   - commands:
     #       - pnpm install
     #       - pnpm run dev
     #     split: horizontal
-    #   - command: kesh-agent
+    #   - commands:
+    #       - kesh-agent
     #     split: vertical # splits the immediately preceding pane
 
 # defaults:
@@ -265,7 +255,6 @@ func LoadProjectFile(configPath string, homeDir string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	projectConfig.Terminal = EffectiveTerminal(projectConfig)
 	if projectConfig.WorkspaceMode == "" {
 		projectConfig.WorkspaceMode = DefaultWorkspaceMode
 	}
@@ -306,7 +295,6 @@ func LoadFile(filePath string, homeDir string) (Config, error) {
 	if err := decoder.Decode(&config); err != nil {
 		return Config{}, fmt.Errorf("invalid config in %s: %w", filePath, err)
 	}
-	config.Terminal = EffectiveTerminal(config)
 	if err := validateConfig(&config, filePath, homeDir); err != nil {
 		return Config{}, err
 	}
@@ -345,12 +333,6 @@ func WorkspacePanes(workspace Workspace) []PaneCommand {
 }
 
 func validateConfig(config *Config, filePath string, homeDir string) error {
-	if config.Terminal.Provider != TerminalProviderTmux && config.Terminal.Provider != TerminalProviderKitty {
-		return fmt.Errorf("invalid config in %s: terminal.provider must be \"tmux\" or \"kitty\"", filePath)
-	}
-	if config.Terminal.Mode != "window" && config.Terminal.Mode != "session" {
-		return fmt.Errorf("invalid config in %s: terminal.mode must be \"window\" or \"session\"", filePath)
-	}
 	if config.WorkspaceMode == "" {
 		config.WorkspaceMode = DefaultWorkspaceMode
 	}
@@ -435,13 +417,11 @@ func validateConfig(config *Config, filePath string, homeDir string) error {
 			if err := validatePaneCommand(pane, label, filePath); err != nil {
 				return err
 			}
-			if config.Terminal.Provider == TerminalProviderKitty {
-				if pane.Zoom {
-					return fmt.Errorf("invalid config in %s: %s.zoom is not supported by the kitty provider", filePath, label)
-				}
-				if pane.Size != "" {
-					return fmt.Errorf("invalid config in %s: %s.size is not supported by the kitty provider; use percentage", filePath, label)
-				}
+			if pane.Zoom {
+				return fmt.Errorf("invalid config in %s: %s.zoom is not supported by Kitty", filePath, label)
+			}
+			if pane.Size != "" {
+				return fmt.Errorf("invalid config in %s: %s.size is not supported by Kitty; use percentage", filePath, label)
 			}
 		}
 	}
@@ -469,17 +449,6 @@ func WorkspaceDirEnvKey(workspaceName string) (string, error) {
 }
 
 func validatePaneCommand(command PaneCommand, label string, filePath string) error {
-	hasCommand := strings.TrimSpace(command.Command) != ""
-	hasCommands := len(command.Commands) > 0
-	switch {
-	case hasCommand && hasCommands:
-		return fmt.Errorf("invalid config in %s: %s must use command or commands, not both", filePath, label)
-	case !hasCommand && !hasCommands:
-		return fmt.Errorf("invalid config in %s: %s must define command or commands", filePath, label)
-	}
-	if command.Command != "" && strings.TrimSpace(command.Command) == "" {
-		return fmt.Errorf("invalid config in %s: %s.command must be a non-empty string", filePath, label)
-	}
 	if err := validateStrings(command.Commands, label+".commands", filePath); err != nil {
 		return err
 	}
@@ -490,17 +459,6 @@ func validatePaneCommand(command PaneCommand, label string, filePath string) err
 		return fmt.Errorf("invalid config in %s: %s.percentage must be between 1 and 100", filePath, label)
 	}
 	return nil
-}
-
-func EffectiveTerminal(config Config) Terminal {
-	terminal := config.Terminal
-	if terminal.Provider == "" {
-		terminal.Provider = DefaultTerminalProvider
-	}
-	if terminal.Mode == "" {
-		terminal.Mode = DefaultTerminalMode
-	}
-	return terminal
 }
 
 func validateTerminalSessionName(template string) error {
@@ -670,9 +628,7 @@ func validateNode(node *yaml.Node, filePath string) error {
 					return err
 				}
 			}
-		case "tmux":
-			return fmt.Errorf("invalid config in %s: tmux is not supported; use terminal.provider: tmux", filePath)
-		case "copy", "symlink", "postSetup", "windows", "mode", "tmux_mode", "tmux_session_name":
+		case "copy", "symlink", "postSetup", "windows", "mode":
 			return fmt.Errorf("invalid config in %s: legacy key %q is not supported", filePath, key)
 		default:
 			return fmt.Errorf("invalid config in %s: unsupported key %q", filePath, key)
@@ -717,7 +673,7 @@ func validateTerminalNode(node *yaml.Node, filePath string) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		switch key {
-		case "provider", "mode", "session_name":
+		case "session_name":
 		default:
 			return fmt.Errorf("invalid config in %s: unsupported terminal key %q", filePath, key)
 		}

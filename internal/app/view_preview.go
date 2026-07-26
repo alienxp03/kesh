@@ -51,10 +51,7 @@ func prCheckoutPreview(value, branch, selectedRepoPath, repoPath string, newClon
 }
 
 func paneLabel(pane workspace.PaneCommand) string {
-	label := pane.Command
-	if label == "" && len(pane.Commands) > 0 {
-		label = strings.Join(pane.Commands, " && ")
-	}
+	label := strings.Join(pane.Commands, " && ")
 	if label == "" {
 		label = "shell"
 	}
@@ -77,7 +74,7 @@ type paneNode struct {
 // are exact.
 func paneDiagram(panes []workspace.PaneCommand, width int) []string {
 	if len(panes) == 0 {
-		panes = append(panes, workspace.PaneCommand{Command: "shell"})
+		panes = append(panes, workspace.PaneCommand{Commands: []string{"shell"}})
 	}
 	root := &paneNode{label: paneLabel(panes[0])}
 	active := root
