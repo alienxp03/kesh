@@ -126,7 +126,7 @@ func Create(ctx context.Context, opts CreateOptions) error {
 		}
 	}
 
-	windows := kittyWindows(selection, opts.Branch, worktrees)
+	windows := kittyWindows(worktrees)
 	_, err = kitty.OpenLayout(ctx, layout.OpenOptions{
 		Mode:        layout.ModeWindow,
 		SessionName: sessionName(selection, opts.Branch),
@@ -429,7 +429,7 @@ func workspaceContexts(worktrees []worktreeWithSpec) map[string]setup.Context {
 	return contexts
 }
 
-func kittyWindows(sel selection, branch string, worktrees []worktreeWithSpec) []layout.Window {
+func kittyWindows(worktrees []worktreeWithSpec) []layout.Window {
 	windows := make([]layout.Window, 0, len(worktrees))
 	for _, wt := range worktrees {
 		windows = append(windows, layout.Window{
