@@ -272,7 +272,7 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.worktreeRecipeMode = "selected"
 				m.worktreeCustomWorkspaces = true
 			} else {
-				m.worktreeRecipeMode = msg.recipe.WorkspaceMode
+				m.worktreeRecipeMode = "single"
 				m.worktreeCustomWorkspaces = false
 			}
 			m.ensureWorktreeSelection()

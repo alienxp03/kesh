@@ -116,15 +116,11 @@ func Create(ctx context.Context, opts CreateOptions) error {
 		return err
 	}
 
-	if selection.Config.Integrations.Zoxide {
-		pathsToAdd := make([]string, 0, len(worktrees))
-		for _, wt := range worktrees {
-			pathsToAdd = append(pathsToAdd, workspacePath(wt.Spec, wt.Worktree.WorktreePath))
-		}
-		if err := zoxide.Add(ctx, pathsToAdd, opts.Runner); err != nil {
-			return err
-		}
+	pathsToAdd := make([]string, 0, len(worktrees))
+	for _, wt := range worktrees {
+		pathsToAdd = append(pathsToAdd, workspacePath(wt.Spec, wt.Worktree.WorktreePath))
 	}
+	addToZoxide(ctx, pathsToAdd, opts.Runner)
 
 	windows := kittyWindows(worktrees)
 	_, err = kitty.OpenLayout(ctx, layout.OpenOptions{
@@ -140,9 +136,9 @@ func Create(ctx context.Context, opts CreateOptions) error {
 
 // Mode values for CreateOptions.Mode.
 const (
-	ModeSingle   = config.DefaultWorkspaceMode // "single"
-	ModeAll      = config.WorkspaceModeAll
-	ModeSelected = config.WorkspaceModeSelected
+	ModeSingle   = "single"
+	ModeAll      = "all"
+	ModeSelected = "selected"
 )
 
 type worktreeSpec struct {
@@ -209,15 +205,11 @@ func resolveSelection(ctx context.Context, opts CreateOptions, allWorkspaces boo
 			}
 			return selection{}, fmt.Errorf("unknown workspace: %s; available: %s", strings.Join(missing, ", "), strings.Join(available, ", "))
 		}
-	case allWorkspaces || projectConfig.WorkspaceMode == config.WorkspaceModeAll:
-	case projectConfig.WorkspaceMode == config.WorkspaceModeSelected:
-		workspaces = selectWorkspaces(workspaces, projectConfig.DefaultWorkspaces)
+	case allWorkspaces:
 	default:
 		workspaces = workspaces[:1]
 	}
-	multi := len(workspaces) > 1 || allWorkspaces ||
-		projectConfig.WorkspaceMode == config.WorkspaceModeAll ||
-		projectConfig.WorkspaceMode == config.WorkspaceModeSelected
+	multi := len(workspaces) > 1 || allWorkspaces
 
 	selected := make([]worktreeSpec, 0, len(workspaces))
 	seenRepos := map[string]string{}
@@ -330,6 +322,13 @@ func runSetup(ctx context.Context, sel selection, worktrees []worktreeWithSpec, 
 }
 
 // --- selection helpers ---
+
+func addToZoxide(ctx context.Context, paths []string, runner run.Runner) {
+	if zoxide.Available(ctx, runner) != nil {
+		return
+	}
+	_ = zoxide.Add(ctx, paths, runner)
+}
 
 func selectWorkspaces(workspaces []config.Workspace, selectedNames []string) []config.Workspace {
 	selected := make(map[string]bool, len(selectedNames))

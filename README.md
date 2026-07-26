@@ -77,6 +77,10 @@ enabled_layouts splits:split_axis=horizontal,tall,stack
 Kitty reloads the active layout when its config is reloaded. If `tall` is not
 enabled, `Cmd+R` can fall back to `splits` and flatten the nested pane layout.
 
+## Project configuration
+
+Run `kesh init` in a project directory to create a starter `.kesh.yaml`.
+
 ## Keys
 
 The picker starts in normal mode. Green means an entry is currently open.

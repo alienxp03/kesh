@@ -75,7 +75,7 @@ func TestWorktreeCreateRunsRecipeAndRefreshesPrimarySurface(t *testing.T) {
 	}
 	m.activateMode(modeWorktreeCreate)
 	m.worktreeBranch = "feat/create"
-	m.worktreeRecipe = &workspace.Config{WorkspaceMode: "single"}
+	m.worktreeRecipe = &workspace.Config{}
 	m.worktreeRecipePath = filepath.Join(repository, ".kesh.yaml")
 	m.worktreeRecipeMode = "single"
 
@@ -108,7 +108,7 @@ func TestLateWorktreeRecipeResultIsIgnoredAfterCancel(t *testing.T) {
 	m = updated.(model)
 	updated, command := m.Update(worktreeRecipeMsg{
 		projectPath:  "/repo",
-		recipe:       &workspace.Config{WorkspaceMode: "all"},
+		recipe:       &workspace.Config{},
 		recipePath:   "/repo/.kesh.yaml",
 		repositories: map[string]repoIdentity{"/repo": {owner: "owner", repo: "repo"}},
 	})
@@ -163,7 +163,7 @@ func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
 	// Simulate the recipe arriving (template mode, single workspace recipe).
 	updated, _ = m.Update(worktreeRecipeMsg{
 		projectPath: repository,
-		recipe:      &workspace.Config{WorkspaceMode: "single"},
+		recipe:      &workspace.Config{},
 		recipePath:  filepath.Join(repository, ".kesh.yaml"),
 	})
 	m = updated.(model)

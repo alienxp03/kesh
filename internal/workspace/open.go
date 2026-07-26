@@ -12,7 +12,6 @@ import (
 	"github.com/alienxp03/kesh/internal/workspace/layout"
 	"github.com/alienxp03/kesh/internal/workspace/run"
 	"github.com/alienxp03/kesh/internal/workspace/setup"
-	"github.com/alienxp03/kesh/internal/workspace/zoxide"
 )
 
 // OpenOptions configures a layout launch on existing folders. Unlike
@@ -21,8 +20,8 @@ import (
 type OpenOptions struct {
 	// Cwd is the project directory whose .kesh.yaml selects the workspaces.
 	Cwd string
-	// Mode is ModeSingle, ModeAll, or ModeSelected. An empty Mode defers to
-	// the recipe's workspace_mode, matching resolveSelection's default path.
+	// Mode is ModeSingle, ModeAll, or ModeSelected. An empty Mode uses the
+	// first workspace by default.
 	Mode string
 	// Selected names the workspaces to launch when Mode is ModeSelected.
 	Selected []string
@@ -43,7 +42,7 @@ type OpenOptions struct {
 // existing folder — no worktree is created. Only post_create hooks run; the
 // copy/symlink, set_env, context-env, and randomize_ports steps are skipped
 // because they assume a fresh worktree and would mutate the base checkout.
-// Mode is "single", "all", "selected", or "" (defer to the recipe).
+// Mode is "single", "all", "selected", or "" (use the first workspace).
 func Open(ctx context.Context, opts OpenOptions) error {
 	if opts.Runner == nil {
 		opts.Runner = run.DefaultRunner{}
@@ -71,15 +70,11 @@ func Open(ctx context.Context, opts OpenOptions) error {
 		return err
 	}
 
-	if sel.Config.Integrations.Zoxide {
-		pathsToAdd := make([]string, 0, len(folders))
-		for _, f := range folders {
-			pathsToAdd = append(pathsToAdd, f.Path)
-		}
-		if err := zoxide.Add(ctx, pathsToAdd, opts.Runner); err != nil {
-			return err
-		}
+	pathsToAdd := make([]string, 0, len(folders))
+	for _, f := range folders {
+		pathsToAdd = append(pathsToAdd, f.Path)
 	}
+	addToZoxide(ctx, pathsToAdd, opts.Runner)
 
 	windows := openWindows(folders)
 	_, err = kitty.OpenLayout(ctx, layout.OpenOptions{

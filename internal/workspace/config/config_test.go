@@ -22,14 +22,14 @@ func TestProjectTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.WorktreeDir != "" || loaded.Terminal.SessionName != "" || loaded.WorkspaceMode != "single" {
+	if loaded.WorktreeDir != "" || loaded.Terminal.SessionName != "" {
 		t.Fatalf("config = %#v", loaded)
 	}
 	if len(loaded.Workspaces) != 1 || loaded.Workspaces[0].Name != "window_name" || loaded.Workspaces[0].Repo != "." {
 		t.Fatalf("workspaces = %#v", loaded.Workspaces)
 	}
 	template := ProjectTemplate()
-	for _, want := range []string{"# worktree_dir: ~/workspace/worktrees", "# Kitty session name template:", "# terminal:", "#   session_name: \"${repo}/${branch}\"", "# workspace_mode: single", "# workspace_mode: selected", "# default_workspaces:", "# files:", "# hooks:", "#   post_create:", "# randomize_ports:", "#       - PORT", "# set_env:", "#       API_URL:", "# panes:"} {
+	for _, want := range []string{"# worktree_dir: ~/workspace/worktrees", "# Kitty session name template:", "# terminal:", "#   session_name: \"${repo}/${branch}\"", "# files:", "# hooks:", "#   post_create:", "# randomize_ports:", "#       - PORT", "# set_env:", "#       API_URL:", "# panes:"} {
 		if !strings.Contains(template, want) {
 			t.Fatalf("template missing %q:\n%s", want, template)
 		}
@@ -126,7 +126,6 @@ func TestLoadProjectConfig(t *testing.T) {
 		"worktree_dir: ~/worktree",
 		"terminal:",
 		"  session_name: ${repo}/${branch}",
-		"workspace_mode: all",
 		"defaults:",
 		"  files:",
 		"    copy:",
@@ -165,7 +164,7 @@ func TestLoadProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.WorktreeDir != "~/worktree" || config.Terminal.SessionName != "${repo}/${branch}" || config.WorkspaceMode != "all" {
+	if config.WorktreeDir != "~/worktree" || config.Terminal.SessionName != "${repo}/${branch}" {
 		t.Fatalf("config = %#v", config)
 	}
 	if len(config.Workspaces) != 2 || config.Workspaces[0].Name != "backend" || config.Workspaces[1].Repo != "../frontend" {
@@ -192,31 +191,6 @@ func TestLoadProjectConfig(t *testing.T) {
 	if len(setEnv) != 1 || setEnv[0].File != ".env.local" || setEnv[0].Vars["API_URL"] != "http://localhost:${backend:PORT}/api" {
 		t.Fatalf("set env = %#v", setEnv)
 	}
-}
-
-func TestLoadProjectConfigSelectedWorkspaces(t *testing.T) {
-	root := t.TempDir()
-	configPath := filepath.Join(root, ".kesh.yaml")
-	write(t, configPath, strings.Join([]string{
-		"workspace_mode: selected",
-		"default_workspaces:",
-		"  - backend",
-		"  - worker",
-		"workspaces:",
-		"  - name: backend",
-		"  - name: frontend",
-		"  - name: worker",
-		"",
-	}, "\n"))
-
-	loaded, err := LoadFile(configPath, filepath.Join(root, "home"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.WorkspaceMode != WorkspaceModeSelected {
-		t.Fatalf("workspace mode = %q", loaded.WorkspaceMode)
-	}
-	assertSlice(t, loaded.DefaultWorkspaces, []string{"backend", "worker"})
 }
 
 func TestLoadProjectConfigLegacyAliases(t *testing.T) {
@@ -293,10 +267,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	invalidYAML := filepath.Join(root, "invalid.yaml")
 	legacyCopy := filepath.Join(root, "legacy-copy.yaml")
 	legacyMode := filepath.Join(root, "legacy-mode.yaml")
-	selectedWithoutDefaults := filepath.Join(root, "selected-without-defaults.yaml")
-	defaultsWithoutSelected := filepath.Join(root, "defaults-without-selected.yaml")
-	unknownDefaultWorkspace := filepath.Join(root, "unknown-default-workspace.yaml")
-	duplicateDefaultWorkspace := filepath.Join(root, "duplicate-default-workspace.yaml")
 	unsupported := filepath.Join(root, "unsupported.yaml")
 	duplicateWorkspace := filepath.Join(root, "duplicate-workspace.yaml")
 	duplicateWorkspaceEnv := filepath.Join(root, "duplicate-workspace-env.yaml")
@@ -308,7 +278,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	badTerminalSessionNameReference := filepath.Join(root, "bad-terminal-session-name-reference.yaml")
 	badTerminalSessionNameSyntax := filepath.Join(root, "bad-terminal-session-name-syntax.yaml")
 	badTerminalKey := filepath.Join(root, "bad-terminal-key.yaml")
-	badWorkspaceMode := filepath.Join(root, "bad-workspace-mode.yaml")
 	badSplit := filepath.Join(root, "bad-split.yaml")
 	unsafeCopy := filepath.Join(root, "unsafe-copy.yaml")
 	unsafeRandomizePortFile := filepath.Join(root, "unsafe-randomize-port-file.yaml")
@@ -323,10 +292,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	write(t, invalidYAML, "workspaces: [\n")
 	write(t, legacyCopy, "copy:\n  - .env\n")
 	write(t, legacyMode, "mode: session\n")
-	write(t, selectedWithoutDefaults, "workspace_mode: selected\nworkspaces:\n  - name: app\n")
-	write(t, defaultsWithoutSelected, "default_workspaces:\n  - app\nworkspaces:\n  - name: app\n")
-	write(t, unknownDefaultWorkspace, "workspace_mode: selected\ndefault_workspaces:\n  - api\nworkspaces:\n  - name: app\n")
-	write(t, duplicateDefaultWorkspace, "workspace_mode: selected\ndefault_workspaces:\n  - app\n  - app\nworkspaces:\n  - name: app\n")
 	write(t, unsupported, "commands:\n  - pnpm install\n")
 	write(t, duplicateWorkspace, "workspaces:\n  - name: app\n  - name: app\n")
 	write(t, duplicateWorkspaceEnv, "workspaces:\n  - name: front-end\n  - name: front end\n")
@@ -338,7 +303,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	write(t, badTerminalSessionNameReference, "terminal:\n  session_name: ${workspace}\n")
 	write(t, badTerminalSessionNameSyntax, "terminal:\n  session_name: ${branch\n")
 	write(t, badTerminalKey, "terminal:\n  name: app\n")
-	write(t, badWorkspaceMode, "workspace_mode: many\n")
 	write(t, badSplit, "workspaces:\n  - name: app\n    panes:\n      - commands:\n          - nvim\n        split: diagonal\n")
 	write(t, unsafeCopy, "defaults:\n  files:\n    copy:\n      - ../.env\n")
 	write(t, unsafeRandomizePortFile, "workspaces:\n  - name: app\n    randomize_ports:\n      - file: ../.env\n        vars:\n          - PORT\n")
@@ -353,10 +317,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	loadErrorContains(t, invalidYAML, "invalid YAML")
 	loadErrorContains(t, legacyCopy, "legacy key")
 	loadErrorContains(t, legacyMode, "legacy key")
-	loadErrorContains(t, selectedWithoutDefaults, "must define at least one workspace")
-	loadErrorContains(t, defaultsWithoutSelected, "requires workspace_mode: selected")
-	loadErrorContains(t, unknownDefaultWorkspace, "is not defined in workspaces")
-	loadErrorContains(t, duplicateDefaultWorkspace, "duplicate default workspace")
 	loadErrorContains(t, unsupported, "unsupported key")
 	loadErrorContains(t, duplicateWorkspace, "duplicate workspace name")
 	loadErrorContains(t, duplicateWorkspaceEnv, "workspace env var")
@@ -368,7 +328,6 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	loadErrorContains(t, badTerminalSessionNameReference, "terminal.session_name")
 	loadErrorContains(t, badTerminalSessionNameSyntax, "terminal.session_name")
 	loadErrorContains(t, badTerminalKey, "unsupported terminal key")
-	loadErrorContains(t, badWorkspaceMode, "workspace_mode")
 	loadErrorContains(t, badSplit, "split")
 	loadErrorContains(t, unsafeCopy, `cannot contain ".."`)
 	loadErrorContains(t, unsafeRandomizePortFile, `cannot contain ".."`)

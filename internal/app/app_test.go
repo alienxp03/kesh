@@ -168,6 +168,7 @@ func TestParseArgs(t *testing.T) {
 		wantError      bool
 	}{
 		{wantFilter: filterAll},
+		{args: []string{"init"}, wantFilter: filterAll, wantPinCommand: "init"},
 		{args: []string{"agents"}, wantFilter: filterAgents},
 		{args: []string{"open"}, wantFilter: filterOpen},
 		{args: []string{"projects"}, wantFilter: filterProjects},
@@ -1799,11 +1800,11 @@ func TestLoadRecipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(repo, ".kesh.yaml")
-	if err := os.WriteFile(configPath, []byte("workspace_mode: all\nworkspaces:\n  - name: api\n  - name: web\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("workspaces:\n  - name: api\n  - name: web\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	recipe, gotPath, err := loadRecipe(repo)
-	if err != nil || recipe == nil || recipe.WorkspaceMode != "all" || len(recipe.Workspaces) != 2 || gotPath != configPath {
+	if err != nil || recipe == nil || len(recipe.Workspaces) != 2 || gotPath != configPath {
 		t.Fatalf("loadRecipe() = (%#v, %q, %v)", recipe, gotPath, err)
 	}
 }
@@ -2870,8 +2871,6 @@ func worktreeSelectedTestRecipe(t *testing.T) *workspace.Config {
 	t.Helper()
 	var recipe workspace.Config
 	if err := yaml.Unmarshal([]byte(strings.Join([]string{
-		"workspace_mode: selected",
-		"default_workspaces: [backend, worker]",
 		"workspaces:",
 		"  - name: backend",
 		"  - name: frontend",
@@ -2892,14 +2891,14 @@ func TestWorktreeTabCyclesPlainAndWorkspaces(t *testing.T) {
 	m.ensureWorktreeSelection()
 
 	// Plain -> Workspaces. With >1 workspace the checklist is editable and
-	// defaults honor workspace_mode "selected" + default_workspaces.
+	// All configured workspaces are selected by default.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(model)
 	if m.worktreeRecipeMode != "selected" || !m.worktreeCustomWorkspaces {
 		t.Fatalf("expected Workspaces mode, got mode=%q custom=%v", m.worktreeRecipeMode, m.worktreeCustomWorkspaces)
 	}
-	if names := m.selectedWorkspaceNames(); !reflect.DeepEqual(names, []string{"backend", "worker"}) {
-		t.Fatalf("Workspaces defaults = %v, want [backend worker]", names)
+	if names := m.selectedWorkspaceNames(); !reflect.DeepEqual(names, []string{"backend", "frontend", "worker"}) {
+		t.Fatalf("Workspaces defaults = %v, want all workspaces", names)
 	}
 
 	// Workspaces -> Plain.
@@ -2920,8 +2919,8 @@ func TestWorktreeSelectedSpaceAndEnterGuard(t *testing.T) {
 		},
 	}}
 	m.ensureWorktreeSelection()
-	// Defaults: [backend on, frontend off, worker on]. Cursor at backend; toggle it off.
-	if !reflect.DeepEqual(m.selectedWorkspaceNames(), []string{"backend", "worker"}) {
+	// All workspaces start on. Cursor at backend; toggle it off.
+	if !reflect.DeepEqual(m.selectedWorkspaceNames(), []string{"backend", "frontend", "worker"}) {
 		t.Fatalf("defaults = %v", m.selectedWorkspaceNames())
 	}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{' '}})
@@ -2940,7 +2939,8 @@ func TestWorktreeSelectedSpaceAndEnterGuard(t *testing.T) {
 	if m.worktreeWorkspaceCursor != 0 {
 		t.Fatalf("cursor after Ctrl+K = %d, want 0", m.worktreeWorkspaceCursor)
 	}
-	// Deselect worker too so nothing remains, then Enter must guard without exec.
+	// Deselect the remaining workspaces so nothing remains, then Enter must guard without exec.
+	m.worktreeSelected[1] = false
 	m.worktreeSelected[2] = false
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)

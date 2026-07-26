@@ -19,6 +19,9 @@ type featureRunner struct {
 }
 
 func (r *featureRunner) Run(ctx context.Context, command string, args []string, options run.Options) run.Result {
+	if command == "zoxide" {
+		return run.Result{ExitCode: 0, Stdout: "zoxide 0.0.0-feature"}
+	}
 	if command == "kitty" {
 		// Remote-control calls begin with "@"; `kitty --version` does not.
 		if len(args) > 0 && args[0] == "@" {

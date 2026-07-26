@@ -256,7 +256,7 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.worktreeCustomWorkspaces = true
 					m.ensureWorktreeSelection()
 				} else {
-					m.worktreeRecipeMode = m.worktreeRecipe.WorkspaceMode
+					m.worktreeRecipeMode = "single"
 					m.worktreeCustomWorkspaces = false
 				}
 			}

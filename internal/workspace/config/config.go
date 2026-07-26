@@ -12,22 +12,16 @@ import (
 )
 
 const (
-	ProjectFileName       = ".kesh.yaml"
-	DefaultWorkspaceMode  = "single"
-	WorkspaceModeAll      = "all"
-	WorkspaceModeSelected = "selected"
+	ProjectFileName = ".kesh.yaml"
 )
 
 var unsafeEnvNameChars = regexp.MustCompile(`[^A-Za-z0-9]+`)
 
 type Config struct {
-	WorktreeDir       string       `yaml:"worktree_dir"`
-	Terminal          Terminal     `yaml:"terminal"`
-	Integrations      Integrations `yaml:"integrations"`
-	WorkspaceMode     string       `yaml:"workspace_mode"`
-	DefaultWorkspaces []string     `yaml:"default_workspaces"`
-	Defaults          Defaults     `yaml:"defaults"`
-	Workspaces        []Workspace  `yaml:"workspaces"`
+	WorktreeDir string      `yaml:"worktree_dir"`
+	Terminal    Terminal    `yaml:"terminal"`
+	Defaults    Defaults    `yaml:"defaults"`
+	Workspaces  []Workspace `yaml:"workspaces"`
 	// Files is a legacy alias for Defaults.Files.
 	Files Files `yaml:"files"`
 	// Hooks is a legacy top-level hook block. Prefer workspace hooks for new config.
@@ -40,10 +34,6 @@ type Defaults struct {
 
 type Terminal struct {
 	SessionName string `yaml:"session_name"`
-}
-
-type Integrations struct {
-	Zoxide bool `yaml:"zoxide"`
 }
 
 type Workspace struct {
@@ -99,14 +89,6 @@ func ProjectTemplate() string {
 # Kitty session name template:
 # terminal:
 #   session_name: "${repo}/${branch}"
-# workspace_mode: single
-# To use a subset by default:
-# workspace_mode: selected
-# default_workspaces:
-#   - window_name
-# integrations:
-#   zoxide: true # add worktrees on new and switch
-
 workspaces:
   - name: window_name
     repo: .
@@ -255,9 +237,6 @@ func LoadProjectFile(configPath string, homeDir string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if projectConfig.WorkspaceMode == "" {
-		projectConfig.WorkspaceMode = DefaultWorkspaceMode
-	}
 	return projectConfig, nil
 }
 
@@ -333,21 +312,6 @@ func WorkspacePanes(workspace Workspace) []PaneCommand {
 }
 
 func validateConfig(config *Config, filePath string, homeDir string) error {
-	if config.WorkspaceMode == "" {
-		config.WorkspaceMode = DefaultWorkspaceMode
-	}
-	if config.WorkspaceMode != DefaultWorkspaceMode && config.WorkspaceMode != WorkspaceModeAll && config.WorkspaceMode != WorkspaceModeSelected {
-		return fmt.Errorf("invalid config in %s: workspace_mode must be \"single\", \"all\", or \"selected\"", filePath)
-	}
-	if config.WorkspaceMode == WorkspaceModeSelected && len(config.DefaultWorkspaces) == 0 {
-		return fmt.Errorf("invalid config in %s: default_workspaces must define at least one workspace when workspace_mode is \"selected\"", filePath)
-	}
-	if config.WorkspaceMode != WorkspaceModeSelected && len(config.DefaultWorkspaces) > 0 {
-		return fmt.Errorf("invalid config in %s: default_workspaces requires workspace_mode: selected", filePath)
-	}
-	if err := validateStrings(config.DefaultWorkspaces, "default_workspaces", filePath); err != nil {
-		return err
-	}
 	if config.WorktreeDir != "" {
 		if _, err := expandPath(config.WorktreeDir, homeDir, filepath.Dir(filePath)); err != nil {
 			return fmt.Errorf("invalid config in %s: worktree_dir %w", filePath, err)
@@ -423,17 +387,6 @@ func validateConfig(config *Config, filePath string, homeDir string) error {
 			if pane.Size != "" {
 				return fmt.Errorf("invalid config in %s: %s.size is not supported by Kitty; use percentage", filePath, label)
 			}
-		}
-	}
-
-	selectedNames := map[string]bool{}
-	for _, name := range config.DefaultWorkspaces {
-		if selectedNames[name] {
-			return fmt.Errorf("invalid config in %s: duplicate default workspace %q", filePath, name)
-		}
-		selectedNames[name] = true
-		if !names[name] {
-			return fmt.Errorf("invalid config in %s: default workspace %q is not defined in workspaces", filePath, name)
 		}
 	}
 	return nil
@@ -612,14 +565,9 @@ func validateNode(node *yaml.Node, filePath string) error {
 	for i := 0; i < len(node.Content); i += 2 {
 		key := node.Content[i].Value
 		switch key {
-		case "worktree_dir", "terminal", "integrations", "workspace_mode", "default_workspaces", "defaults", "workspaces", "files", "hooks":
+		case "worktree_dir", "terminal", "defaults", "workspaces", "files", "hooks":
 			if key == "terminal" {
 				if err := validateTerminalNode(node.Content[i+1], filePath); err != nil {
-					return err
-				}
-			}
-			if key == "integrations" {
-				if err := validateIntegrationsNode(node.Content[i+1], filePath); err != nil {
 					return err
 				}
 			}
@@ -649,18 +597,6 @@ func validateDefaultsNode(node *yaml.Node, filePath string) error {
 			return fmt.Errorf("invalid config in %s: defaults.hooks is not supported; use workspaces[].hooks", filePath)
 		default:
 			return fmt.Errorf("invalid config in %s: unsupported defaults key %q", filePath, key)
-		}
-	}
-	return nil
-}
-
-func validateIntegrationsNode(node *yaml.Node, filePath string) error {
-	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf("invalid config in %s: integrations must be an object", filePath)
-	}
-	for i := 0; i < len(node.Content); i += 2 {
-		if key := node.Content[i].Value; key != "zoxide" {
-			return fmt.Errorf("invalid config in %s: unsupported integrations key %q", filePath, key)
 		}
 	}
 	return nil

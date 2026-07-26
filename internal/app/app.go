@@ -27,6 +27,8 @@ func Run(args []string) error {
 		return err
 	}
 	switch pinCommand {
+	case "init":
+		return initProject()
 	case "begin-run":
 		return beginKittyRun(kitty, currentKittyPID())
 	case "clear-pins":
@@ -95,6 +97,8 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	switch {
 	case len(args) == 0:
 		return filterAll, "", "", nil
+	case len(args) == 1 && args[0] == "init":
+		return filterAll, "", "init", nil
 	case len(args) == 1 && args[0] == "agents":
 		return filterAgents, "", "", nil
 	case len(args) == 1 && args[0] == "open":
@@ -114,8 +118,21 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	case len(args) == 2 && args[0] == "switch" && validSlot(args[1]):
 		return filterAll, args[1], "", nil
 	default:
-		return 0, "", "", &UsageError{message: "usage: kesh [agents | open | projects | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
+		return 0, "", "", &UsageError{message: "usage: kesh [init | agents | open | projects | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
 	}
+}
+
+func initProject() error {
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("find current directory: %w", err)
+	}
+	path, err := wkc.WriteProjectTemplate(workingDirectory)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("created %s\n", path)
+	return nil
 }
 
 func commands() (string, string) {
@@ -191,12 +208,9 @@ func loadRecipe(path string) (*wkc.Config, string, error) {
 }
 
 // ensureWorktreeSelection initializes (or resizes) the per-workspace toggle
-// state used by Workspaces mode. The initial selection mirrors what the old
-// Template mode would have launched: workspace_mode "all" selects every
-// workspace, "selected" selects default_workspaces (every workspace when none
-// are configured), and "single" (the default) selects only the first. An
-// existing selection of the right size is preserved, so tabbing away and back
-// keeps the user's picks.
+// state used by Workspaces mode. All configured workspaces are selected by
+// default; an existing selection of the right size is preserved, so tabbing
+// away and back keeps the user's picks.
 func (m *model) ensureWorktreeSelection() {
 	if m.worktreeRecipe == nil {
 		m.worktreeSelected = nil
@@ -213,29 +227,8 @@ func (m *model) ensureWorktreeSelection() {
 		return
 	}
 	m.worktreeSelected = make([]bool, n)
-	defaults := make(map[string]bool, len(m.worktreeRecipe.DefaultWorkspaces))
-	for _, name := range m.worktreeRecipe.DefaultWorkspaces {
-		defaults[name] = true
-	}
-	switch m.worktreeRecipe.WorkspaceMode {
-	case wkc.WorkspaceModeAll:
-		for i := range m.worktreeSelected {
-			m.worktreeSelected[i] = true
-		}
-	case wkc.WorkspaceModeSelected:
-		if len(defaults) == 0 {
-			for i := range m.worktreeSelected {
-				m.worktreeSelected[i] = true
-			}
-		} else {
-			for i, workspace := range m.worktreeRecipe.Workspaces {
-				m.worktreeSelected[i] = defaults[workspace.Name]
-			}
-		}
-	default: // single
-		for i := range m.worktreeSelected {
-			m.worktreeSelected[i] = i == 0
-		}
+	for i := range m.worktreeSelected {
+		m.worktreeSelected[i] = true
 	}
 	if m.worktreeWorkspaceCursor >= n {
 		m.worktreeWorkspaceCursor = max(0, n-1)
