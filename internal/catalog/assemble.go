@@ -25,9 +25,10 @@ func Assemble(
 	home string,
 ) ([]domain.Entry, domain.CatalogContext) {
 	type openSession struct {
-		path    string
-		focused float64
-		tabs    []domain.Tab
+		path        string
+		displayName string
+		focused     float64
+		tabs        []domain.Tab
 	}
 	sessions := map[string]*openSession{}
 	sessionNames := map[string]bool{}
@@ -42,6 +43,7 @@ func Assemble(
 				continue
 			}
 			sessionName := ""
+			layoutSessionName := ""
 			canonicalPath := ""
 			var windows []domain.Window
 			var paths []string
@@ -60,6 +62,9 @@ func Assemble(
 				if sessionName == "" && window.SessionName != "" {
 					sessionName = window.SessionName
 					canonicalPath = path
+				}
+				if layoutSessionName == "" {
+					layoutSessionName = strings.TrimSpace(window.Env["KESH_KITTY_SESSION"])
 				}
 				focused = max(focused, window.LastFocusedAt)
 				windows = append(windows, WindowFromKitty(window, home))
@@ -92,6 +97,12 @@ func Assemble(
 						session = &openSession{path: canonicalPath}
 						sessions[sessionName] = session
 					}
+					// Kesh-created layouts carry their human session name in the
+					// environment. Keep it for presentation instead of replacing it
+					// with the source folder basename below.
+					if layoutSessionName != "" {
+						session.displayName = layoutSessionName
+					}
 					session.focused = max(session.focused, focused)
 					session.tabs = append(session.tabs, item)
 				}
@@ -121,7 +132,9 @@ func Assemble(
 	for _, sessionName := range namedWorkspaces {
 		session := sessions[sessionName]
 		name := sessionName
-		if session.path != "" {
+		if session.displayName != "" {
+			name = session.displayName
+		} else if session.path != "" {
 			name = filepath.Base(session.path)
 		}
 		_, composed := domain.ComposedSessionName(sessionName)

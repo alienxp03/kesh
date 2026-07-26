@@ -286,9 +286,11 @@ type mergedWorktreeListMsg struct {
 }
 
 type mergedWorktreeRemoveMsg struct {
-	selected row
-	dir      string
-	err      error
+	selected   row
+	dir        string
+	remaining  []worktreeItem
+	forceTried bool
+	err        error
 }
 
 type bulkWorktreeRemoveMsg struct {
@@ -375,6 +377,7 @@ type pinMode struct {
 type saveConfirmation struct {
 	saveForeground bool
 	saveEntry      int
+	saveName       string
 }
 
 type closeConfirmation struct {

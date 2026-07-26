@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -56,9 +57,13 @@ func (m model) updateCloseConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, runDestroy(m.kitty, m.zoxide, m.entries[selected.entryIndex], *m.destroyPlan)
 		}
 		if len(m.mergedWorktrees) > 0 {
+			if m.worktreeForcePrompt {
+				m.err = fmt.Errorf("press f to force removal, or esc to cancel")
+				return m, nil
+			}
 			m.closeBusy = true
 			m.err = nil
-			return m, m.runRemoveMergedWorktrees()
+			return m, m.runRemoveMergedWorktrees(false)
 		}
 		if m.closeRow.section == "wt-bulk" {
 			m.closeBusy = true
@@ -79,6 +84,11 @@ func (m model) updateCloseConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		selected := m.closeRow
 		return m, runClose(m.kitty, m.zoxide, m.entries[selected.entryIndex], selected)
 	case "f":
+		if len(m.mergedWorktrees) > 0 && m.worktreeForcePrompt {
+			m.closeBusy = true
+			m.err = nil
+			return m, m.runRemoveMergedWorktrees(true)
+		}
 		if isWorktreeRow {
 			m.closeBusy = true
 			m.err = nil
@@ -320,20 +330,51 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateSaveConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.saveForeground {
+		switch msg.String() {
+		case "esc":
+			m.cancelMode()
+			m.err = nil
+		case "y":
+			entryIndex := m.saveEntry
+			entry := m.entries[entryIndex]
+			m.cancelMode()
+			m.saving = true
+			m.err = nil
+			return m, runSaveSession(m.kitty, entry, entryIndex, entry.name, true)
+		default:
+			m.err = fmt.Errorf("press y to confirm or esc to cancel")
+		}
+		return m, nil
+	}
+
 	switch msg.String() {
 	case "esc":
 		m.cancelMode()
 		m.err = nil
-	case "y":
+	case "enter":
+		name := strings.TrimSpace(m.saveName)
+		if name == "" {
+			m.err = fmt.Errorf("saved session name is required")
+			return m, nil
+		}
 		entryIndex := m.saveEntry
-		foreground := m.saveForeground
 		entry := m.entries[entryIndex]
 		m.cancelMode()
 		m.saving = true
 		m.err = nil
-		return m, runSaveSession(m.kitty, entry, entryIndex, foreground)
+		return m, runSaveSession(m.kitty, entry, entryIndex, name, false)
+	case "backspace":
+		runes := []rune(m.saveName)
+		if len(runes) > 0 {
+			m.saveName = string(runes[:len(runes)-1])
+		}
+	case "ctrl+u":
+		m.saveName = ""
 	default:
-		m.err = fmt.Errorf("press y to confirm or esc to cancel")
+		if len(msg.Runes) > 0 && !msg.Alt && !msg.Paste {
+			m.saveName += string(msg.Runes)
+		}
 	}
 	return m, nil
 }

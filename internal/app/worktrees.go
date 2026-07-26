@@ -70,9 +70,9 @@ func runWktreeNew(recipePath, mode, branch string, selected []string) tea.Cmd {
 func runLaunchLayout(cwd, mode, sessionName string, selected []string) tea.Cmd {
 	return func() tea.Msg {
 		err := workspaceOpen(context.Background(), workspace.OpenOptions{
-			Cwd:        cwd,
-			Mode:       mode,
-			Selected:   selected,
+			Cwd:         cwd,
+			Mode:        mode,
+			Selected:    selected,
 			SessionName: sessionName,
 		})
 		return worktreeMsg{err: err}
@@ -758,21 +758,26 @@ func commandError(action string, output []byte, err error) error {
 	return fmt.Errorf("%s: %w", action, err)
 }
 
-func (m *model) runRemoveMergedWorktrees() tea.Cmd {
+func (m *model) runRemoveMergedWorktrees(force bool) tea.Cmd {
 	selected := m.closeRow
 	dir := m.worktreeDirectory(selected)
 	targets := append([]worktreeItem(nil), m.mergedWorktrees...)
 	return func() tea.Msg {
 		var failures []string
+		var remaining []worktreeItem
 		for _, target := range targets {
-			if err := (gitx.Repository{Path: dir}).RemoveWorktree(target.path, false); err != nil {
+			if err := (gitx.Repository{Path: dir}).RemoveWorktree(target.path, force); err != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", target.branch, err).Error())
+				remaining = append(remaining, target)
 			}
 		}
 		if len(failures) > 0 {
-			return mergedWorktreeRemoveMsg{selected: selected, dir: dir, err: fmt.Errorf("some merged worktrees were not removed: %s", strings.Join(failures, "; "))}
+			return mergedWorktreeRemoveMsg{
+				selected: selected, dir: dir, remaining: remaining, forceTried: force,
+				err: fmt.Errorf("some merged worktrees were not removed: %s", strings.Join(failures, "; ")),
+			}
 		}
-		return mergedWorktreeRemoveMsg{selected: selected, dir: dir}
+		return mergedWorktreeRemoveMsg{selected: selected, dir: dir, forceTried: force}
 	}
 }
 

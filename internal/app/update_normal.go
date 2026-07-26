@@ -145,6 +145,9 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activateMode(modeSaveConfirm)
 		m.saveForeground = key == "S"
 		m.saveEntry = selected.entryIndex
+		// Saving a snapshot has an editable display name. Use the user-facing
+		// entry name rather than Kitty's generated internal session identifier.
+		m.saveName = entry.name
 		m.err = nil
 		return m, nil
 	case "g":

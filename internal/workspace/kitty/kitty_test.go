@@ -58,6 +58,26 @@ func TestRenderSessionEscapesCommandsAndMapsSplits(t *testing.T) {
 	}
 }
 
+func TestRenderSessionUsesTallForMainPaneAndRightStack(t *testing.T) {
+	session, err := RenderSession("repo/topic", []layout.Window{{
+		Name: "editor", WorktreePath: "/tmp/repo",
+		Commands: []layout.PaneCommand{
+			{Command: "nvim"},
+			{Command: "echo build", Split: "horizontal"},
+			{Command: "agent", Split: "vertical"},
+		},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(session, "layout tall") || strings.Contains(session, "layout splits") {
+		t.Fatalf("session should use stable tall layout:\n%s", session)
+	}
+	if strings.Contains(session, "--location=") {
+		t.Fatalf("tall layout must let Kitty arrange panes without split locations:\n%s", session)
+	}
+}
+
 func TestRenderSessionRejectsLineBreaks(t *testing.T) {
 	for _, window := range []layout.Window{
 		{Name: "bad\nname", WorktreePath: "/tmp/app"},

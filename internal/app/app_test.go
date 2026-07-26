@@ -437,6 +437,13 @@ func TestRowsShowSecondDetailColumnOnlyWhenSpaceAllows(t *testing.T) {
 	if rendered := ansi.Strip(m.renderRow(closedRow, 100, false)); !strings.Contains(rendered, "/workspace/other") {
 		t.Fatalf("closed entry row is missing wide detail column: %q", rendered)
 	}
+	// Saved snapshots may cover multiple folders, so the source path must not
+	// imply a single-project session in the primary list.
+	m.entries = append(m.entries, entry{name: "dot-3", detail: "~/.dotfiles", saved: true})
+	savedRow := row{entryIndex: 2, tabIndex: -1, windowIndex: -1}
+	if rendered := ansi.Strip(m.renderRow(savedRow, 100, false)); !strings.Contains(rendered, "[Saved]") || strings.Contains(rendered, "~/.dotfiles") {
+		t.Fatalf("saved row detail = %q, want [Saved] without source path", rendered)
+	}
 	// Tab rows no longer carry a window count (the ▸/▾ arrow signals windows).
 	if rendered := ansi.Strip(m.renderRow(tests[1], 100, false)); strings.Contains(rendered, "1 window") {
 		t.Fatalf("tab row should hide window count: %q", rendered)
@@ -1885,20 +1892,20 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	}
 }
 
-func TestSaveOpenProjectRequiresConfirmation(t *testing.T) {
-	e := entry{key: "/projects/ksm", name: "ksm", kind: "project", session: "ksm", open: true}
+func TestSaveOpenProjectUsesUserFacingName(t *testing.T) {
+	e := entry{key: "/projects/ksm", name: "testing1", kind: "project", session: "dotfiles-testing1-0d65f77c", open: true}
 	m := model{
 		entries: []entry{e},
 		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
 	}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	m = updated.(model)
-	if m.mode != modeSaveConfirm || m.saving || cmd != nil {
-		t.Fatalf("save confirmation state = confirming:%t saving:%t cmd:%v", m.mode == modeSaveConfirm, m.saving, cmd)
+	if m.mode != modeSaveConfirm || m.saving || cmd != nil || m.saveName != "testing1" {
+		t.Fatalf("save form state = confirming:%t saving:%t name:%q cmd:%v", m.mode == modeSaveConfirm, m.saving, m.saveName, cmd)
 	}
 	popup := ansi.Strip(m.popupView(80))
-	if !strings.Contains(popup, `Save "ksm" for later restoration?`) || !strings.Contains(popup, "Press y to confirm") {
-		t.Fatalf("save confirmation popup:\n%s", popup)
+	if !strings.Contains(popup, "Save workspace") || !strings.Contains(popup, "testing1█") || strings.Contains(popup, "dotfiles-testing1-0d65f77c") || !strings.Contains(popup, "Enter save") {
+		t.Fatalf("save form popup:\n%s", popup)
 	}
 	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(model)
@@ -1952,11 +1959,11 @@ printf 'layout splits\ncd /projects/ksm\nlaunch\n' > "$last"
 		key: "workspace:ksm", name: "ksm", kind: "workspace", path: "/projects/ksm",
 		session: "ksm", open: true,
 	}
-	msg := runSaveSession(kitty, e, 3, false)().(saveSessionMsg)
+	msg := runSaveSession(kitty, e, 3, "release-ksm", false)().(saveSessionMsg)
 	if msg.err != nil {
 		t.Fatal(msg.err)
 	}
-	if msg.entryIndex != 3 || msg.record.SessionName != "ksm" || msg.record.SessionFile != savedSessionFilePath("ksm") {
+	if msg.entryIndex != 3 || msg.record.Name != "release-ksm" || msg.record.SessionName != "ksm" || msg.record.SessionFile != savedSessionFilePath("ksm") {
 		t.Fatalf("save message = %#v", msg)
 	}
 	info, err := os.Stat(msg.record.SessionFile)
@@ -1978,7 +1985,7 @@ printf 'layout splits\ncd /projects/ksm\nlaunch\n' > "$last"
 		t.Fatalf("Kitty save command = %q", command)
 	}
 
-	msg = runSaveSession(kitty, e, 3, true)().(saveSessionMsg)
+	msg = runSaveSession(kitty, e, 3, "release-ksm", true)().(saveSessionMsg)
 	if msg.err != nil || !msg.record.ForegroundCommands {
 		t.Fatalf("foreground save message = %#v", msg)
 	}
@@ -3231,6 +3238,36 @@ esac
 	}
 	if !strings.Contains(string(content), "/feat") {
 		t.Fatalf("merged removal did not target the feat/x worktree:\n%s", content)
+	}
+}
+
+func TestMergedWorktreeRemovalFailureOffersForceInPopup(t *testing.T) {
+	m := model{
+		entries: []entry{{key: "/repo", name: "repo", kind: "project", path: "/repo"}},
+		modeState: modeState{
+			mode: modeCloseConfirm,
+			closeConfirmation: &closeConfirmation{
+				closeRow:        row{entryIndex: 0},
+				mergedWorktrees: []worktreeItem{{path: "/repo/testing", branch: "testing"}},
+			},
+		},
+	}
+	updated, _ := m.Update(mergedWorktreeRemoveMsg{
+		dir: "/repo", remaining: []worktreeItem{{path: "/repo/testing", branch: "testing"}},
+		err: fmt.Errorf("some merged worktrees were not removed: testing is dirty"),
+	})
+	m = updated.(model)
+	if m.mode != modeCloseConfirm || !m.worktreeForcePrompt || len(m.mergedWorktrees) != 1 {
+		t.Fatalf("failed merged removal state = %#v", m)
+	}
+	popup := ansi.Strip(m.popupView(100))
+	if !strings.Contains(popup, "Press f to force") {
+		t.Fatalf("merged removal popup does not offer force:\n%s", popup)
+	}
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = updated.(model)
+	if !m.closeBusy || command == nil {
+		t.Fatalf("f did not schedule force removal: busy=%v command=%v", m.closeBusy, command != nil)
 	}
 }
 

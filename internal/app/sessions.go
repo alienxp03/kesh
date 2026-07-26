@@ -185,7 +185,7 @@ func workspaceForegroundCommands(e entry) []string {
 	return commands
 }
 
-func runSaveSession(kitty string, e entry, entryIndex int, foregroundCommands bool) tea.Cmd {
+func runSaveSession(kitty string, e entry, entryIndex int, name string, foregroundCommands bool) tea.Cmd {
 	return func() tea.Msg {
 		sessionName := e.session
 		if sessionName == "" {
@@ -214,7 +214,7 @@ func runSaveSession(kitty string, e entry, entryIndex int, foregroundCommands bo
 			}
 		}
 		record := savedSessionRecord{
-			Name: e.name, SessionName: sessionName, SessionFile: filepath.Clean(file),
+			Name: strings.TrimSpace(name), SessionName: sessionName, SessionFile: filepath.Clean(file),
 			Projects: workspaceProjects(e), ForegroundCommands: foregroundCommands,
 			SavedAt: time.Now().UTC().Format(time.RFC3339),
 		}

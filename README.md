@@ -72,7 +72,7 @@ The picker starts in normal mode. Green means an entry is currently open.
 | `n` | Name and create a session (one tab per selected item) |
 | `c` | Clone a Git repository into an editable destination |
 | `C` | Check out a GitHub PR (URL, `owner/repo#123`, or a bare number on a selected project) |
-| `s` | Save the selected entry's tabs, splits, and working directories |
+| `s` | Name and save the selected entry's tabs, splits, and working directories |
 | `S` | Also save foreground commands so restoring reruns them |
 | `p` `0`–`9` | Pin session to a slot (repeat to replace); `p` `x` unpins |
 | `r` | Rename session / tab / window (empty session name resets it) |

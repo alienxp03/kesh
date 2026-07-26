@@ -154,12 +154,20 @@ func RenderSession(sessionName string, windows []layout.Window) (string, error) 
 			// directive as the literal title, so shell quotes would be displayed.
 			fmt.Fprintf(&output, "new_tab %s\n", window.Name)
 		}
-		fmt.Fprintln(&output, "layout splits")
-		fmt.Fprintf(&output, "cd %s\n", sessionQuote(window.WorktreePath))
 		commands := window.Commands
 		if len(commands) == 0 {
 			commands = []layout.PaneCommand{{}}
 		}
+		stableTallLayout := usesTallLayout(commands)
+		if stableTallLayout {
+			// Tall recreates the common editor-left, stacked-panes-right shape
+			// deterministically. Unlike a nested splits tree, it remains intact
+			// when Kitty temporarily toggles this tab to another layout.
+			fmt.Fprintln(&output, "layout tall")
+		} else {
+			fmt.Fprintln(&output, "layout splits")
+		}
+		fmt.Fprintf(&output, "cd %s\n", sessionQuote(window.WorktreePath))
 		focusIndex := 0
 		for commandIndex, command := range commands {
 			if command.Focus {
@@ -177,7 +185,7 @@ func RenderSession(sessionName string, windows []layout.Window) (string, error) 
 			if commandIndex == 0 {
 				args = append(args, "--title="+window.Name)
 			}
-			if commandIndex > 0 {
+			if commandIndex > 0 && !stableTallLayout {
 				location := "vsplit"
 				if command.Split == "vertical" {
 					location = "hsplit"
@@ -373,6 +381,22 @@ func quoteSessionArgs(args []string) string {
 
 func sessionQuote(value string) string {
 	return layout.SingleQuote(value)
+}
+
+// usesTallLayout recognizes the common nested-split shape declared as a
+// horizontal second pane followed by vertical panes. Kitty's tall layout has
+// the same geometry (one main pane with a stack beside it), but can be toggled
+// away from and back to without losing the shape.
+func usesTallLayout(commands []layout.PaneCommand) bool {
+	if len(commands) < 3 || commands[1].Split != "horizontal" || commands[1].Percentage > 0 {
+		return false
+	}
+	for _, command := range commands[2:] {
+		if command.Split != "vertical" || command.Percentage > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func containsLineBreak(value string) bool {

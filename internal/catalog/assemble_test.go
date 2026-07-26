@@ -51,6 +51,19 @@ func TestAssembleMergesKittySavedAndSSHEntries(t *testing.T) {
 	}
 }
 
+func TestAssembleUsesKeshLayoutSessionName(t *testing.T) {
+	entries, _ := Assemble(kitty.State{{Tabs: []kitty.Tab{{
+		ID: 1, Title: "dotfiles",
+		Windows: []kitty.Window{{
+			ID: 11, CWD: "/Users/stan/.dotfiles", SessionName: "kesh-dot-2", LastFocusedAt: 8,
+			Env: map[string]string{"PWD": "/Users/stan/.dotfiles", "KESH_KITTY_SESSION": "dot-2"},
+		}},
+	}}}}, state.SavedSessions{}, nil, 999, "/Users/stan")
+	if len(entries) != 1 || entries[0].Name != "dot-2" || entries[0].OriginalName != "dot-2" {
+		t.Fatalf("Kesh layout session = %#v, want display name dot-2", entries)
+	}
+}
+
 func TestMergeZoxideSkipsRepresentedPathsAndAddsLivePaths(t *testing.T) {
 	context := domain.CatalogContext{
 		LivePaths:    map[string]bool{"/workspace/live": true},
@@ -69,7 +82,7 @@ func TestMergeZoxideSkipsRepresentedPathsAndAddsLivePaths(t *testing.T) {
 
 func TestMergeZoxideAttachesOpenStateToKnownProject(t *testing.T) {
 	context := domain.CatalogContext{
-		Home:     "/Users/stan",
+		Home: "/Users/stan",
 		OpenTabs: map[string]domain.OpenTabState{
 			"/workspace/repo": {Tabs: []domain.Tab{{ID: 7, Title: "repo-code"}}, LastFocused: 42},
 		},

@@ -431,14 +431,24 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case mergedWorktreeRemoveMsg:
 		m.closeBusy = false
-		m.cancelMode()
 		if msg.err != nil {
 			entryIndex, tabIndex, windowIndex := m.resolveWorktreeDirectory(msg.dir)
 			m.invalidateWorktrees(row{entryIndex: entryIndex, tabIndex: tabIndex, windowIndex: windowIndex})
+			if !msg.forceTried {
+				// Keep the confirmation visible: a dirty or locked merged worktree
+				// can be removed deliberately with force, rather than leaving a
+				// truncated footer error with no discoverable next action.
+				m.mergedWorktrees = msg.remaining
+				m.worktreeForcePrompt = true
+				m.err = fmt.Errorf("some merged worktrees could not be removed")
+				return m, nil
+			}
+			m.cancelMode()
 			m.err = msg.err
 			m.rebuildRows()
 			return m, nil
 		}
+		m.cancelMode()
 		m.err = nil
 		entryIndex, tabIndex, windowIndex := m.resolveWorktreeDirectory(msg.dir)
 		if entryIndex < 0 {

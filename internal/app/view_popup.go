@@ -49,14 +49,11 @@ func (m model) popupView(width int) string {
 				}
 			}
 			field = lipgloss.NewStyle().Width(popupWidth - 6).Render(strings.Join(lines, "\n"))
-		} else if entry.saved {
-			title = "Update saved workspace"
-			field = lipgloss.NewStyle().Width(popupWidth - 6).Render(fmt.Sprintf("Update the saved snapshot for %q?", entry.name))
 		} else {
 			title = "Save workspace"
-			field = lipgloss.NewStyle().Width(popupWidth - 6).Render(fmt.Sprintf("Save %q for later restoration?", entry.name))
+			field = selectedStyle.Width(popupWidth - 6).Render(m.saveName + "█")
+			help = "Enter save  •  Esc cancel"
 		}
-		help = "Press y to confirm  •  Esc cancel"
 	} else if m.mode == modeClone {
 		title = "Clone repository"
 		repositoryCursor := ""
