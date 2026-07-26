@@ -36,10 +36,17 @@ func runRename(kitty string, e entry, selected row, title string, names nameStor
 			for key, name := range names {
 				updated[key] = name
 			}
+			// A single-project Kitty session is represented by a project entry,
+			// but its alias must still be keyed by session so it survives the
+			// catalog's project/session merge on the next refresh.
+			nameKey := e.key
+			if e.session != "" {
+				nameKey = "workspace:" + e.session
+			}
 			if title == "" {
-				delete(updated, e.key)
+				delete(updated, nameKey)
 			} else {
-				updated[e.key] = title
+				updated[nameKey] = title
 			}
 			err = saveNames(updated)
 			names = updated

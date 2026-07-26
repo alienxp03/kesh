@@ -75,7 +75,7 @@ The picker starts in normal mode. Green means an entry is currently open.
 | `s` | Save the selected entry's tabs, splits, and working directories |
 | `S` | Also save foreground commands so restoring reruns them |
 | `p` `0`–`9` | Pin session to a slot (repeat to replace); `p` `x` unpins |
-| `r` | Rename workspace / tab / window (empty workspace name resets it) |
+| `r` | Rename session / tab / window (empty session name resets it) |
 | `w` | Open the project's Worktrees surface |
 | `o` | Open the selected worktree's exact PR in the browser |
 | `D` `y` | Destroy the focused entry; in Worktrees, destroy worktree + branch |

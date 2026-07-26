@@ -210,8 +210,11 @@ func (m *model) beginRename() {
 		m.err = nil
 		return
 	}
-	if entry.kind == "project" {
-		m.err = fmt.Errorf("rename an open workspace, not its source project")
+	// A project row with a Kitty session is the merged representation of that
+	// live session and its zoxide source, so it is renameable just like an
+	// explicit workspace row. A project without a session remains a source.
+	if entry.kind == "project" && entry.session == "" {
+		m.err = fmt.Errorf("rename a session, not its source project")
 		return
 	}
 	m.activateMode(modeRename)

@@ -2405,6 +2405,32 @@ func TestSessionRenamePersistsAliasAndEmptyNameResetsIt(t *testing.T) {
 	}
 }
 
+func TestSessionRowRenameUsesSessionAlias(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	e := entry{key: "/projects/payments", name: "payments", originalName: "payments", kind: "project", path: "/projects/payments", session: "kesh-payments", open: true}
+	selected := row{entryIndex: 0, tabIndex: -1, windowIndex: -1}
+	m := model{entries: []entry{e}, rows: []row{selected}, names: nameStore{}}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	m = updated.(model)
+	if m.mode != modeRename || m.renameValue != "payments" {
+		t.Fatalf("r on session row = mode %v, value %q; want rename mode with session name", m.mode, m.renameValue)
+	}
+
+	msg := runRename("", e, selected, "Billing", m.names)().(renameMsg)
+	updated, _ = m.Update(msg)
+	m = updated.(model)
+	if m.entries[0].name != "Billing" || m.names["workspace:kesh-payments"] != "Billing" {
+		t.Fatalf("renamed session = %#v, names = %#v", m.entries[0], m.names)
+	}
+	stored, err := loadNames()
+	if err != nil || stored["workspace:kesh-payments"] != "Billing" {
+		t.Fatalf("stored session alias = %#v, err = %v", stored, err)
+	}
+}
+
 func TestWorkspaceSearchMatchesOriginalNameAfterRename(t *testing.T) {
 	m := model{
 		query: "pymnts",
