@@ -39,7 +39,7 @@ type OpenOptions struct {
 }
 
 // Open launches the .kesh.yaml layout against each selected workspace's
-// existing folder — no worktree is created. Only post_create hooks run; the
+// existing folder — no worktree is created. Worktree hooks do not run; the
 // copy/symlink, set_env, context-env, and randomize_ports steps are skipped
 // because they assume a fresh worktree and would mutate the base checkout.
 // Mode is "single", "all", "selected", or "" (use the first workspace).
@@ -124,32 +124,25 @@ func openFolders(sel selection) ([]openFolder, error) {
 	return folders, nil
 }
 
-// runSetupForOpen writes the context env (.kesh.env) and runs post_create
-// hooks against each workspace's existing folder. The context env is required:
-// the launched panes source it. Files (copy/symlink), set_env, and
-// randomize_ports are intentionally skipped — they target a fresh worktree and
-// would mutate the base checkout. .kesh.env is a generated artifact that kesh's
-// own git checks ignore, so the base repo stays clean.
+// runSetupForOpen writes the context env (.kesh.env) for each existing folder.
+// The context env is required because launched panes source it. Worktree setup
+// files, environment mutations, port randomization, and hooks are skipped so
+// opening a current checkout has no setup side effects.
 func runSetupForOpen(ctx context.Context, sel selection, folders []openFolder, stdout, stderr io.Writer) error {
 	contexts := openContexts(folders)
 	baseLogger := setup.Logger{Stdout: stdout, Stderr: stderr}
 	var problems []string
 	for _, f := range folders {
-		hooks := config.WorkspaceHooks(sel.Config, f.Spec.Config)
 		logger := baseLogger
 		if sel.AllWorkspaces {
 			logger.Prefix = f.Spec.Name
 		}
 		plan := setup.NewPlan(
 			f.Spec.WorkspaceRoot, f.Path, f.Spec.Name, "",
-			config.Files{}, hooks, nil, nil, false, contexts[f.Spec.Name],
+			config.Files{}, config.Hooks{}, nil, nil, false, contexts[f.Spec.Name],
 		)
 		if status := setup.WriteContextEnvLogged(plan, logger); status != 0 {
 			problems = append(problems, fmt.Sprintf("%s: context env failed", f.Spec.Name))
-			continue
-		}
-		if status := setup.RunPostCreate(ctx, plan, logger, nil); status != 0 {
-			problems = append(problems, fmt.Sprintf("%s: post_create failed", f.Spec.Name))
 		}
 	}
 	if len(problems) > 0 {
@@ -182,24 +175,9 @@ func openWindows(folders []openFolder) []layout.Window {
 	return windows
 }
 
-// sessionNameOpen renders the Kitty session name without a branch segment.
-// With no configured template it is just the repo name; a template keeps its
-// shape but drops the empty ${branch} segment so "repo/" never appears.
+// sessionNameOpen derives the Kitty session name for an existing repository.
 func sessionNameOpen(sel selection) string {
-	ownerName, repoName := repoSlugParts(sel.ConfigRepoSlug)
-	configured := sel.Config.Terminal
-	if strings.TrimSpace(configured.SessionName) == "" {
-		return repoName
-	}
-	rendered := renderSessionName(configured.SessionName, sel.ConfigDir, ownerName, repoName, "")
-	segments := strings.Split(rendered, "/")
-	kept := segments[:0]
-	for _, segment := range segments {
-		if strings.TrimSpace(segment) != "" {
-			kept = append(kept, segment)
-		}
-	}
-	return joinNameSegments(strings.Join(kept, "/"))
+	return repoName(sel.ConfigRepoSlug)
 }
 
 // sessionNameForOpen picks the Kitty session name: a non-empty caller-supplied

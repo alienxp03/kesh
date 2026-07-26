@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/alienxp03/kesh/internal/workspace/config"
@@ -42,7 +41,7 @@ type CreateOptions struct {
 	// From is the optional start point (defaults to HEAD).
 	From string
 	// Home overrides the worktree root; empty means use .kesh.yaml's
-	// worktree_dir or the provider default.
+	// worktree.dir or the provider default.
 	Home string
 	// Mode is ModeSingle, ModeAll, or ModeSelected.
 	Mode string
@@ -238,12 +237,12 @@ func resolveSelection(ctx context.Context, opts CreateOptions, allWorkspaces boo
 
 	worktreeHome := opts.Home
 	if worktreeHome == "" {
-		worktreeHome = projectConfig.WorktreeDir
+		worktreeHome = projectConfig.Worktree.Dir
 	}
 	if worktreeHome != "" {
 		worktreeHome, err = config.ExpandConfiguredPath(worktreeHome, homeDir, configDir)
 		if err != nil {
-			return selection{}, fmt.Errorf("worktree_dir: %w", err)
+			return selection{}, fmt.Errorf("worktree.dir: %w", err)
 		}
 	}
 
@@ -299,7 +298,7 @@ func runSetup(ctx context.Context, sel selection, worktrees []worktreeWithSpec, 
 			wt.Spec.WorkspaceRoot,
 			workspacePath(wt.Spec, wt.Worktree.WorktreePath),
 			wt.Spec.Name, "", files, hooks,
-			wt.Spec.Config.RandomizePorts, wt.Spec.Config.SetEnv,
+			wt.Spec.Config.Worktree.RandomizePorts, wt.Spec.Config.Worktree.SetEnv,
 			wt.Worktree.Reused, contexts[wt.Spec.Name],
 		)
 		if status := setup.RunPrepare(plan, logger); status != 0 {
@@ -469,24 +468,12 @@ func sessionName(sel selection, branch string) string {
 	if err != nil {
 		branchSlug = "branch"
 	}
-	ownerName, repoName := repoSlugParts(sel.ConfigRepoSlug)
-	branchName := nameComponent(branchSlug)
-	configured := sel.Config.Terminal
-	if strings.TrimSpace(configured.SessionName) == "" {
-		return repoName + "/" + branchName
-	}
-	rendered := renderSessionName(configured.SessionName, sel.ConfigDir, ownerName, repoName, branchName)
-	return joinNameSegments(rendered)
+	repositoryName := repoName(sel.ConfigRepoSlug)
+	return joinNameSegments(repositoryName + "/" + nameComponent(branchSlug))
 }
 
-func repoSlugParts(repoSlug string) (string, string) {
-	cleaned := filepath.Clean(repoSlug)
-	repo := nameComponent(filepath.Base(cleaned))
-	owner := nameComponent(filepath.Base(filepath.Dir(cleaned)))
-	if owner == "" {
-		owner = "kesh"
-	}
-	return owner, repo
+func repoName(repoSlug string) string {
+	return nameComponent(filepath.Base(filepath.Clean(repoSlug)))
 }
 
 var unsafeNameChars = regexp.MustCompile(`[^A-Za-z0-9._/-]+`)
@@ -507,57 +494,6 @@ func joinNameSegments(value string) string {
 		parts[index] = nameComponent(part)
 	}
 	return strings.Join(parts, "/")
-}
-
-func renderSessionName(template, configDir, ownerName, repoName, branchName string) string {
-	remaining := template
-	var output strings.Builder
-	for {
-		start := strings.Index(remaining, "${")
-		if start < 0 {
-			output.WriteString(remaining)
-			return output.String()
-		}
-		output.WriteString(remaining[:start])
-		afterStart := remaining[start+2:]
-		end := strings.Index(afterStart, "}")
-		if end < 0 {
-			output.WriteString(remaining[start:])
-			return output.String()
-		}
-		reference := afterStart[:end]
-		switch {
-		case reference == "owner":
-			output.WriteString(ownerName)
-		case reference == "repo":
-			output.WriteString(repoName)
-		case reference == "branch":
-			output.WriteString(branchName)
-		case reference == "dir":
-			output.WriteString(dirName(configDir, 0))
-		case strings.HasPrefix(reference, "dir:"):
-			if depth, err := strconv.Atoi(strings.TrimPrefix(reference, "dir:")); err == nil {
-				output.WriteString(dirName(configDir, depth))
-			} else {
-				output.WriteString("${" + reference + "}")
-			}
-		default:
-			output.WriteString("${" + reference + "}")
-		}
-		remaining = afterStart[end+1:]
-	}
-}
-
-func dirName(configDir string, depth int) string {
-	dir := filepath.Clean(configDir)
-	for index := 0; index < depth; index++ {
-		next := filepath.Dir(dir)
-		if next == dir {
-			break
-		}
-		dir = next
-	}
-	return nameComponent(filepath.Base(dir))
 }
 
 // --- path/env helpers ---

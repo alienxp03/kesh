@@ -80,6 +80,9 @@ enabled, `Cmd+R` can fall back to `splits` and flatten the nested pane layout.
 ## Project configuration
 
 Run `kesh init` in a project directory to create a starter `.kesh.yaml`.
+Pane layouts are configured directly under each workspace; worktree-only setup
+(files, hooks, ports, and environment) belongs under that workspace's `worktree:`
+section.
 
 ## Keys
 

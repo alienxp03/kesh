@@ -36,9 +36,10 @@ func TestOpen_Feature_LaunchesLayoutOnExistingFolders(t *testing.T) {
 		"      - commands:",
 		"          - nvim",
 		"        focus: true",
-		"    hooks:",
-		"      post_create:",
-		"        - echo setup-done",
+		"    worktree:",
+		"      hooks:",
+		"        post_create:",
+		"          - false",
 		"",
 	}, "\n"))
 

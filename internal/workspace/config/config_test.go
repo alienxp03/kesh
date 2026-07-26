@@ -22,14 +22,14 @@ func TestProjectTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.WorktreeDir != "" || loaded.Terminal.SessionName != "" {
+	if loaded.Worktree.Dir != "" {
 		t.Fatalf("config = %#v", loaded)
 	}
 	if len(loaded.Workspaces) != 1 || loaded.Workspaces[0].Name != "window_name" || loaded.Workspaces[0].Repo != "." {
 		t.Fatalf("workspaces = %#v", loaded.Workspaces)
 	}
 	template := ProjectTemplate()
-	for _, want := range []string{"# worktree_dir: ~/workspace/worktrees", "# Kitty session name template:", "# terminal:", "#   session_name: \"${repo}/${branch}\"", "# files:", "# hooks:", "#   post_create:", "# randomize_ports:", "#       - PORT", "# set_env:", "#       API_URL:", "# panes:"} {
+	for _, want := range []string{"# worktree:", "#   dir: ~/workspace/worktrees", "#   defaults:", "#     files:", "#   files:", "#   hooks:", "#     post_create:", "#   randomize_ports:", "#         - PORT", "#   set_env:", "#         API_URL:", "# panes:"} {
 		if !strings.Contains(template, want) {
 			t.Fatalf("template missing %q:\n%s", want, template)
 		}
@@ -123,13 +123,12 @@ func TestLoadProjectConfig(t *testing.T) {
 	sourceRoot := filepath.Join(root, "source")
 	must(t, os.MkdirAll(sourceRoot, 0o755))
 	write(t, filepath.Join(sourceRoot, ".kesh.yaml"), strings.Join([]string{
-		"worktree_dir: ~/worktree",
-		"terminal:",
-		"  session_name: ${repo}/${branch}",
-		"defaults:",
-		"  files:",
-		"    copy:",
-		"      - .env",
+		"worktree:",
+		"  dir: ~/worktree",
+		"  defaults:",
+		"    files:",
+		"      copy:",
+		"        - .env",
 		"workspaces:",
 		"  - name: backend",
 		"    panes:",
@@ -142,21 +141,22 @@ func TestLoadProjectConfig(t *testing.T) {
 		"        split: horizontal",
 		"  - name: frontend",
 		"    repo: ../frontend",
-		"    files:",
-		"      symlink:",
-		"        - AGENTS.override.md",
-		"    hooks:",
-		"      post_create:",
-		"        - pnpm install",
-		"    randomize_ports:",
-		"      - file: .env.local",
-		"        vars:",
-		"          - PORT",
-		"          - APP_PORT",
-		"    set_env:",
-		"      - file: .env.local",
-		"        vars:",
-		"          API_URL: http://localhost:${backend:PORT}/api",
+		"    worktree:",
+		"      files:",
+		"        symlink:",
+		"          - AGENTS.override.md",
+		"      hooks:",
+		"        post_create:",
+		"          - pnpm install",
+		"      randomize_ports:",
+		"        - file: .env.local",
+		"          vars:",
+		"            - PORT",
+		"            - APP_PORT",
+		"      set_env:",
+		"        - file: .env.local",
+		"          vars:",
+		"            API_URL: http://localhost:${backend:PORT}/api",
 		"",
 	}, "\n"))
 
@@ -164,7 +164,7 @@ func TestLoadProjectConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.WorktreeDir != "~/worktree" || config.Terminal.SessionName != "${repo}/${branch}" {
+	if config.Worktree.Dir != "~/worktree" {
 		t.Fatalf("config = %#v", config)
 	}
 	if len(config.Workspaces) != 2 || config.Workspaces[0].Name != "backend" || config.Workspaces[1].Repo != "../frontend" {
@@ -182,28 +182,22 @@ func TestLoadProjectConfig(t *testing.T) {
 	assertSlice(t, files.Symlink, []string{"AGENTS.override.md"})
 	hooks := WorkspaceHooks(config, config.Workspaces[1])
 	assertSlice(t, hooks.PostCreate, []string{"pnpm install"})
-	randomizePorts := config.Workspaces[1].RandomizePorts
+	randomizePorts := config.Workspaces[1].Worktree.RandomizePorts
 	if len(randomizePorts) != 1 || randomizePorts[0].File != ".env.local" {
 		t.Fatalf("randomize ports = %#v", randomizePorts)
 	}
 	assertSlice(t, randomizePorts[0].Vars, []string{"PORT", "APP_PORT"})
-	setEnv := config.Workspaces[1].SetEnv
+	setEnv := config.Workspaces[1].Worktree.SetEnv
 	if len(setEnv) != 1 || setEnv[0].File != ".env.local" || setEnv[0].Vars["API_URL"] != "http://localhost:${backend:PORT}/api" {
 		t.Fatalf("set env = %#v", setEnv)
 	}
 }
 
-func TestLoadProjectConfigLegacyAliases(t *testing.T) {
+func TestLoadProjectConfigCommandsAlias(t *testing.T) {
 	root := t.TempDir()
 	sourceRoot := filepath.Join(root, "source")
 	must(t, os.MkdirAll(sourceRoot, 0o755))
 	write(t, filepath.Join(sourceRoot, ".kesh.yaml"), strings.Join([]string{
-		"files:",
-		"  copy:",
-		"    - .env",
-		"hooks:",
-		"  post_create:",
-		"    - mise use",
 		"workspaces:",
 		"  - name: backend",
 		"    commands:",
@@ -220,10 +214,6 @@ func TestLoadProjectConfigLegacyAliases(t *testing.T) {
 	if len(panes) != 1 || len(panes[0].Commands) != 1 || panes[0].Commands[0] != "nvim" {
 		t.Fatalf("panes = %#v", panes)
 	}
-	files := WorkspaceFiles(config, config.Workspaces[0])
-	assertSlice(t, files.Copy, []string{".env"})
-	hooks := WorkspaceHooks(config, config.Workspaces[0])
-	assertSlice(t, hooks.PostCreate, []string{"mise use"})
 }
 
 func TestLoadFileMissingAndEmpty(t *testing.T) {
@@ -273,11 +263,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	emptyWorkspaceEnv := filepath.Join(root, "empty-workspace-env.yaml")
 	singularCommand := filepath.Join(root, "singular-command.yaml")
 	bothPaneKeys := filepath.Join(root, "both-pane-keys.yaml")
-	bothDefaultFiles := filepath.Join(root, "both-default-files.yaml")
 	defaultHooks := filepath.Join(root, "default-hooks.yaml")
-	badTerminalSessionNameReference := filepath.Join(root, "bad-terminal-session-name-reference.yaml")
-	badTerminalSessionNameSyntax := filepath.Join(root, "bad-terminal-session-name-syntax.yaml")
-	badTerminalKey := filepath.Join(root, "bad-terminal-key.yaml")
 	badSplit := filepath.Join(root, "bad-split.yaml")
 	unsafeCopy := filepath.Join(root, "unsafe-copy.yaml")
 	unsafeRandomizePortFile := filepath.Join(root, "unsafe-randomize-port-file.yaml")
@@ -298,21 +284,17 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	write(t, emptyWorkspaceEnv, "workspaces:\n  - name: '---'\n")
 	write(t, singularCommand, "workspaces:\n  - name: app\n    panes:\n      - command: nvim\n")
 	write(t, bothPaneKeys, "workspaces:\n  - name: app\n    panes:\n      - commands:\n          - nvim\n    commands:\n      - commands:\n          - codex\n")
-	write(t, bothDefaultFiles, "defaults:\n  files:\n    copy:\n      - .env\nfiles:\n  copy:\n    - .env.local\n")
-	write(t, defaultHooks, "defaults:\n  hooks:\n    post_create:\n      - pnpm install\n")
-	write(t, badTerminalSessionNameReference, "terminal:\n  session_name: ${workspace}\n")
-	write(t, badTerminalSessionNameSyntax, "terminal:\n  session_name: ${branch\n")
-	write(t, badTerminalKey, "terminal:\n  name: app\n")
+	write(t, defaultHooks, "worktree:\n  defaults:\n    hooks:\n      post_create:\n        - pnpm install\n")
 	write(t, badSplit, "workspaces:\n  - name: app\n    panes:\n      - commands:\n          - nvim\n        split: diagonal\n")
-	write(t, unsafeCopy, "defaults:\n  files:\n    copy:\n      - ../.env\n")
-	write(t, unsafeRandomizePortFile, "workspaces:\n  - name: app\n    randomize_ports:\n      - file: ../.env\n        vars:\n          - PORT\n")
-	write(t, emptyRandomizePortVars, "workspaces:\n  - name: app\n    randomize_ports:\n      - file: .env\n")
-	write(t, badRandomizePortVar, "workspaces:\n  - name: app\n    randomize_ports:\n      - file: .env\n        vars:\n          - APP-PORT\n")
-	write(t, duplicateRandomizePortVar, "workspaces:\n  - name: app\n    randomize_ports:\n      - file: .env\n        vars:\n          - PORT\n          - PORT\n")
-	write(t, unsafeSetEnvFile, "workspaces:\n  - name: app\n    set_env:\n      - file: ../.env\n        vars:\n          URL: http://localhost:3000\n")
-	write(t, emptySetEnvVars, "workspaces:\n  - name: app\n    set_env:\n      - file: .env\n")
-	write(t, badSetEnvVar, "workspaces:\n  - name: app\n    set_env:\n      - file: .env\n        vars:\n          APP-URL: http://localhost:3000\n")
-	write(t, emptySetEnvTemplate, "workspaces:\n  - name: app\n    set_env:\n      - file: .env\n        vars:\n          URL: ''\n")
+	write(t, unsafeCopy, "worktree:\n  defaults:\n    files:\n      copy:\n        - ../.env\n")
+	write(t, unsafeRandomizePortFile, "workspaces:\n  - name: app\n    worktree:\n      randomize_ports:\n        - file: ../.env\n          vars:\n            - PORT\n")
+	write(t, emptyRandomizePortVars, "workspaces:\n  - name: app\n    worktree:\n      randomize_ports:\n        - file: .env\n")
+	write(t, badRandomizePortVar, "workspaces:\n  - name: app\n    worktree:\n      randomize_ports:\n        - file: .env\n          vars:\n            - APP-PORT\n")
+	write(t, duplicateRandomizePortVar, "workspaces:\n  - name: app\n    worktree:\n      randomize_ports:\n        - file: .env\n          vars:\n            - PORT\n            - PORT\n")
+	write(t, unsafeSetEnvFile, "workspaces:\n  - name: app\n    worktree:\n      set_env:\n        - file: ../.env\n          vars:\n            URL: http://localhost:3000\n")
+	write(t, emptySetEnvVars, "workspaces:\n  - name: app\n    worktree:\n      set_env:\n        - file: .env\n")
+	write(t, badSetEnvVar, "workspaces:\n  - name: app\n    worktree:\n      set_env:\n        - file: .env\n          vars:\n            APP-URL: http://localhost:3000\n")
+	write(t, emptySetEnvTemplate, "workspaces:\n  - name: app\n    worktree:\n      set_env:\n        - file: .env\n          vars:\n            URL: ''\n")
 
 	loadErrorContains(t, invalidYAML, "invalid YAML")
 	loadErrorContains(t, legacyCopy, "legacy key")
@@ -323,11 +305,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	loadErrorContains(t, emptyWorkspaceEnv, "at least one letter or digit")
 	loadErrorContains(t, singularCommand, "field command not found")
 	loadErrorContains(t, bothPaneKeys, "panes or commands")
-	loadErrorContains(t, bothDefaultFiles, "defaults.files or files")
-	loadErrorContains(t, defaultHooks, "defaults.hooks is not supported")
-	loadErrorContains(t, badTerminalSessionNameReference, "terminal.session_name")
-	loadErrorContains(t, badTerminalSessionNameSyntax, "terminal.session_name")
-	loadErrorContains(t, badTerminalKey, "unsupported terminal key")
+	loadErrorContains(t, defaultHooks, "worktree.defaults.hooks is not supported")
 	loadErrorContains(t, badSplit, "split")
 	loadErrorContains(t, unsafeCopy, `cannot contain ".."`)
 	loadErrorContains(t, unsafeRandomizePortFile, `cannot contain ".."`)
