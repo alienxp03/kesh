@@ -93,8 +93,9 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		selected := m.rows[m.cursor]
-		if selected.section != "" {
-			m.err = fmt.Errorf("select a project entry, not a worktree or window")
+		entry := m.entries[selected.entryIndex]
+		if selected.section != "" || selected.tabIndex >= 0 || entry.kind != "project" || entry.open {
+			m.err = fmt.Errorf("select an unopened project folder")
 			return m, nil
 		}
 		return m, m.beginLaunchLayout()

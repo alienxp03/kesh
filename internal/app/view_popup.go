@@ -89,6 +89,14 @@ func (m model) popupView(width int) string {
 	} else if m.mode == modeCreateSession {
 		title = fmt.Sprintf("Create session (%d tabs)", len(m.selected))
 		field = selectedStyle.Width(popupWidth - 6).Render(m.createValue + "█")
+		entries := m.selectedEntries()
+		if len(entries) > 0 {
+			lines := []string{dimStyle.Render("Projects:")}
+			for _, entry := range entries {
+				lines = append(lines, "  • "+entry.name)
+			}
+			field += "\n\n" + dimStyle.Render(strings.Join(lines, "\n"))
+		}
 		help = "Enter create  •  Esc cancel"
 	} else if m.mode == modeRename {
 		title = "Rename"

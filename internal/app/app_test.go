@@ -2758,6 +2758,20 @@ func TestSelectedHeaderIncludesCountAndProjectName(t *testing.T) {
 	}
 }
 
+func TestCreateSessionPopupListsSelectedProjects(t *testing.T) {
+	m := model{
+		entries:  []entry{{key: "/projects/api", name: "API"}, {key: "/projects/web", name: "Web"}},
+		selected: map[string]bool{"/projects/api": true, "/projects/web": true},
+	}
+	m.activateMode(modeCreateSession)
+	popup := ansi.Strip(m.popupView(80))
+	for _, want := range []string{"Create session (2 tabs)", "Projects:", "• API", "• Web"} {
+		if !strings.Contains(popup, want) {
+			t.Fatalf("create-session popup missing %q:\n%s", want, popup)
+		}
+	}
+}
+
 func TestSpaceTogglesTopLevelSelection(t *testing.T) {
 	m := model{entries: []entry{{key: "/projects/api", name: "API", kind: "project"}}, rows: []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -3563,6 +3577,18 @@ func TestTabNeverCyclesIntoWorktrees(t *testing.T) {
 	result := updated.(model)
 	if result.filter != filterWorktrees || result.worktreeFilterEntryIndex != 0 {
 		t.Fatalf("Tab inside Worktrees should be a no-op: filter=%d entry=%d", result.filter, result.worktreeFilterEntryIndex)
+	}
+}
+
+func TestLaunchLayoutRejectsOpenSessionRows(t *testing.T) {
+	m := model{
+		entries: []entry{{key: "/projects/repo", name: "repo", kind: "project", path: "/projects/repo", session: "repo", open: true}},
+		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
+	}
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	m = updated.(model)
+	if command != nil || m.mode != modeNormal || m.err == nil || !strings.Contains(m.err.Error(), "unopened project folder") {
+		t.Fatalf("o on open session = mode %d, command %v, err %v", m.mode, command != nil, m.err)
 	}
 }
 
