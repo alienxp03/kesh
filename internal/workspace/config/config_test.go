@@ -25,11 +25,11 @@ func TestProjectTemplate(t *testing.T) {
 	if loaded.Worktree.Dir != "" {
 		t.Fatalf("config = %#v", loaded)
 	}
-	if len(loaded.Workspaces) != 1 || loaded.Workspaces[0].Name != "window_name" || loaded.Workspaces[0].Repo != "." {
+	if len(loaded.Workspaces) != 1 || loaded.Workspaces[0].Name != "project" || loaded.Workspaces[0].Repo != "." {
 		t.Fatalf("workspaces = %#v", loaded.Workspaces)
 	}
 	template := ProjectTemplate()
-	for _, want := range []string{"# worktree:", "#   dir: ~/workspace/worktrees", "#   defaults:", "#     files:", "#   files:", "#   hooks:", "#     post_create:", "#   randomize_ports:", "#         - PORT", "#   set_env:", "#         API_URL:", "# panes:"} {
+	for _, want := range []string{"# worktree:", "#   dir: ~/workspace/worktrees", "#   defaults:", "#     files:", "#   files:", "#   hooks:", "#     post_create:", "#   randomize_ports:", "#         - PORT", "#   set_env:", "#         # ${workspace:file:VARIABLE} reads VARIABLE from that workspace's file.", "#         # The first component must match a workspace name above.", "#         API_URL: \"http://localhost:${project:.env.local:PORT}/api\"", "# panes:"} {
 		if !strings.Contains(template, want) {
 			t.Fatalf("template missing %q:\n%s", want, template)
 		}
@@ -47,6 +47,28 @@ func TestWriteProjectTemplateRefusesExistingConfig(t *testing.T) {
 	}
 	if _, err := WriteProjectTemplate(root); err == nil || !strings.Contains(err.Error(), "config already exists") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestWriteProjectTemplateUsesProjectDirectoryName(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "my-project")
+	must(t, os.MkdirAll(root, 0o755))
+	path, err := WriteProjectTemplate(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, want := range []string{
+		"  - name: my-project",
+		"API_URL: \"http://localhost:${my-project:.env.local:PORT}/api\"",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("generated template missing %q:\n%s", want, text)
+		}
 	}
 }
 
@@ -193,29 +215,6 @@ func TestLoadProjectConfig(t *testing.T) {
 	}
 }
 
-func TestLoadProjectConfigCommandsAlias(t *testing.T) {
-	root := t.TempDir()
-	sourceRoot := filepath.Join(root, "source")
-	must(t, os.MkdirAll(sourceRoot, 0o755))
-	write(t, filepath.Join(sourceRoot, ".kesh.yaml"), strings.Join([]string{
-		"workspaces:",
-		"  - name: backend",
-		"    commands:",
-		"      - commands:",
-		"          - nvim",
-		"",
-	}, "\n"))
-
-	config, err := LoadProject(sourceRoot, filepath.Join(root, "home"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	panes := WorkspacePanes(config.Workspaces[0])
-	if len(panes) != 1 || len(panes[0].Commands) != 1 || panes[0].Commands[0] != "nvim" {
-		t.Fatalf("panes = %#v", panes)
-	}
-}
-
 func TestLoadFileMissingAndEmpty(t *testing.T) {
 	root := t.TempDir()
 	config, err := LoadFile(filepath.Join(root, "missing.yaml"), filepath.Join(root, "home"))
@@ -262,7 +261,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	duplicateWorkspaceEnv := filepath.Join(root, "duplicate-workspace-env.yaml")
 	emptyWorkspaceEnv := filepath.Join(root, "empty-workspace-env.yaml")
 	singularCommand := filepath.Join(root, "singular-command.yaml")
-	bothPaneKeys := filepath.Join(root, "both-pane-keys.yaml")
+	workspaceCommands := filepath.Join(root, "workspace-commands.yaml")
 	defaultHooks := filepath.Join(root, "default-hooks.yaml")
 	badSplit := filepath.Join(root, "bad-split.yaml")
 	unsafeCopy := filepath.Join(root, "unsafe-copy.yaml")
@@ -283,7 +282,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	write(t, duplicateWorkspaceEnv, "workspaces:\n  - name: front-end\n  - name: front end\n")
 	write(t, emptyWorkspaceEnv, "workspaces:\n  - name: '---'\n")
 	write(t, singularCommand, "workspaces:\n  - name: app\n    panes:\n      - command: nvim\n")
-	write(t, bothPaneKeys, "workspaces:\n  - name: app\n    panes:\n      - commands:\n          - nvim\n    commands:\n      - commands:\n          - codex\n")
+	write(t, workspaceCommands, "workspaces:\n  - name: app\n    commands:\n      - commands:\n          - codex\n")
 	write(t, defaultHooks, "worktree:\n  defaults:\n    hooks:\n      post_create:\n        - pnpm install\n")
 	write(t, badSplit, "workspaces:\n  - name: app\n    panes:\n      - commands:\n          - nvim\n        split: diagonal\n")
 	write(t, unsafeCopy, "worktree:\n  defaults:\n    files:\n      copy:\n        - ../.env\n")
@@ -304,7 +303,7 @@ func TestLoadFileRejectsInvalidConfig(t *testing.T) {
 	loadErrorContains(t, duplicateWorkspaceEnv, "workspace env var")
 	loadErrorContains(t, emptyWorkspaceEnv, "at least one letter or digit")
 	loadErrorContains(t, singularCommand, "field command not found")
-	loadErrorContains(t, bothPaneKeys, "panes or commands")
+	loadErrorContains(t, workspaceCommands, "field commands not found")
 	loadErrorContains(t, defaultHooks, "worktree.defaults.hooks is not supported")
 	loadErrorContains(t, badSplit, "split")
 	loadErrorContains(t, unsafeCopy, `cannot contain ".."`)
