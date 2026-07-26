@@ -447,7 +447,7 @@ func TestRunPostCreateStopsOnFailure(t *testing.T) {
 		RepoRoot:     root,
 		WorktreePath: worktreePath,
 		PostCreate:   []string{"echo ok", "false", "echo later"},
-	}, logger, ShellRunnerFunc(func(_ context.Context, command string, cwd string, inherit bool) run.Result {
+	}, logger, ShellRunnerFunc(func(_ context.Context, command string, cwd string, _ bool) run.Result {
 		calls = append(calls, command+"@"+cwd)
 		if strings.Contains(command, "false") {
 			return run.Result{ExitCode: 1}

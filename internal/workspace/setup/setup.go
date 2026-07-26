@@ -840,33 +840,6 @@ func (logger Logger) prefix() string {
 	return logger.Prefix + ": "
 }
 
-func validateRelativePaths(values []string, key string, filePath string) error {
-	if err := validateNonEmpty(values, key, filePath); err != nil {
-		return err
-	}
-	for index, value := range values {
-		label := fmt.Sprintf("%s[%d]", key, index)
-		if filepath.IsAbs(value) || strings.ContainsRune(value, '\x00') {
-			return fmt.Errorf("invalid setup plan in %s: %s must be a safe relative path", filePath, label)
-		}
-		for _, segment := range strings.FieldsFunc(value, func(r rune) bool { return r == '/' || r == '\\' }) {
-			if segment == ".." {
-				return fmt.Errorf("invalid setup plan in %s: %s must be a safe relative path", filePath, label)
-			}
-		}
-	}
-	return nil
-}
-
-func validateNonEmpty(values []string, key string, filePath string) error {
-	for index, value := range values {
-		if strings.TrimSpace(value) == "" {
-			return fmt.Errorf("invalid setup plan in %s: %s[%d] must be a non-empty string", filePath, key, index)
-		}
-	}
-	return nil
-}
-
 func isWithin(root string, candidate string) bool {
 	relative, err := filepath.Rel(root, candidate)
 	return err == nil && (relative == "." || (!strings.HasPrefix(relative, "..") && !filepath.IsAbs(relative)))

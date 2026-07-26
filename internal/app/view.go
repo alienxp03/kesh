@@ -555,9 +555,10 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 	}
 	directoryField := entryDirectoryField(entry)
 	title := "Project"
-	if entry.kind == "workspace" {
+	switch entry.kind {
+	case "workspace":
 		title = "Workspace"
-	} else if entry.kind == "ssh" {
+	case "ssh":
 		title = "SSH"
 	}
 	fields := []detailField{

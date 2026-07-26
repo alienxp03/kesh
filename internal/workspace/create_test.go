@@ -112,12 +112,12 @@ func initGitRepo(t *testing.T, dir string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustRun(t, "git", "-C", dir, "init")
-	mustRun(t, "git", "-C", dir, "config", "user.name", "feature-tester")
-	mustRun(t, "git", "-C", dir, "config", "user.email", "tester@example.com")
+	mustRun(t, "-C", dir, "init")
+	mustRun(t, "-C", dir, "config", "user.name", "feature-tester")
+	mustRun(t, "-C", dir, "config", "user.email", "tester@example.com")
 	writeFile(t, filepath.Join(dir, "README"), "initial\n")
-	mustRun(t, "git", "-C", dir, "add", "README")
-	mustRun(t, "git", "-C", dir, "commit", "-m", "initial")
+	mustRun(t, "-C", dir, "add", "README")
+	mustRun(t, "-C", dir, "commit", "-m", "initial")
 }
 
 func assertWorktreeBranch(t *testing.T, repo, branch string) {
@@ -128,10 +128,10 @@ func assertWorktreeBranch(t *testing.T, repo, branch string) {
 	}
 }
 
-func mustRun(t *testing.T, name string, args ...string) {
+func mustRun(t *testing.T, args ...string) {
 	t.Helper()
-	if out, err := exec.Command(name, args...).CombinedOutput(); err != nil {
-		t.Fatalf("%s %s: %v\n%s", name, strings.Join(args, " "), err, out)
+	if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
 }
 

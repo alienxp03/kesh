@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/alienxp03/kesh/internal/config"
 	"github.com/alienxp03/kesh/internal/domain"
 	gitx "github.com/alienxp03/kesh/internal/git"
@@ -14,7 +16,6 @@ import (
 	"github.com/alienxp03/kesh/internal/state"
 	"github.com/alienxp03/kesh/internal/system"
 	wkc "github.com/alienxp03/kesh/internal/workspace/config"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // Run starts Kesh with the supplied command-line arguments. The command package
@@ -148,7 +149,6 @@ func savedSessionsPath() string     { return config.FromEnvironment().SavedSessi
 func savedSessionDirectory() string { return config.FromEnvironment().Sessions() }
 func pinShortcutsPath() string      { return config.FromEnvironment().PinShortcuts() }
 func kittyRunPath() string          { return config.FromEnvironment().KittyRun() }
-func configDirectory() string       { return config.FromEnvironment().ConfigDirectory }
 func configPath() string            { return config.FromEnvironment().File() }
 func namesPath() string             { return config.FromEnvironment().Names() }
 
@@ -310,10 +310,6 @@ func loadSavedSessions() (savedSessionStore, error) {
 
 func saveSavedSessions(store savedSessionStore) error {
 	return state.SaveSavedSessions(savedSessionsPath(), store)
-}
-
-func savedSessionForName(store savedSessionStore, sessionName string) (savedSessionRecord, bool) {
-	return state.SavedSessionForName(store, sessionName)
 }
 
 func savePins(pins pinStore) error {

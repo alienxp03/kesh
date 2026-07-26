@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
-	kittyx "github.com/alienxp03/kesh/internal/kitty"
-	"github.com/alienxp03/kesh/internal/system"
-	"github.com/alienxp03/kesh/internal/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"gopkg.in/yaml.v3"
+
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/system"
+	"github.com/alienxp03/kesh/internal/workspace"
 )
 
 func run(name string, args ...string) error {

@@ -1,0 +1,38 @@
+# Git pre-commit hooks for kesh.
+# Activated with `prek install` (or `pre-commit install`).
+# Works with prek (Rust) and the Python pre-commit runner.
+minimum_pre_commit_version: "3.2.0"
+
+# Git exports GIT_DIR/GIT_INDEX_FILE/etc. into the hook environment during
+# `git commit`. Without stripping them, any tool that spawns `git` (or `go`
+# with VCS stamping) inherits the wrong repo and breaks — notably the workspace
+# tests that run real `git worktree add` in temp dirs. `env -u` clears them.
+
+repos:
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: go fmt (golangci-lint)
+        description: Verify gofmt + goimports formatting.
+        entry: env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_QUARANTINE_PATH golangci-lint fmt
+        language: system
+        pass_filenames: false
+        types: [go]
+
+      - id: golangci-lint
+        name: golangci-lint
+        description: Run all enabled analyzers.
+        entry: env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_QUARANTINE_PATH golangci-lint run
+        language: system
+        pass_filenames: false
+        types: [go]
+        require_serial: true
+
+      - id: go-test
+        name: go test
+        description: Run the race-enabled test suite.
+        entry: env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_OBJECT_DIRECTORY -u GIT_ALTERNATE_OBJECT_DIRECTORIES -u GIT_QUARANTINE_PATH go test -race ./...
+        language: system
+        pass_filenames: false
+        types: [go]
+        stages: [pre-commit]

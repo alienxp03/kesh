@@ -97,7 +97,7 @@ func (m *model) beginClose() {
 	}
 	selected := m.rows[m.cursor]
 	entry := m.entries[selected.entryIndex]
-	if selected.tabIndex < 0 && len(entry.tabs) == 0 && !(entry.saved && !entry.open) {
+	if selected.tabIndex < 0 && len(entry.tabs) == 0 && (!entry.saved || entry.open) {
 		m.err = fmt.Errorf("%s is not open", entry.name)
 		return
 	}

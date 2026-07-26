@@ -9,12 +9,13 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/sahilm/fuzzy"
+
 	"github.com/alienxp03/kesh/internal/catalog"
 	"github.com/alienxp03/kesh/internal/domain"
 	gitx "github.com/alienxp03/kesh/internal/git"
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/sahilm/fuzzy"
 )
 
 func (m *model) expandOrDescend() {
@@ -496,10 +497,6 @@ func (m model) matchesFilter(e entry) bool {
 	}
 }
 
-func entryCategoryRank(e entry) int {
-	return domain.EntryCategoryRank(domain.EntryOrder{Saved: e.saved, Kind: e.kind})
-}
-
 // sortEntries orders entries: open sessions first (most recently focused), then
 // by category (saved → source projects → SSH), stable within each group by
 // discovery order. Used after the initial load and again when zoxide projects
@@ -531,7 +528,7 @@ func buildZoxideEntries(output []byte, ctx zoxideMergeContext) []entry {
 // unmergeSessionSources keeps every single-project session distinct from the
 // zoxide source it originated from. The source must remain discoverable so a
 // second session can be created from the same repository.
-func unmergeRenamedSessionSources(entries []entry, names nameStore, ctx *zoxideMergeContext) {
+func unmergeRenamedSessionSources(entries []entry, _ nameStore, ctx *zoxideMergeContext) {
 	for index := range entries {
 		entry := &entries[index]
 		if entry.path == "" || entry.session == "" || entry.kind != "project" || !entry.open || entry.saved {

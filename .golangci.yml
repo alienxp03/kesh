@@ -1,0 +1,49 @@
+# golangci-lint v2 configuration — balanced defaults for kesh.
+# `make fmt` applies formatters; `make lint` runs the analyzers.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  # Keep the curated standard set (govet, errcheck, staticcheck, ineffassign,
+  # unused, gosimple, typecheck, ...) and add high-value, low-noise analyzers.
+  default: standard
+  enable:
+    - bodyclose
+    - dupword
+    - gocritic
+    - misspell
+    - nakedret
+    - revive
+    - unconvert
+    - unparam
+  settings:
+    gocritic:
+      disabled-checks:
+        - ifElseChain      # opinionated; churns TUI rendering for little value
+        - singleCaseSwitch # style preference; single-case switch is fine
+        - offBy1           # heuristic; false positives in test assertions
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - std-error-handling
+    paths:
+      - "docs"
+      - "testdata"
+      - "third_party$"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/alienxp03/kesh
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

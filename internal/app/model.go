@@ -4,15 +4,15 @@ import (
 	"regexp"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/alienxp03/kesh/internal/domain"
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	"github.com/alienxp03/kesh/internal/state"
 	"github.com/alienxp03/kesh/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
-type kittyState = kittyx.State
 type kittyWindow = kittyx.Window
 
 type windowItem struct {
@@ -573,8 +573,6 @@ var (
 	prMergedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("141")).Bold(true)
 	prClosedStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	sshStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	piStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Bold(true)
-	codexStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
 	errorStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	ansiPattern       = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
 	backgroundSGR     = regexp.MustCompile(`\x1b\[(48(:[0-9]*)+|48(;[0-9]*)+|49)m`)

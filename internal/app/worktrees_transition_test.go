@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/alienxp03/kesh/internal/workspace"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/alienxp03/kesh/internal/workspace"
 )
 
 func TestWorktreeSearchAndReturnToOriginatingFilter(t *testing.T) {
@@ -58,7 +59,7 @@ func TestWorktreeCreateRunsRecipeAndRefreshesPrimarySurface(t *testing.T) {
 
 	var captured workspace.CreateOptions
 	original := worktreeCreate
-	worktreeCreate = func(ctx context.Context, opts workspace.CreateOptions) error {
+	worktreeCreate = func(_ context.Context, opts workspace.CreateOptions) error {
 		captured = opts
 		return nil
 	}
@@ -133,7 +134,7 @@ func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
 
 	var captured workspace.OpenOptions
 	original := workspaceOpen
-	workspaceOpen = func(ctx context.Context, opts workspace.OpenOptions) error {
+	workspaceOpen = func(_ context.Context, opts workspace.OpenOptions) error {
 		captured = opts
 		return nil
 	}

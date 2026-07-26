@@ -46,7 +46,7 @@ func Check(ctx context.Context, env map[string]string, runner run.Runner) error 
 		return err
 	}
 	if !reachable {
-		return fmt.Errorf("Kitty remote control is unavailable; run inside Kitty or set KITTY_LISTEN_ON")
+		return fmt.Errorf("kitty remote control is unavailable; run inside Kitty or set KITTY_LISTEN_ON")
 	}
 	return nil
 }

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/alienxp03/kesh/internal/catalog"
 	"github.com/alienxp03/kesh/internal/config"
 	"github.com/alienxp03/kesh/internal/domain"
@@ -22,7 +24,6 @@ import (
 	"github.com/alienxp03/kesh/internal/state"
 	"github.com/alienxp03/kesh/internal/system"
 	"github.com/alienxp03/kesh/internal/workspace"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func worktreeDirectoryName(branch string) string {
@@ -365,14 +366,6 @@ func addWorktreeForBranch(repository gitx.Repository, worktreePath, branch strin
 	}
 	return repository.CreateBranchWorktree(worktreePath, branch)
 }
-func (m *model) getDefaultBranch(repoPath string) (string, error) {
-	branch, err := (gitx.Repository{Path: repoPath}).OriginDefaultBranch()
-	if err != nil {
-		return "", fmt.Errorf("failed to determine default branch: %w", err)
-	}
-	return branch, nil
-}
-
 func getRepoOwner(repoPath string) (owner, repo string) {
 	remoteURL, err := (gitx.Repository{Path: repoPath}).RemoteURL()
 	if err != nil {
@@ -769,14 +762,6 @@ func mergedPullRequestHeads(dir string) map[string]map[string]bool {
 	return heads
 }
 
-func commandError(action string, output []byte, err error) error {
-	message := strings.TrimSpace(string(output))
-	if message != "" {
-		err = fmt.Errorf("%s: %s", err, message)
-	}
-	return fmt.Errorf("%s: %w", action, err)
-}
-
 func (m *model) runRemoveMergedWorktrees(force bool) tea.Cmd {
 	selected := m.closeRow
 	dir := m.worktreeDirectory(selected)
@@ -1072,6 +1057,7 @@ func (m model) resolveRenameTarget(target renameTarget) (entryIndex, tabIndex, w
 	return entryIndex, -1, -1
 }
 
+//nolint:unparam // tab/window are intentionally -1: entry-level resolution. The triple mirrors resolveWorktreeTarget so all resolvers share one coordinate shape consumed uniformly by callers.
 func (m model) resolveWorktreeDirectory(directory string) (entryIndex, tabIndex, windowIndex int) {
 	for entryIndex := range m.entries {
 		if m.entries[entryIndex].path == directory {

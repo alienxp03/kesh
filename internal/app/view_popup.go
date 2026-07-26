@@ -154,9 +154,6 @@ func (m model) popupView(width int) string {
 		} else if launchAction {
 			pathsField = "\n\n" + dimStyle.Render("No .kesh.yaml — Enter opens the folder directly.")
 		} else if len(m.worktreePaths) > 0 {
-			if m.worktreeRecipe != nil {
-				pathsField = "\n\n" + dimStyle.Render("Mode: none (native Kesh worktree)")
-			}
 			label := "Preview"
 			if len(m.worktreePaths) > 1 {
 				label = fmt.Sprintf("Preview (%d)", len(m.worktreePaths))

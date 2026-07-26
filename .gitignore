@@ -1,0 +1,19 @@
+# Binaries
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Coverage
+coverage.txt
+coverage.html
+
+# Local dev binary (see Makefile `build`)
+/kesh-dev
+
+# Editor / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

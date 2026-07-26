@@ -9,9 +9,10 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/alienxp03/kesh/internal/domain"
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func runRename(kitty string, e entry, selected row, title string, names nameStore) tea.Cmd {
@@ -200,7 +201,7 @@ func workspaceForegroundCommands(e entry) []string {
 	return commands
 }
 
-func runUnsave(kitty, zoxide string, e entry, entryIndex int) tea.Cmd {
+func runUnsave(kitty, zoxide string, e entry, _ int) tea.Cmd {
 	return func() tea.Msg {
 		if err := deleteSavedSession(e); err != nil {
 			return closeMsg{err: err}

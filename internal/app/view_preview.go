@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alienxp03/kesh/internal/workspace"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/alienxp03/kesh/internal/workspace"
 )
 
 func prCheckoutPreview(value, branch, selectedRepoPath, repoPath string, newClone bool, cloneRoot, worktreeRoot string, fieldWidth int) string {
@@ -47,23 +48,6 @@ func prCheckoutPreview(value, branch, selectedRepoPath, repoPath string, newClon
 	worktreePath := displayPath(filepath.Join(root, owner, repo, worktreeDirectoryName(branch)), os.Getenv("HOME"))
 	lines = append(lines, "Worktree path: "+worktreePath+rootNote)
 	return renderPreviewLines(lines, fieldWidth)
-}
-
-func sessionPreview(recipe *workspace.Config, repoPath, branch string) string {
-	template := recipe.Terminal.SessionName
-	if template == "" {
-		template = "${repo}/${branch}"
-	}
-	repo := filepath.Base(repoPath)
-	branch = strings.NewReplacer("/", "-", " ", "-").Replace(branch)
-	rendered := strings.ReplaceAll(strings.ReplaceAll(template, "${repo}", repo), "${branch}", branch)
-	var keep []string
-	for _, segment := range strings.Split(rendered, "/") {
-		if strings.TrimSpace(segment) != "" {
-			keep = append(keep, segment)
-		}
-	}
-	return strings.Join(keep, "/")
 }
 
 func paneLabel(pane workspace.PaneCommand) string {

@@ -7,10 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/alienxp03/kesh/internal/catalog"
 	gitx "github.com/alienxp03/kesh/internal/git"
 	githubx "github.com/alienxp03/kesh/internal/github"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func repositoryName(repository string) (string, error) {

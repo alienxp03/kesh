@@ -5,8 +5,9 @@ import (
 	"strings"
 	"time"
 
-	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	tea "github.com/charmbracelet/bubbletea"
+
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
 )
 
 func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {

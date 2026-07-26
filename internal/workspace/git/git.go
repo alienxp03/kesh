@@ -699,20 +699,6 @@ func uniqueSorted(values []string) []string {
 	return unique
 }
 
-func ensureBranchMerged(ctx context.Context, repoRoot string, branch string, runner run.Runner) error {
-	status, err := branchRemovalStatus(ctx, repoRoot, branch, runner)
-	if err != nil {
-		return err
-	}
-	if !status.Merged {
-		if status.Reason != "" {
-			return errors.New(status.Reason)
-		}
-		return unmergedBranchError(branch)
-	}
-	return nil
-}
-
 type branchRemovalMergeStatus struct {
 	Merged      bool
 	ForceDelete bool
