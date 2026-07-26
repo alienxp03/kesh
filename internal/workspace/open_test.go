@@ -90,13 +90,32 @@ func TestOpen_Feature_LaunchesLayoutOnExistingFolders(t *testing.T) {
 func assertNoExtraWorktree(t *testing.T, repo string) {
 	t.Helper()
 	out := mustOutput(t, "git", "-C", repo, "worktree", "list")
-	count := strings.Count(out, "\n")
-	if count != 1 && !strings.HasSuffix(strings.TrimSpace(out), repo) {
-		// "worktree list" prints one line per worktree. A single line whose
-		// path is the repo itself means no extra worktree was created.
-		lines := strings.Count(strings.TrimSpace(out), "\n") + 1
-		if lines != 1 {
-			t.Fatalf("repo %s has unexpected worktrees:\n%s", filepath.Base(repo), out)
-		}
+	lines := strings.Count(strings.TrimSpace(out), "\n") + 1
+	if lines != 1 {
+		t.Fatalf("repo %s has unexpected worktrees:\n%s", filepath.Base(repo), out)
+	}
+}
+
+// TestSessionNameForOpen covers the launch session-name override: a non-empty
+// user name wins (sanitized); empty or sanitized-away falls back to the derived
+// repo name so the session always has a valid identifier.
+func TestSessionNameForOpen(t *testing.T) {
+	sel := selection{ConfigRepoSlug: "owner/repo"}
+
+	if got := sessionNameForOpen(sel, ""); got != "repo" {
+		t.Fatalf("empty requested = %q, want derived %q", got, "repo")
+	}
+	if got := sessionNameForOpen(sel, "   "); got != "repo" {
+		t.Fatalf("blank requested = %q, want derived %q", got, "repo")
+	}
+	if got := sessionNameForOpen(sel, "my session"); got != "my-session" {
+		t.Fatalf("user name not sanitized = %q, want %q", got, "my-session")
+	}
+	if got := sessionNameForOpen(sel, "feat/work"); got != "feat/work" {
+		t.Fatalf("user name with slash = %q, want %q", got, "feat/work")
+	}
+	// A name made only of unsafe chars sanitizes to nothing -> derived fallback.
+	if got := sessionNameForOpen(sel, "!!!"); got != "repo" {
+		t.Fatalf("sanitized-away = %q, want derived %q", got, "repo")
 	}
 }

@@ -2739,7 +2739,7 @@ func worktreeSelectedTestRecipe(t *testing.T) *workspace.Config {
 	return &recipe
 }
 
-func TestWorktreeTabCyclesNativeTemplateAndWorkspaces(t *testing.T) {
+func TestWorktreeTabCyclesPlainAndWorkspaces(t *testing.T) {
 	recipe := worktreeSelectedTestRecipe(t)
 	m := model{modeState: modeState{
 		mode:               modeWorktreeCreate,
@@ -2747,33 +2747,22 @@ func TestWorktreeTabCyclesNativeTemplateAndWorkspaces(t *testing.T) {
 	}}
 	m.ensureWorktreeSelection()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab}) // native -> template
-	m = updated.(model)
-	if m.worktreeRecipeMode != "selected" || m.worktreeCustomWorkspaces {
-		t.Fatalf("expected template default selected mode, got mode=%q custom=%v", m.worktreeRecipeMode, m.worktreeCustomWorkspaces)
-	}
-	if names := m.selectedWorkspaceNames(); !reflect.DeepEqual(names, []string{"backend", "worker"}) {
-		t.Fatalf("template defaults = %v, want [backend worker]", names)
-	}
-
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab}) // template -> workspaces
+	// Plain -> Workspaces. With >1 workspace the checklist is editable and
+	// defaults honor workspace_mode "selected" + default_workspaces.
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	m = updated.(model)
 	if m.worktreeRecipeMode != "selected" || !m.worktreeCustomWorkspaces {
-		t.Fatalf("expected workspace override, got mode=%q custom=%v", m.worktreeRecipeMode, m.worktreeCustomWorkspaces)
+		t.Fatalf("expected Workspaces mode, got mode=%q custom=%v", m.worktreeRecipeMode, m.worktreeCustomWorkspaces)
 	}
-	if names := m.selectedWorkspaceNames(); !reflect.DeepEqual(names, []string{"backend", "frontend", "worker"}) {
-		t.Fatalf("workspace selection = %v, want every workspace", names)
+	if names := m.selectedWorkspaceNames(); !reflect.DeepEqual(names, []string{"backend", "worker"}) {
+		t.Fatalf("Workspaces defaults = %v, want [backend worker]", names)
 	}
 
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab}) // workspaces -> template
-	m = updated.(model)
-	if m.worktreeRecipeMode != "selected" || m.worktreeCustomWorkspaces {
-		t.Fatalf("expected template after Shift+Tab, got mode=%q custom=%v", m.worktreeRecipeMode, m.worktreeCustomWorkspaces)
-	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab}) // template -> native
+	// Workspaces -> Plain.
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	m = updated.(model)
 	if m.worktreeRecipeMode != "none" {
-		t.Fatalf("expected native after Shift+Tab, got %q", m.worktreeRecipeMode)
+		t.Fatalf("expected Plain after Shift+Tab, got %q", m.worktreeRecipeMode)
 	}
 }
 
@@ -2816,6 +2805,45 @@ func TestWorktreeSelectedSpaceAndEnterGuard(t *testing.T) {
 	}
 	if m.worktreeBusy {
 		t.Fatalf("Enter should not start creation with no selection")
+	}
+}
+
+func TestLaunchLayoutGuardsEmptyWorkspaceSelection(t *testing.T) {
+	recipe := worktreeSelectedTestRecipe(t)
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+	if err := os.Mkdir(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := model{
+		filter:                   filterWorktrees,
+		worktreeFilterEntryIndex: 0,
+		entries:                  []entry{{key: repo, name: "repo", path: repo, kind: "project"}},
+		modeState: modeState{
+			mode: modeWorktreeCreate,
+			worktreeCreateForm: &worktreeCreateForm{
+				launchOnFolder:           true,
+				worktreeRecipe:           recipe,
+				worktreeRecipeMode:       "selected",
+				worktreeCustomWorkspaces: true,
+			},
+		},
+	}
+	m.ensureWorktreeSelection()
+	// Toggle every workspace off; Enter must guard without launching.
+	for i := range m.worktreeSelected {
+		m.worktreeSelected[i] = false
+	}
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if m.err == nil || !strings.Contains(m.err.Error(), "select at least one workspace") {
+		t.Fatalf("expected guard error, got err=%v", m.err)
+	}
+	if m.worktreeBusy {
+		t.Fatalf("Enter should not launch with no selection")
+	}
+	if cmd != nil {
+		t.Fatalf("no command should dispatch on empty selection, got %v", cmd)
 	}
 }
 

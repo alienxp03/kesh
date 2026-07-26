@@ -108,15 +108,15 @@ func (m model) popupView(width int) string {
 		if m.worktreeBranch != "" && !m.worktreeBusy {
 			cursor = ""
 		}
-		// Launch mode has no branch: show the target folder instead so the
-		// popup still has a header line while the recipe loads.
+		// Worktree-create types a branch; launch types a Kitty session name
+		// (empty default, auto-derived on Enter if left blank).
 		branchField := dimStyle.Render("Branch: ") + focusStyle.Render(m.worktreeBranch+cursor)
 		if launchAction {
-			target := ""
-			if entries := m.worktreeEntries(); len(entries) == 1 {
-				target = entries[0].path
+			sessionCursor := "█"
+			if m.worktreeSessionName != "" && !m.worktreeBusy {
+				sessionCursor = ""
 			}
-			branchField = dimStyle.Render("Folder: ") + focusStyle.Render(displayPath(target, os.Getenv("HOME")))
+			branchField = dimStyle.Render("Session: ") + focusStyle.Render(m.worktreeSessionName+sessionCursor)
 		}
 		fieldWidth := popupWidth - 6
 
@@ -133,11 +133,20 @@ func (m model) popupView(width int) string {
 				repoPath = entries[0].path
 			}
 			preview := ""
-			if !launchAction && m.worktreeRecipeMode == "none" {
-				preview = dimStyle.Render("Creates a simple Kesh worktree.")
-			} else {
-				preview = dimStyle.Render("Template: "+displayPath(m.worktreeRecipePath, os.Getenv("HOME"))) + "\n" +
-					dimStyle.Render("Layout: "+sessionPreview(m.worktreeRecipe, repoPath, m.worktreeBranch)) + "\n"
+			switch {
+			case launchAction && m.worktreeRecipeMode == "none":
+				preview = dimStyle.Render("Opens the folder as a single window (no layout).")
+			case !launchAction && m.worktreeRecipeMode == "none":
+				preview = dimStyle.Render("Creates a plain Kesh worktree.")
+			default:
+				preview = dimStyle.Render("Template: " + displayPath(m.worktreeRecipePath, os.Getenv("HOME")))
+				// Worktree-create shows the auto-derived session name (from the
+				// branch); launch types its own session name at the top of the
+				// popup, so don't repeat it here.
+				if !launchAction {
+					preview += "\n" + dimStyle.Render("Session: ") + focusStyle.Render(sessionPreview(m.worktreeRecipe, repoPath, m.worktreeBranch))
+				}
+				preview += "\n"
 				selected := m.worktreePreviewSelection()
 				preview += m.renderWorktreeChecklist(selected, m.worktreeCustomWorkspaces)
 				layout := layoutPreview(m.worktreeRecipe, m.worktreeRecipePath, m.worktreeRecipeMode, previewWidth, selected)

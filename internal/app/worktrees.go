@@ -65,13 +65,15 @@ func runWktreeNew(recipePath, mode, branch string, selected []string) tea.Cmd {
 // runLaunchLayout drives the no-worktree launch: it opens the .kesh.yaml
 // layout against each selected workspace's existing folder through the
 // in-process workspace package. Kesh owns the workspace picker; refresh
-// afterward reuses the worktreeMsg completion path.
-func runLaunchLayout(cwd, mode string, selected []string) tea.Cmd {
+// afterward reuses the worktreeMsg completion path. sessionName overrides the
+// Kitty session name (empty defers to the auto-derived name).
+func runLaunchLayout(cwd, mode, sessionName string, selected []string) tea.Cmd {
 	return func() tea.Msg {
 		err := workspaceOpen(context.Background(), workspace.OpenOptions{
-			Cwd:      cwd,
-			Mode:     mode,
-			Selected: selected,
+			Cwd:        cwd,
+			Mode:       mode,
+			Selected:   selected,
+			SessionName: sessionName,
 		})
 		return worktreeMsg{err: err}
 	}
@@ -511,8 +513,9 @@ func (m model) confirmLaunchLayout() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.err = nil
-	if m.worktreeRecipe == nil {
-		// No .kesh.yaml: degrade to opening the folder session directly.
+	if m.worktreeRecipe == nil || m.worktreeRecipeMode == "none" {
+		// No .kesh.yaml, or Plain mode selected: open the folder as a single
+		// window without launching the recipe layout.
 		entry := entries[0]
 		m.cancelMode()
 		return m, func() tea.Msg {
@@ -530,7 +533,7 @@ func (m model) confirmLaunchLayout() (tea.Model, tea.Cmd) {
 		}
 	}
 	m.worktreeBusy = true
-	return m, runLaunchLayout(entries[0].path, mode, selected)
+	return m, runLaunchLayout(entries[0].path, mode, m.worktreeSessionName, selected)
 }
 
 func prStatusCachePath() string {

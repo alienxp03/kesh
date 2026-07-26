@@ -26,6 +26,9 @@ type OpenOptions struct {
 	Mode string
 	// Selected names the workspaces to launch when Mode is ModeSelected.
 	Selected []string
+	// SessionName overrides the Kitty session name. Empty defers to the
+	// auto-derived name (recipe template, or the repo name).
+	SessionName string
 	// Env is the process environment used for Kitty remote control and cache
 	// resolution. Nil falls back to the current process environment.
 	Env map[string]string
@@ -81,7 +84,7 @@ func Open(ctx context.Context, opts OpenOptions) error {
 	windows := openWindows(folders)
 	_, err = kitty.OpenLayout(ctx, layout.OpenOptions{
 		Mode:        layout.ModeWindow,
-		SessionName: sessionNameOpen(sel),
+		SessionName: sessionNameForOpen(sel, opts.SessionName),
 		Windows:     windows,
 		Env:         opts.Env,
 		CacheDir:    cacheDir(opts.Env),
@@ -202,4 +205,20 @@ func sessionNameOpen(sel selection) string {
 		}
 	}
 	return joinNameSegments(strings.Join(kept, "/"))
+}
+
+// sessionNameForOpen picks the Kitty session name: a non-empty caller-supplied
+// name wins (sanitized), otherwise the auto-derived name from sessionNameOpen.
+// A supplied name that sanitizes away to nothing falls back to the derived name
+// so the session file always has a valid identifier.
+func sessionNameForOpen(sel selection, requested string) string {
+	trimmed := strings.TrimSpace(requested)
+	if trimmed == "" {
+		return sessionNameOpen(sel)
+	}
+	sanitized := joinNameSegments(trimmed)
+	if sanitized == "" {
+		return sessionNameOpen(sel)
+	}
+	return sanitized
 }

@@ -216,18 +216,10 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 	case "tab", "shift+tab":
 		if m.worktreeRecipe != nil {
-			modes := []string{"template"}
-			if len(m.worktreeRecipe.Workspaces) > 1 {
-				modes = append(modes, "workspaces")
-			}
-			if !m.launchOnFolder {
-				modes = append([]string{"native"}, modes...)
-			}
-			current := "template"
+			modes := []string{"native", "workspaces"}
+			current := "workspaces"
 			if m.worktreeRecipeMode == "none" {
 				current = "native"
-			} else if m.worktreeCustomWorkspaces {
-				current = "workspaces"
 			}
 			index := 0
 			for i, mode := range modes {
@@ -245,15 +237,14 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "native":
 				m.worktreeRecipeMode = "none"
 				m.worktreeCustomWorkspaces = false
-			case "template":
-				m.worktreeRecipeMode = m.worktreeRecipe.WorkspaceMode
-				m.worktreeCustomWorkspaces = false
 			case "workspaces":
-				m.worktreeRecipeMode = "selected"
-				m.worktreeCustomWorkspaces = true
-				m.worktreeSelected = make([]bool, len(m.worktreeRecipe.Workspaces))
-				for i := range m.worktreeSelected {
-					m.worktreeSelected[i] = true
+				if len(m.worktreeRecipe.Workspaces) > 1 {
+					m.worktreeRecipeMode = "selected"
+					m.worktreeCustomWorkspaces = true
+					m.ensureWorktreeSelection()
+				} else {
+					m.worktreeRecipeMode = m.worktreeRecipe.WorkspaceMode
+					m.worktreeCustomWorkspaces = false
 				}
 			}
 		}
@@ -288,15 +279,27 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.validateWorktreeBranch()
 	case "backspace":
-		runes := []rune(m.worktreeBranch)
-		if len(runes) > 0 {
-			m.worktreeBranch = string(runes[:len(runes)-1])
-			m.worktreePaths = m.calculateWorktreePaths()
-			m.err = nil
+		if m.launchOnFolder {
+			runes := []rune(m.worktreeSessionName)
+			if len(runes) > 0 {
+				m.worktreeSessionName = string(runes[:len(runes)-1])
+				m.err = nil
+			}
+		} else {
+			runes := []rune(m.worktreeBranch)
+			if len(runes) > 0 {
+				m.worktreeBranch = string(runes[:len(runes)-1])
+				m.worktreePaths = m.calculateWorktreePaths()
+				m.err = nil
+			}
 		}
 	case "ctrl+u":
-		m.worktreeBranch = ""
-		m.worktreePaths = m.calculateWorktreePaths()
+		if m.launchOnFolder {
+			m.worktreeSessionName = ""
+		} else {
+			m.worktreeBranch = ""
+			m.worktreePaths = m.calculateWorktreePaths()
+		}
 		m.err = nil
 	default:
 		if m.worktreeCustomWorkspaces && key == " " && len(m.worktreeSelected) > 0 {
@@ -304,8 +307,12 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if len(msg.Runes) > 0 && !msg.Alt && !msg.Paste {
-			m.worktreeBranch += string(msg.Runes)
-			m.worktreePaths = m.calculateWorktreePaths()
+			if m.launchOnFolder {
+				m.worktreeSessionName += string(msg.Runes)
+			} else {
+				m.worktreeBranch += string(msg.Runes)
+				m.worktreePaths = m.calculateWorktreePaths()
+			}
 			m.err = nil
 		}
 	}

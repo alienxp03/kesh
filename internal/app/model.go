@@ -401,6 +401,9 @@ type worktreeCreateForm struct {
 	// project's existing folders (no worktree). It hides the branch field and
 	// redirects Enter to runLaunchLayout.
 	launchOnFolder bool
+	// worktreeSessionName is the user-typed Kitty session name in launch mode.
+	// Empty falls back to an auto-derived name.
+	worktreeSessionName string
 }
 
 type repoIdentity struct {

@@ -56,7 +56,14 @@ func sessionPreview(recipe *workspace.Config, repoPath, branch string) string {
 	}
 	repo := filepath.Base(repoPath)
 	branch = strings.NewReplacer("/", "-", " ", "-").Replace(branch)
-	return strings.ReplaceAll(strings.ReplaceAll(template, "${repo}", repo), "${branch}", branch)
+	rendered := strings.ReplaceAll(strings.ReplaceAll(template, "${repo}", repo), "${branch}", branch)
+	var keep []string
+	for _, segment := range strings.Split(rendered, "/") {
+		if strings.TrimSpace(segment) != "" {
+			keep = append(keep, segment)
+		}
+	}
+	return strings.Join(keep, "/")
 }
 
 func paneLabel(pane workspace.PaneCommand) string {
@@ -245,24 +252,16 @@ func renderPreviewLines(lines []string, fieldWidth int) string {
 // worktree form is open. Tab still cycles these choices so branch entry remains
 // the primary keyboard focus.
 func (m model) worktreeModeMenuView(width int) string {
-	active := "template"
+	active := "workspaces"
 	if m.worktreeRecipeMode == "none" {
 		active = "native"
-	} else if m.worktreeCustomWorkspaces {
-		active = "workspaces"
 	}
 	modes := []struct {
 		value string
 		label string
 	}{
-		{"native", "Simple"},
-		{"template", "Template"},
-	}
-	if len(m.worktreeRecipe.Workspaces) > 1 {
-		modes = append(modes, struct {
-			value string
-			label string
-		}{"workspaces", "Workspaces"})
+		{"native", "Plain"},
+		{"workspaces", "Workspaces"},
 	}
 
 	lines := []string{dimStyle.Render("MODE")}

@@ -264,7 +264,16 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.worktreeRecipePath = msg.recipePath
 		m.worktreeRepositories = msg.repositories
 		if msg.recipe != nil {
-			m.worktreeRecipeMode = msg.recipe.WorkspaceMode
+			// Workspaces is the single recipe-honoring mode. With more than
+			// one workspace it shows an editable checklist (mode "selected");
+			// otherwise there is nothing to toggle, so defer to the recipe.
+			if len(msg.recipe.Workspaces) > 1 {
+				m.worktreeRecipeMode = "selected"
+				m.worktreeCustomWorkspaces = true
+			} else {
+				m.worktreeRecipeMode = msg.recipe.WorkspaceMode
+				m.worktreeCustomWorkspaces = false
+			}
 			m.ensureWorktreeSelection()
 		}
 		return m, nil

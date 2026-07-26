@@ -190,9 +190,12 @@ func loadRecipe(path string) (*wkc.Config, string, error) {
 }
 
 // ensureWorktreeSelection initializes (or resizes) the per-workspace toggle
-// state used by "selected" mode. It defaults to the recipe's default_workspaces
-// when configured, otherwise every workspace on. An existing selection of the
-// right size is preserved, so tabbing away and back keeps the user's picks.
+// state used by Workspaces mode. The initial selection mirrors what the old
+// Template mode would have launched: workspace_mode "all" selects every
+// workspace, "selected" selects default_workspaces (every workspace when none
+// are configured), and "single" (the default) selects only the first. An
+// existing selection of the right size is preserved, so tabbing away and back
+// keeps the user's picks.
 func (m *model) ensureWorktreeSelection() {
 	if m.worktreeRecipe == nil {
 		m.worktreeSelected = nil
@@ -213,11 +216,24 @@ func (m *model) ensureWorktreeSelection() {
 	for _, name := range m.worktreeRecipe.DefaultWorkspaces {
 		defaults[name] = true
 	}
-	for i, workspace := range m.worktreeRecipe.Workspaces {
-		if len(defaults) > 0 {
-			m.worktreeSelected[i] = defaults[workspace.Name]
-		} else {
+	switch m.worktreeRecipe.WorkspaceMode {
+	case wkc.WorkspaceModeAll:
+		for i := range m.worktreeSelected {
 			m.worktreeSelected[i] = true
+		}
+	case wkc.WorkspaceModeSelected:
+		if len(defaults) == 0 {
+			for i := range m.worktreeSelected {
+				m.worktreeSelected[i] = true
+			}
+		} else {
+			for i, workspace := range m.worktreeRecipe.Workspaces {
+				m.worktreeSelected[i] = defaults[workspace.Name]
+			}
+		}
+	default: // single
+		for i := range m.worktreeSelected {
+			m.worktreeSelected[i] = i == 0
 		}
 	}
 	if m.worktreeWorkspaceCursor >= n {
