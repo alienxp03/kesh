@@ -207,13 +207,22 @@ func TestLaunchLayoutWithoutRecipeFallsBackToFolderOpen(t *testing.T) {
 	if err := os.Mkdir(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// The fallback opens a Kitty session, so use inert executables rather than
+	// the developer's real Kitty and zoxide binaries.
+	kitty := filepath.Join(directory, "kitty")
+	zoxide := filepath.Join(directory, "zoxide")
+	for _, executable := range []string{kitty, zoxide} {
+		if err := os.WriteFile(executable, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	m := model{
 		filter: filterAll,
 		entries: []entry{{
 			key: repository, name: "repo", path: repository, kind: "project",
 		}},
-		kitty: "kitty", zoxide: "zoxide",
+		kitty: kitty, zoxide: zoxide,
 	}
 	m.rebuildRows()
 
