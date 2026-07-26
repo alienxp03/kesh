@@ -8,15 +8,15 @@ import (
 
 func TestRootsPreserveDefaultsAndOverrides(t *testing.T) {
 	home := filepath.Join(string(filepath.Separator), "home", "stan")
-	missing := filepath.Join(t.TempDir(), "missing.toml")
+	missing := filepath.Join(t.TempDir(), "missing.yaml")
 	if got, err := CloneRoot(missing, home); err != nil || got != filepath.Join(home, "workspace") {
 		t.Fatalf("default clone root = %q, %v", got, err)
 	}
 	if got, err := WorktreeRoot(missing, home); err != nil || got != filepath.Join(home, "worktree") {
 		t.Fatalf("default worktree root = %q, %v", got, err)
 	}
-	path := filepath.Join(t.TempDir(), "config.toml")
-	content := "[clone]\nroot = \"~/src\"\n[worktree]\nroot = \"/tmp/trees\"\n[checkout]\nroot = \"~/checkouts\"\n"
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := "clone:\n  root: ~/src\nworktree:\n  root: /tmp/trees\ncheckout:\n  root: ~/checkouts\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -33,8 +33,8 @@ func TestRootsPreserveDefaultsAndOverrides(t *testing.T) {
 
 func TestCheckoutDefaultsToConfiguredCloneRoot(t *testing.T) {
 	home := filepath.Join(string(filepath.Separator), "home", "stan")
-	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte("[clone]\nroot = \"~/src\"\n"), 0o600); err != nil {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("clone:\n  root: ~/src\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := CheckoutRoot(path, home); err != nil || got != filepath.Join(home, "src") {

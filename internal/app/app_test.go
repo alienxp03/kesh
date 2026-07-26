@@ -1619,11 +1619,11 @@ func TestLoadCloneRoot(t *testing.T) {
 		t.Fatalf("default clone root = (%q, %v)", root, err)
 	}
 
-	path := filepath.Join(home, ".config", "kesh", "config.toml")
+	path := filepath.Join(home, ".config", "kesh", "config.yaml")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("[clone]\nroot = \"~/code\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("clone:\n  root: ~/code\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	root, err = loadCloneRoot()

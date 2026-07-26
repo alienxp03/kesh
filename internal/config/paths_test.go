@@ -26,7 +26,7 @@ func TestFromEnvironmentFallsBackToHome(t *testing.T) {
 	if got, want := paths.SavedSessions(), "/home/kesh/.local/state/kesh/saved-sessions.json"; got != want {
 		t.Fatalf("SavedSessions() = %q, want %q", got, want)
 	}
-	if got, want := paths.File(), "/home/kesh/.config/kesh/config.toml"; got != want {
+	if got, want := paths.File(), "/home/kesh/.config/kesh/config.yaml"; got != want {
 		t.Fatalf("File() = %q, want %q", got, want)
 	}
 }

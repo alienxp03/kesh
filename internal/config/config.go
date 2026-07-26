@@ -6,19 +6,19 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/BurntSushi/toml"
+	"gopkg.in/yaml.v3"
 )
 
 type fileConfig struct {
 	Clone struct {
-		Root string `toml:"root"`
-	} `toml:"clone"`
+		Root string `yaml:"root"`
+	} `yaml:"clone"`
 	Worktree struct {
-		Root string `toml:"root"`
-	} `toml:"worktree"`
+		Root string `yaml:"root"`
+	} `yaml:"worktree"`
 	Checkout struct {
-		Root string `toml:"root"`
-	} `toml:"checkout"`
+		Root string `yaml:"root"`
+	} `yaml:"checkout"`
 }
 
 func readFile(path string) (fileConfig, error) {
@@ -30,7 +30,7 @@ func readFile(path string) (fileConfig, error) {
 	if err != nil {
 		return result, fmt.Errorf("read Kesh config: %w", err)
 	}
-	if _, err := toml.Decode(string(content), &result); err != nil {
+	if err := yaml.Unmarshal(content, &result); err != nil {
 		return fileConfig{}, fmt.Errorf("invalid Kesh config: %w", err)
 	}
 	return result, nil
