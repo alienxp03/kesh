@@ -7,6 +7,7 @@ import (
 	"github.com/alienxp03/kesh/internal/domain"
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	"github.com/alienxp03/kesh/internal/state"
+	"github.com/alienxp03/kesh/internal/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -240,7 +241,7 @@ type worktreeMsg struct {
 
 type worktreeRecipeMsg struct {
 	projectPath  string
-	recipe       *wktreeRecipe
+	recipe       *workspace.Config
 	recipePath   string
 	repositories map[string]repoIdentity
 	err          error
@@ -336,25 +337,6 @@ type zoxideMergeContext struct {
 	openTabs     map[string]domain.OpenTabState
 }
 
-type wktreeRecipe struct {
-	WorkspaceMode     string   `yaml:"workspace_mode"`
-	DefaultWorkspaces []string `yaml:"default_workspaces"`
-	Terminal          struct {
-		SessionName string `yaml:"session_name"`
-	} `yaml:"terminal"`
-	Workspaces []struct {
-		Name  string `yaml:"name"`
-		Repo  string `yaml:"repo"`
-		Panes []struct {
-			Command    string   `yaml:"command"`
-			Commands   []string `yaml:"commands"`
-			Split      string   `yaml:"split"`
-			Focus      bool     `yaml:"focus"`
-			Percentage int      `yaml:"percentage"`
-		} `yaml:"panes"`
-	} `yaml:"workspaces"`
-}
-
 type renameForm struct {
 	renameValue string
 }
@@ -408,7 +390,7 @@ type worktreeCreateForm struct {
 	worktreeBranch           string
 	worktreePaths            []string
 	worktreeBusy             bool
-	worktreeRecipe           *wktreeRecipe
+	worktreeRecipe           *workspace.Config
 	worktreeRecipePath       string
 	worktreeRecipeMode       string
 	worktreeCustomWorkspaces bool

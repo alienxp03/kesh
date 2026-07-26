@@ -1,11 +1,13 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/alienxp03/kesh/internal/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -49,15 +51,18 @@ func TestWorktreeSearchAndReturnToOriginatingFilter(t *testing.T) {
 
 func TestWorktreeCreateRunsRecipeAndRefreshesPrimarySurface(t *testing.T) {
 	directory := t.TempDir()
-	capture := filepath.Join(directory, "wktree-call")
-	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("WKTREE_CAPTURE", capture)
-	writeBin(t, directory, "wktree", `printf '%s|%s' "$PWD" "$*" > "$WKTREE_CAPTURE"
-`)
 	repository := filepath.Join(directory, "repo")
 	if err := os.Mkdir(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
+
+	var captured workspace.CreateOptions
+	original := worktreeCreate
+	worktreeCreate = func(ctx context.Context, opts workspace.CreateOptions) error {
+		captured = opts
+		return nil
+	}
+	t.Cleanup(func() { worktreeCreate = original })
 
 	m := model{
 		filter:                   filterWorktrees,
@@ -69,8 +74,8 @@ func TestWorktreeCreateRunsRecipeAndRefreshesPrimarySurface(t *testing.T) {
 	}
 	m.activateMode(modeWorktreeCreate)
 	m.worktreeBranch = "feat/create"
-	m.worktreeRecipe = &wktreeRecipe{WorkspaceMode: "single"}
-	m.worktreeRecipePath = filepath.Join(repository, ".wktree.yaml")
+	m.worktreeRecipe = &workspace.Config{WorkspaceMode: "single"}
+	m.worktreeRecipePath = filepath.Join(repository, ".kesh.yaml")
 	m.worktreeRecipeMode = "single"
 
 	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -79,12 +84,8 @@ func TestWorktreeCreateRunsRecipeAndRefreshesPrimarySurface(t *testing.T) {
 		t.Fatalf("create transition: command=%v busy=%t", command, m.worktreeBusy)
 	}
 	message := command()
-	content, err := os.ReadFile(capture)
-	if err != nil {
-		t.Fatalf("wktree was not invoked: %v", err)
-	}
-	if got := string(content); got != repository+"|new feat/create" {
-		t.Fatalf("wktree invocation = %q", got)
+	if captured.Cwd != repository || captured.Branch != "feat/create" || captured.Mode != "single" {
+		t.Fatalf("workspace.Create opts = %#v", captured)
 	}
 
 	updated, refresh := m.Update(message)
@@ -106,15 +107,15 @@ func TestLateWorktreeRecipeResultIsIgnoredAfterCancel(t *testing.T) {
 	m = updated.(model)
 	updated, command := m.Update(worktreeRecipeMsg{
 		projectPath:  "/repo",
-		recipe:       &wktreeRecipe{WorkspaceMode: "all"},
-		recipePath:   "/repo/.wktree.yaml",
+		recipe:       &workspace.Config{WorkspaceMode: "all"},
+		recipePath:   "/repo/.kesh.yaml",
 		repositories: map[string]repoIdentity{"/repo": {owner: "owner", repo: "repo"}},
 	})
 	m = updated.(model)
 	if command != nil || m.mode != modeNormal || m.worktreeCreateForm != nil {
 		t.Fatalf("late recipe resurrected cancelled mode: mode=%d form=%#v command=%v", m.mode, m.worktreeCreateForm, command)
 	}
-	if strings.Contains(m.View(), ".wktree.yaml") {
+	if strings.Contains(m.View(), ".kesh.yaml") {
 		t.Fatal("late recipe leaked into the normal view")
 	}
 }

@@ -13,8 +13,8 @@ import (
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	"github.com/alienxp03/kesh/internal/state"
 	"github.com/alienxp03/kesh/internal/system"
+	wkc "github.com/alienxp03/kesh/internal/workspace/config"
 	tea "github.com/charmbracelet/bubbletea"
-	"gopkg.in/yaml.v3"
 )
 
 // Run starts Kesh with the supplied command-line arguments. The command package
@@ -167,36 +167,26 @@ func loadCheckoutRoot() (string, error) {
 	return config.CheckoutRoot(configPath(), os.Getenv("HOME"))
 }
 
-// loadWktreeRecipe discovers the nearest recipe between path and its Git root.
-func loadWktreeRecipe(path string) (*wktreeRecipe, string, error) {
+// loadRecipe discovers the nearest .kesh.yaml between path and its Git root
+// and parses it with the workspace package's full schema. A missing recipe is
+// not an error: it returns (nil, "", nil) so Kesh falls back to native mode.
+func loadRecipe(path string) (*wkc.Config, string, error) {
 	root, err := (gitx.Repository{Path: path}).Root()
 	if err != nil {
 		return nil, "", nil // Not a Git project: retain Kesh's native flow.
 	}
-	for dir := filepath.Clean(path); ; dir = filepath.Dir(dir) {
-		candidate := filepath.Join(dir, ".wktree.yaml")
-		content, readErr := os.ReadFile(candidate)
-		if readErr == nil {
-			var recipe wktreeRecipe
-			if err := yaml.Unmarshal(content, &recipe); err != nil {
-				return nil, candidate, fmt.Errorf("invalid .wktree.yaml: %w", err)
-			}
-			if recipe.WorkspaceMode == "" {
-				recipe.WorkspaceMode = "single"
-			}
-			if recipe.WorkspaceMode != "single" && recipe.WorkspaceMode != "all" && recipe.WorkspaceMode != "selected" {
-				return nil, candidate, fmt.Errorf("invalid .wktree.yaml workspace_mode %q", recipe.WorkspaceMode)
-			}
-			return &recipe, candidate, nil
-		}
-		if !os.IsNotExist(readErr) {
-			return nil, candidate, readErr
-		}
-		if dir == root || dir == filepath.Dir(dir) {
-			break
-		}
+	configPath, found, err := wkc.FindProjectPath(path, root)
+	if err != nil {
+		return nil, "", nil
 	}
-	return nil, "", nil
+	if !found {
+		return nil, "", nil
+	}
+	recipe, err := wkc.LoadProjectFile(configPath, os.Getenv("HOME"))
+	if err != nil {
+		return nil, configPath, fmt.Errorf("invalid %s: %w", wkc.ProjectFileName, err)
+	}
+	return &recipe, configPath, nil
 }
 
 // ensureWorktreeSelection initializes (or resizes) the per-workspace toggle

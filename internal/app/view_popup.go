@@ -123,10 +123,10 @@ func (m model) popupView(width int) string {
 				preview = dimStyle.Render("Creates a simple Kesh worktree.")
 			} else {
 				preview = dimStyle.Render("Template: "+displayPath(m.worktreeRecipePath, os.Getenv("HOME"))) + "\n" +
-					dimStyle.Render("Layout: "+wktreeSessionPreview(m.worktreeRecipe, repoPath, m.worktreeBranch)) + "\n"
+					dimStyle.Render("Layout: "+sessionPreview(m.worktreeRecipe, repoPath, m.worktreeBranch)) + "\n"
 				selected := m.worktreePreviewSelection()
 				preview += m.renderWorktreeChecklist(selected, m.worktreeCustomWorkspaces)
-				layout := wktreeLayoutPreview(m.worktreeRecipe, m.worktreeRecipePath, m.worktreeRecipeMode, previewWidth, selected)
+				layout := layoutPreview(m.worktreeRecipe, m.worktreeRecipePath, m.worktreeRecipeMode, previewWidth, selected)
 				preview += "\n" + dimStyle.Render("Layout preview") + "\n" + dimStyle.Render(strings.Join(layout, "\n"))
 			}
 			pathsField = "\n\n" + lipgloss.JoinHorizontal(lipgloss.Top,

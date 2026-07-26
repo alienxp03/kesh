@@ -13,6 +13,7 @@ import (
 
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	"github.com/alienxp03/kesh/internal/system"
+	"github.com/alienxp03/kesh/internal/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -1722,18 +1723,18 @@ func TestViewHeightStaysStableForWorktreeRows(t *testing.T) {
 	}
 }
 
-func TestLoadWktreeRecipe(t *testing.T) {
+func TestLoadRecipe(t *testing.T) {
 	repo := t.TempDir()
 	if err := run("git", "-C", repo, "init"); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(repo, ".wktree.yaml")
+	configPath := filepath.Join(repo, ".kesh.yaml")
 	if err := os.WriteFile(configPath, []byte("workspace_mode: all\nworkspaces:\n  - name: api\n  - name: web\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	recipe, gotPath, err := loadWktreeRecipe(repo)
+	recipe, gotPath, err := loadRecipe(repo)
 	if err != nil || recipe == nil || recipe.WorkspaceMode != "all" || len(recipe.Workspaces) != 2 || gotPath != configPath {
-		t.Fatalf("loadWktreeRecipe() = (%#v, %q, %v)", recipe, gotPath, err)
+		t.Fatalf("loadRecipe() = (%#v, %q, %v)", recipe, gotPath, err)
 	}
 }
 
@@ -2721,9 +2722,9 @@ func TestCloseRequiresConfirmationAndRejectsInactiveWorkspace(t *testing.T) {
 	}
 }
 
-func worktreeSelectedTestRecipe(t *testing.T) *wktreeRecipe {
+func worktreeSelectedTestRecipe(t *testing.T) *workspace.Config {
 	t.Helper()
-	var recipe wktreeRecipe
+	var recipe workspace.Config
 	if err := yaml.Unmarshal([]byte(strings.Join([]string{
 		"workspace_mode: selected",
 		"default_workspaces: [backend, worker]",
@@ -2821,15 +2822,15 @@ func TestWorktreeSelectedSpaceAndEnterGuard(t *testing.T) {
 func TestWktreeLayoutPreviewModes(t *testing.T) {
 	recipe := worktreeSelectedTestRecipe(t)
 	selected := []bool{true, false, true}
-	sel := strings.Join(wktreeLayoutPreview(recipe, "/repo/.wktree.yaml", "selected", 60, selected), "\n")
+	sel := strings.Join(layoutPreview(recipe, "/repo/.kesh.yaml", "selected", 60, selected), "\n")
 	if !strings.Contains(sel, "backend") || !strings.Contains(sel, "worker") || strings.Contains(sel, "frontend") {
 		t.Fatalf("selected preview = %q", sel)
 	}
-	single := strings.Join(wktreeLayoutPreview(recipe, "/repo/.wktree.yaml", "single", 60, nil), "\n")
+	single := strings.Join(layoutPreview(recipe, "/repo/.kesh.yaml", "single", 60, nil), "\n")
 	if !strings.Contains(single, "backend") || strings.Contains(single, "worker") || strings.Contains(single, "frontend") {
 		t.Fatalf("single preview = %q", single)
 	}
-	all := strings.Join(wktreeLayoutPreview(recipe, "/repo/.wktree.yaml", "all", 60, nil), "\n")
+	all := strings.Join(layoutPreview(recipe, "/repo/.kesh.yaml", "all", 60, nil), "\n")
 	for _, name := range []string{"backend", "frontend", "worker"} {
 		if !strings.Contains(all, name) {
 			t.Fatalf("all preview missing %s: %q", name, all)

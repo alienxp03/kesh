@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -18,6 +19,7 @@ import (
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	"github.com/alienxp03/kesh/internal/state"
 	"github.com/alienxp03/kesh/internal/system"
+	"github.com/alienxp03/kesh/internal/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -31,18 +33,28 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// runWktreeNew delegates recipe-driven creation and Kitty layout setup to
-// wktree; Kesh only owns the interactive branch prompt and refresh afterward.
+// worktreeCreate is the workspace entry point used by runWktreeNew. It is a
+// package-level variable so tests can substitute a fake without exercising git
+// or Kitty.
+var worktreeCreate = workspace.Create
+
+// runWktreeNew drives recipe-driven worktree creation and Kitty layout setup
+// through the in-process workspace package. Kesh owns the interactive branch
+// prompt and refresh afterward.
 func runWktreeNew(recipePath, mode, branch string, selected []string) tea.Cmd {
 	return func() tea.Msg {
-		wktree := findCommand("wktree", filepath.Join(os.Getenv("HOME"), ".local", "bin", "wktree"), "/opt/homebrew/bin/wktree")
-		if wktree == "" {
-			return worktreeMsg{err: fmt.Errorf("wktree was not found")}
-		}
-		if err := (gitx.Wktree{Executable: wktree}).New(filepath.Dir(recipePath), mode, branch, selected); err != nil {
+		worktreeHome, err := loadWorktreeRoot()
+		if err != nil {
 			return worktreeMsg{err: err}
 		}
-		return worktreeMsg{}
+		err = worktreeCreate(context.Background(), workspace.CreateOptions{
+			Cwd:      filepath.Dir(recipePath),
+			Branch:   branch,
+			Home:     worktreeHome,
+			Mode:     mode,
+			Selected: selected,
+		})
+		return worktreeMsg{err: err}
 	}
 }
 
@@ -408,7 +420,7 @@ func (m *model) beginWorktreeCreate() tea.Cmd {
 		entries = append([]entry(nil), entries...)
 		m.err = nil
 		return func() tea.Msg {
-			recipe, recipePath, err := loadWktreeRecipe(projectPath)
+			recipe, recipePath, err := loadRecipe(projectPath)
 			repositories := make(map[string]repoIdentity, len(entries))
 			for _, entry := range entries {
 				owner, repo := getRepoOwner(entry.path)

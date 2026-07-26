@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alienxp03/kesh/internal/workspace"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -48,7 +49,7 @@ func prCheckoutPreview(value, branch, selectedRepoPath, repoPath string, newClon
 	return renderPreviewLines(lines, fieldWidth)
 }
 
-func wktreeSessionPreview(recipe *wktreeRecipe, repoPath, branch string) string {
+func sessionPreview(recipe *workspace.Config, repoPath, branch string) string {
 	template := recipe.Terminal.SessionName
 	if template == "" {
 		template = "${repo}/${branch}"
@@ -58,13 +59,7 @@ func wktreeSessionPreview(recipe *wktreeRecipe, repoPath, branch string) string 
 	return strings.ReplaceAll(strings.ReplaceAll(template, "${repo}", repo), "${branch}", branch)
 }
 
-func wktreePaneLabel(pane struct {
-	Command    string   `yaml:"command"`
-	Commands   []string `yaml:"commands"`
-	Split      string   `yaml:"split"`
-	Focus      bool     `yaml:"focus"`
-	Percentage int      `yaml:"percentage"`
-}) string {
+func paneLabel(pane workspace.PaneCommand) string {
 	label := pane.Command
 	if label == "" && len(pane.Commands) > 0 {
 		label = strings.Join(pane.Commands, " && ")
@@ -78,38 +73,27 @@ func wktreePaneLabel(pane struct {
 	return truncate(label, 26)
 }
 
-type wktreePaneNode struct {
+type paneNode struct {
 	label         string
 	vertical      bool
 	percentage    int
-	first, second *wktreePaneNode
+	first, second *paneNode
 }
 
-// wktreePaneDiagram simulates wktree's successive Kitty splits in a small
-// terminal-cell canvas. It is intentionally a preview: Kitty makes final pixel
-// sizing decisions, but the pane relationships and configured bias are exact.
-func wktreePaneDiagram(panes []struct {
-	Command    string   `yaml:"command"`
-	Commands   []string `yaml:"commands"`
-	Split      string   `yaml:"split"`
-	Focus      bool     `yaml:"focus"`
-	Percentage int      `yaml:"percentage"`
-}, width int) []string {
+// paneDiagram simulates the workspace layout's successive Kitty splits in
+// a small terminal-cell canvas. It is intentionally a preview: Kitty makes
+// final pixel sizing decisions, but the pane relationships and configured bias
+// are exact.
+func paneDiagram(panes []workspace.PaneCommand, width int) []string {
 	if len(panes) == 0 {
-		panes = append(panes, struct {
-			Command    string   `yaml:"command"`
-			Commands   []string `yaml:"commands"`
-			Split      string   `yaml:"split"`
-			Focus      bool     `yaml:"focus"`
-			Percentage int      `yaml:"percentage"`
-		}{Command: "shell"})
+		panes = append(panes, workspace.PaneCommand{Command: "shell"})
 	}
-	root := &wktreePaneNode{label: wktreePaneLabel(panes[0])}
+	root := &paneNode{label: paneLabel(panes[0])}
 	active := root
 	for _, pane := range panes[1:] {
 		old := *active
-		next := &wktreePaneNode{label: wktreePaneLabel(pane)}
-		*active = wktreePaneNode{vertical: pane.Split == "vertical", percentage: pane.Percentage, first: &old, second: next}
+		next := &paneNode{label: paneLabel(pane)}
+		*active = paneNode{vertical: pane.Split == "vertical", percentage: pane.Percentage, first: &old, second: next}
 		active = next
 	}
 	canvasWidth := min(54, max(20, width-4))
@@ -127,8 +111,8 @@ func wktreePaneDiagram(panes []struct {
 			}
 		}
 	}
-	var draw func(*wktreePaneNode, int, int, int, int)
-	draw = func(node *wktreePaneNode, x, y, w, h int) {
+	var draw func(*paneNode, int, int, int, int)
+	draw = func(node *paneNode, x, y, w, h int) {
 		if w < 4 || h < 3 {
 			return
 		}
@@ -170,18 +154,8 @@ func wktreePaneDiagram(panes []struct {
 	return lines
 }
 
-func wktreeWorkspaceRepoPath(workspace struct {
-	Name  string `yaml:"name"`
-	Repo  string `yaml:"repo"`
-	Panes []struct {
-		Command    string   `yaml:"command"`
-		Commands   []string `yaml:"commands"`
-		Split      string   `yaml:"split"`
-		Focus      bool     `yaml:"focus"`
-		Percentage int      `yaml:"percentage"`
-	} `yaml:"panes"`
-}, recipePath string) string {
-	repo := workspace.Repo
+func workspaceRepoPath(ws workspace.Workspace, recipePath string) string {
+	repo := ws.Repo
 	if repo == "" {
 		repo = "."
 	}
@@ -194,7 +168,7 @@ func wktreeWorkspaceRepoPath(workspace struct {
 	return displayPath(filepath.Clean(repo), os.Getenv("HOME"))
 }
 
-func wktreeLayoutPreview(recipe *wktreeRecipe, recipePath, mode string, width int, selected []bool) []string {
+func layoutPreview(recipe *workspace.Config, recipePath, mode string, width int, selected []bool) []string {
 	all := recipe.Workspaces
 	var indices []int
 	switch mode {
@@ -220,8 +194,8 @@ func wktreeLayoutPreview(recipe *wktreeRecipe, recipePath, mode string, width in
 		if display == len(indices)-1 {
 			connector = "└─"
 		}
-		lines = append(lines, connector+" "+workspace.Name+"  "+wktreeWorkspaceRepoPath(workspace, recipePath))
-		for _, line := range wktreePaneDiagram(workspace.Panes, width) {
+		lines = append(lines, connector+" "+workspace.Name+"  "+workspaceRepoPath(workspace, recipePath))
+		for _, line := range paneDiagram(workspace.Panes, width) {
 			lines = append(lines, "   "+line)
 		}
 	}
@@ -237,7 +211,7 @@ func (m *model) renderWorktreeChecklist(selected []bool, interactive bool) strin
 		if i < len(selected) && selected[i] {
 			mark = "☑"
 		}
-		label := mark + " " + workspace.Name + "  " + wktreeWorkspaceRepoPath(workspace, m.worktreeRecipePath)
+		label := mark + " " + workspace.Name + "  " + workspaceRepoPath(workspace, m.worktreeRecipePath)
 		if interactive && i == m.worktreeWorkspaceCursor {
 			rows = append(rows, focusStyle.Render("› "+label))
 		} else {
