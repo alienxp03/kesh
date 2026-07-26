@@ -132,8 +132,9 @@ func runClose(kitty, zoxide string, e entry, selected row) tea.Cmd {
 
 func composedSessionPath(name string) string {
 	// The file only bootstraps the in-memory Kitty session, so keep it outside
-	// persistent pin state and remove it once goto_session has loaded it.
-	return filepath.Join(os.TempDir(), "kitty-kesh-sessions", "kesh-"+name+".kitty-session")
+	// persistent pin state and remove it once goto_session has loaded it. The
+	// caller already supplies Kesh's internal "kesh-" session-name prefix.
+	return filepath.Join(os.TempDir(), "kitty-kesh-sessions", name+".kitty-session")
 }
 
 func composedSessionName(session string) (string, bool) {

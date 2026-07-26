@@ -2643,6 +2643,13 @@ func TestComposedSessionName(t *testing.T) {
 	}
 }
 
+func TestComposedSessionPathKeepsSingleInternalPrefix(t *testing.T) {
+	name := "kesh-dotfiles-kesh--8beb3f99485b"
+	if got, want := filepath.Base(composedSessionPath(name)), name+".kitty-session"; got != want {
+		t.Fatalf("composedSessionPath() basename = %q, want %q", got, want)
+	}
+}
+
 func TestWorkspaceAndProjectFiltersUseSeparateEntries(t *testing.T) {
 	entries := []entry{
 		{key: "workspace:aurora", name: "aurora | frontier", kind: "workspace", open: true},
