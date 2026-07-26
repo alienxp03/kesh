@@ -522,8 +522,6 @@ const (
 const (
 	filterAll = iota
 	filterAgents
-	filterOpen
-	filterProjects
 	filterSSH
 	filterSaved
 	filterWorktrees
@@ -536,7 +534,7 @@ const (
 // solely through w, which scopes it to a project and records the filter to
 // return to.
 var cycleFilters = []int{
-	filterAll, filterAgents, filterOpen, filterProjects, filterSSH, filterSaved,
+	filterAll, filterAgents, filterSSH, filterSaved,
 }
 
 // cycleFilter advances current by step positions within cycleFilters. A current

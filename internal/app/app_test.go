@@ -170,8 +170,6 @@ func TestParseArgs(t *testing.T) {
 		{wantFilter: filterAll},
 		{args: []string{"init"}, wantFilter: filterAll, wantPinCommand: "init"},
 		{args: []string{"agents"}, wantFilter: filterAgents},
-		{args: []string{"open"}, wantFilter: filterOpen},
-		{args: []string{"projects"}, wantFilter: filterProjects},
 		{args: []string{"ssh"}, wantFilter: filterSSH},
 		{args: []string{"saved"}, wantFilter: filterSaved},
 		{args: []string{"begin-run"}, wantFilter: filterAll, wantPinCommand: "begin-run"},
@@ -2648,23 +2646,6 @@ func TestComposedSessionPathKeepsSingleInternalPrefix(t *testing.T) {
 	name := "kesh-dotfiles-kesh--8beb3f99485b"
 	if got, want := filepath.Base(composedSessionPath(name)), name+".kitty-session"; got != want {
 		t.Fatalf("composedSessionPath() basename = %q, want %q", got, want)
-	}
-}
-
-func TestWorkspaceAndProjectFiltersUseSeparateEntries(t *testing.T) {
-	entries := []entry{
-		{key: "workspace:aurora", name: "aurora | frontier", kind: "workspace", open: true},
-		{key: "/projects/aurora", name: "aurora", kind: "project"},
-	}
-	m := model{entries: entries, filter: filterOpen}
-	m.rebuildRows()
-	if len(m.rows) != 1 || m.entries[m.rows[0].entryIndex].kind != "workspace" {
-		t.Fatalf("open rows = %#v, want workspace only", m.rows)
-	}
-	m.filter = filterProjects
-	m.rebuildRows()
-	if len(m.rows) != 1 || m.entries[m.rows[0].entryIndex].kind != "project" {
-		t.Fatalf("project rows = %#v, want source project only", m.rows)
 	}
 }
 

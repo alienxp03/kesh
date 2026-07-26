@@ -47,7 +47,7 @@ func (m model) View() string {
 		listHeight = max(5, bodyHeight-detailHeight-1)
 	}
 
-	tabs := []string{"All", "Agents", "Open", "Projects", "SSH", "Saved"}
+	tabs := []string{"All", "Agents", "SSH", "Saved"}
 	// In the worktree drill-in no flat filter is active, so highlight the one
 	// the user came from (previousFilter). This keeps the active indicator in
 	// place instead of leaping to an appended [Worktrees] chip; the surface is

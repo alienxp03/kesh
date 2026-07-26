@@ -484,10 +484,6 @@ func (m model) listPageSize() int {
 
 func (m model) matchesFilter(e entry) bool {
 	switch m.filter {
-	case filterOpen:
-		return e.open
-	case filterProjects:
-		return e.kind == "project"
 	case filterSSH:
 		return e.kind == "ssh"
 	case filterSaved:
