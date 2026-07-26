@@ -343,31 +343,34 @@ func CleanAgentTitle(title, agent string) string {
 }
 
 func AgentFromWindow(window kitty.Window) string {
-	pi, codex := false, false
+	pi, codex, claude := false, false, false
 	for _, process := range window.ForegroundProcesses {
 		command := " " + strings.ToLower(strings.Join(process.Cmdline, " ")) + " "
 		pi = pi || strings.Contains(command, " pi ") || strings.Contains(command, "/pi ")
 		codex = codex || strings.Contains(command, " codex ") || strings.Contains(command, "/codex ")
+		claude = claude || strings.Contains(command, " claude ") || strings.Contains(command, "/claude ") || strings.Contains(command, "/claude.exe ")
 	}
-	return mergedAgentFlags(pi, codex)
+	return mergedAgentFlags(pi, codex, claude)
 }
 
 func MergedWindowAgents(windows []domain.Window) string {
-	pi, codex := false, false
+	pi, codex, claude := false, false, false
 	for _, window := range windows {
 		pi = pi || strings.Contains(window.Agent, "pi")
 		codex = codex || strings.Contains(window.Agent, "codex")
+		claude = claude || strings.Contains(window.Agent, "claude")
 	}
-	return mergedAgentFlags(pi, codex)
+	return mergedAgentFlags(pi, codex, claude)
 }
 
 func MergedTabAgents(tabs []domain.Tab) string {
-	pi, codex := false, false
+	pi, codex, claude := false, false, false
 	for _, tab := range tabs {
 		pi = pi || strings.Contains(tab.Agent, "pi")
 		codex = codex || strings.Contains(tab.Agent, "codex")
+		claude = claude || strings.Contains(tab.Agent, "claude")
 	}
-	return mergedAgentFlags(pi, codex)
+	return mergedAgentFlags(pi, codex, claude)
 }
 
 func SSHHostFromWindow(window kitty.Window) string {
@@ -399,17 +402,18 @@ func foregroundCmdlines(window kitty.Window) [][]string {
 	return commands
 }
 
-func mergedAgentFlags(pi, codex bool) string {
-	if pi && codex {
-		return "pi,codex"
-	}
+func mergedAgentFlags(pi, codex, claude bool) string {
+	agents := make([]string, 0, 3)
 	if pi {
-		return "pi"
+		agents = append(agents, "pi")
 	}
 	if codex {
-		return "codex"
+		agents = append(agents, "codex")
 	}
-	return ""
+	if claude {
+		agents = append(agents, "claude")
+	}
+	return strings.Join(agents, ",")
 }
 
 func plural(count int) string {

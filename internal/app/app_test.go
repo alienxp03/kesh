@@ -1392,10 +1392,12 @@ func TestAgentFromWindow(t *testing.T) {
 		processes [][]string
 		want      string
 	}{
-		"pi":          {processes: [][]string{{"/Users/stan/.local/bin/pi"}}, want: "pi"},
-		"codex":       {processes: [][]string{{"node", "/opt/homebrew/bin/codex"}}, want: "codex"},
-		"both agents": {processes: [][]string{{"pi"}, {"codex"}}, want: "pi,codex"},
-		"other shell": {processes: [][]string{{"zsh"}}, want: ""},
+		"pi":              {processes: [][]string{{"/Users/stan/.local/bin/pi"}}, want: "pi"},
+		"codex":           {processes: [][]string{{"node", "/opt/homebrew/bin/codex"}}, want: "codex"},
+		"claude":          {processes: [][]string{{"claude", "--dangerously-skip-permissions"}}, want: "claude"},
+		"claude launcher": {processes: [][]string{{"node", "/opt/homebrew/bin/claude.exe"}}, want: "claude"},
+		"all agents":      {processes: [][]string{{"pi"}, {"codex"}, {"claude"}}, want: "pi,codex,claude"},
+		"other shell":     {processes: [][]string{{"zsh"}}, want: ""},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -1533,6 +1535,12 @@ func TestWindowIconPrioritizesAgentIcons(t *testing.T) {
 	}
 	if got := windowIcon(windowItem{command: "zsh", agent: "codex"}); got != "󰚩" {
 		t.Errorf("Codex window icon = %q, want Codex icon", got)
+	}
+	if got := windowIcon(windowItem{command: "zsh", agent: "claude"}); got != "✦" {
+		t.Errorf("Claude window icon = %q, want Claude icon", got)
+	}
+	if got := agentLabel("pi,codex,claude"); got != "pi+Codex+Claude" {
+		t.Errorf("agent label = %q, want combined agent label", got)
 	}
 	if got := windowIcon(windowItem{command: "nvim"}); got != "" {
 		t.Errorf("Neovim window icon = %q, want editor icon", got)

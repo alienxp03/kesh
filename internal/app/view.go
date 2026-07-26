@@ -896,16 +896,16 @@ func relativeLastActive(lastFocused, reference float64) string {
 }
 
 func agentLabel(agent string) string {
-	switch agent {
-	case "pi":
-		return "pi"
-	case "codex":
-		return "Codex"
-	case "pi,codex":
-		return "pi+Codex"
-	default:
-		return agent
+	labels := map[string]string{"pi": "pi", "codex": "Codex", "claude": "Claude"}
+	parts := strings.Split(agent, ",")
+	for index, part := range parts {
+		label, ok := labels[part]
+		if !ok {
+			return agent
+		}
+		parts[index] = label
 	}
+	return strings.Join(parts, "+")
 }
 
 const shellIcon = ""
@@ -921,16 +921,17 @@ func windowIcon(window windowItem) string {
 }
 
 func agentIcon(agent string) string {
-	switch agent {
-	case "pi":
-		return "π"
-	case "codex":
-		return "󰚩"
-	case "pi,codex":
-		return "π󰚩"
-	default:
-		return ""
+	icons := map[string]string{"pi": "π", "codex": "󰚩", "claude": "✦"}
+	parts := strings.Split(agent, ",")
+	var icon strings.Builder
+	for _, part := range parts {
+		value, ok := icons[part]
+		if !ok {
+			return ""
+		}
+		icon.WriteString(value)
 	}
+	return icon.String()
 }
 
 func processIcon(command string) string {

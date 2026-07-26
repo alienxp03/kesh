@@ -1,7 +1,7 @@
 # kesh
 
 Bubble Tea picker for browsing zoxide projects, Kitty workspaces, tabs,
-windows, SSH hosts, and active Codex/pi agents.
+windows, SSH hosts, and active Claude, Codex, and pi agents.
 
 ## Install
 
@@ -104,7 +104,7 @@ merged PR, closed PR, then entries without a matching PR.
 
 ### Agents
 
-A flat, most-recently-focused list of Kitty windows running Codex or pi.
+A flat, most-recently-focused list of Kitty windows running Claude, Codex, or pi.
 
 | Key | Action |
 |---|---|
