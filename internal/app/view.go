@@ -48,8 +48,16 @@ func (m model) View() string {
 	}
 
 	tabs := []string{"All", "Agents", "Open", "Projects", "SSH", "Saved"}
+	// In the worktree drill-in no flat filter is active, so highlight the one
+	// the user came from (previousFilter). This keeps the active indicator in
+	// place instead of leaping to an appended [Worktrees] chip; the surface is
+	// named in the list title instead.
+	activeFilter := m.filter
+	if activeFilter == filterWorktrees {
+		activeFilter = m.previousFilter
+	}
 	for i := range tabs {
-		if i == m.filter {
+		if i == activeFilter {
 			tabs[i] = accentStyle.Render("[" + tabs[i] + "]")
 		} else {
 			tabs[i] = dimStyle.Render(" " + tabs[i] + " ")
@@ -63,13 +71,10 @@ func (m model) View() string {
 		promptValue = accentStyle.Render(m.query+"█") + "  " + dimStyle.Render("SEARCH")
 	}
 	header := accentStyle.Render("Kesh") + "  " + strings.Join(tabs, " ")
-	if m.filter == filterWorktrees {
-		// Worktrees is not a cycle tab, so name the surface explicitly. The
-		// scoped project is shown as the list title instead.
-		header += "  " + accentStyle.Render("[Worktrees]")
-		if n := len(m.wtBulkSelected); n > 0 {
-			header += "  " + accentStyle.Render(fmt.Sprintf("Selected (%d)", n))
-		}
+	if m.filter == filterWorktrees && len(m.wtBulkSelected) > 0 {
+		// Bulk-selection count is the only worktree status shown in the header;
+		// the surface itself is named in the list title.
+		header += "  " + accentStyle.Render(fmt.Sprintf("Selected (%d)", len(m.wtBulkSelected)))
 	}
 	if len(m.selected) > 0 {
 		names := make([]string, 0, len(m.selected))
@@ -93,8 +98,8 @@ func (m model) View() string {
 	listTitle := accentStyle.Render(fmt.Sprintf("List (%d)", len(m.rows)))
 	if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
 		entry := m.entries[m.worktreeFilterEntryIndex]
-		name := truncate(entry.name, max(8, listWidth-8))
-		listTitle = projectStyle.Render(fmt.Sprintf("󰉋 %s (%d)", name, len(m.rows)))
+		name := truncate(entry.name, max(8, listWidth-20))
+		listTitle = projectStyle.Render(fmt.Sprintf("󰉋 %s · worktrees (%d)", name, len(m.rows)))
 	}
 	listLines := []string{listTitle}
 	if m.filter == filterWorktrees && len(m.rows) > 0 {
