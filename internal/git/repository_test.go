@@ -36,9 +36,13 @@ func TestRepositoryCommandContracts(t *testing.T) {
 	if err := repository.RemoveWorktree("/trees/feature", true); err != nil {
 		t.Fatal(err)
 	}
+	if err := repository.CreateBranchWorktree("/trees/feature", "topic"); err != nil {
+		t.Fatal(err)
+	}
 	want := []system.Spec{
 		{Name: "git", Args: []string{"-C", "/repo", "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"}},
 		{Name: "git", Args: []string{"-C", "/repo", "worktree", "remove", "--force", "/trees/feature"}},
+		{Name: "git", Args: []string{"-C", "/repo", "worktree", "add", "-b", "topic", "/trees/feature"}},
 	}
 	if !reflect.DeepEqual(recorder.specs, want) {
 		t.Fatalf("specs = %#v, want %#v", recorder.specs, want)

@@ -285,20 +285,13 @@ func (m *model) validateWorktreeBranch() tea.Cmd {
 	home := os.Getenv("HOME")
 
 	return func() tea.Msg {
-		// Validate branch exists on origin for all selected projects
 		for _, entry := range entries {
 			if entry.kind != "project" {
 				continue
 			}
-			exists, err := (gitx.Repository{Path: entry.path}).BranchExistsOnOrigin(branch)
-			if err != nil {
-				return worktreeMsg{err: fmt.Errorf("branch %q not found in origin for %s: %w", branch, entry.name, err)}
-			}
-			if !exists {
-				return worktreeMsg{err: fmt.Errorf("branch %q does not exist in origin for %s", branch, entry.name)}
-			}
-
-			// Check if worktree path already exists
+			// A fresh branch name is valid: it is created off each project's
+			// HEAD at worktree-add time. Only a path collision is rejected, so
+			// validation stays local and network-free.
 			owner, repo := getRepoOwner(entry.path)
 			worktreePath := filepath.Join(worktreeRoot, owner, repo, branch)
 			if _, err := os.Stat(worktreePath); err == nil {
@@ -323,8 +316,8 @@ func (m *model) createWorktree() tea.Cmd {
 			owner, repo := getRepoOwner(entry.path)
 			worktreePath := filepath.Join(worktreeRoot, owner, repo, branch)
 
-			// Create worktree using the branch from origin
-			if err := (gitx.Repository{Path: entry.path}).AddWorktree(worktreePath, "origin/"+branch); err != nil {
+			repository := gitx.Repository{Path: entry.path}
+			if err := addWorktreeForBranch(repository, worktreePath, branch); err != nil {
 				return worktreeMsg{err: fmt.Errorf("failed to create worktree for %s: %w", entry.name, err)}
 			}
 
@@ -335,6 +328,21 @@ func (m *model) createWorktree() tea.Cmd {
 		// Return success - worktrees are created and added to zoxide
 		return worktreeMsg{err: nil}
 	}
+}
+
+// addWorktreeForBranch checks out an existing remote branch when origin has it;
+// otherwise it creates a new branch off the repository's current HEAD. This lets
+// the worktree popup accept brand-new branch names instead of only those already
+// pushed to origin.
+func addWorktreeForBranch(repository gitx.Repository, worktreePath, branch string) error {
+	exists, err := repository.BranchExistsOnOrigin(branch)
+	if err != nil {
+		return fmt.Errorf("check origin for %s: %w", branch, err)
+	}
+	if exists {
+		return repository.AddWorktree(worktreePath, "origin/"+branch)
+	}
+	return repository.CreateBranchWorktree(worktreePath, branch)
 }
 func (m *model) getDefaultBranch(repoPath string) (string, error) {
 	branch, err := (gitx.Repository{Path: repoPath}).OriginDefaultBranch()

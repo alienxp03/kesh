@@ -154,6 +154,17 @@ func (r Repository) AddWorktree(path, revision string) error {
 	return nil
 }
 
+// CreateBranchWorktree creates a worktree at path on a new branch, basing the
+// branch off the repository's current HEAD. It fails if the branch already
+// exists. Use AddWorktree to check out an existing remote branch instead.
+func (r Repository) CreateBranchWorktree(path, branch string) error {
+	output, err := r.combinedOutput("worktree", "add", "-b", branch, path)
+	if err != nil {
+		return CommandError("git worktree add", output, err)
+	}
+	return nil
+}
+
 func (r Repository) RemoveWorktree(path string, force bool) error {
 	args := []string{"worktree", "remove"}
 	if force {
