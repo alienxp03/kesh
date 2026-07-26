@@ -1,12 +1,11 @@
 # kesh
 
-Bubble Tea picker for browsing zoxide projects, Kitty workspaces, tabs, windows, SSH hosts, and active Codex/pi agents.
+Bubble Tea picker for browsing zoxide projects, Kitty workspaces, tabs,
+windows, SSH hosts, and active Codex/pi agents.
 
-A single-project Kitty session and its zoxide source are one logical folder row, shown with ``. Multi-project sessions created by Kesh remain separate `` session rows so their individual folder sources stay available for composing another session with `n`. SSH locations use ``. Green means an entry is currently open; the icon does not change for saved or closed state.
+## Install
 
-## Build and install
-
-Kitty always launches the installed artifact at `~/.local/bin/kesh`.
+Kitty launches the installed artifact at `~/.local/bin/kesh`.
 
 ### Homebrew (release binary)
 
@@ -15,116 +14,153 @@ brew install alienxp03/tap/kesh
 brew upgrade kesh
 ```
 
-### From source (development)
+### From source
 
 ```sh
 go build -o "${TMPDIR:-/tmp}/kesh-dev" ./cmd/kesh
 ```
 
-Releases are cut locally with GoReleaser and published to the
-`alienxp03/homebrew-tap` tap (see `.goreleaser.yaml`):
+## Kitty setup
 
-```sh
-git tag v0.1.0
-goreleaser release
+Kesh drives Kitty through remote control, so two lines are **required**:
+
+```conf
+allow_remote_control yes
+listen_on unix:/tmp/kitty
+
+# Open the pickers.
+map cmd+shift+o launch --type=overlay ~/.local/bin/kesh
+map cmd+shift+p launch --type=tab      ~/.local/bin/kesh agents
 ```
 
-## Architecture
+**Suggested** additions — session tab bar, session cycling, pinned-session
+shortcuts, and handing `ctrl+j/k` to the pickers:
 
-- `cmd/kesh` owns process startup and exit codes.
-- `internal/app` owns the Bubble Tea model, message and mode routing, command scheduling, and pure rendering. Its single explicit mode state makes search, forms, pinning, confirmations, and worktree creation mutually exclusive.
-- `internal/domain` owns pure entry ranking, pull-request/worktree matching and sorting, session composition, and destruction planning.
-- `internal/config` and `internal/state` own XDG path/config loading and the versioned JSON formats, including legacy pin migration and atomic writes.
-- `internal/kitty`, `internal/git`, and `internal/github` own intent-oriented integrations and output decoding; `internal/catalog` assembles Kitty, saved-session, SSH, and asynchronous zoxide sources.
-- `internal/system` owns process execution and platform URL opening behind testable boundaries.
+```conf
+# Filter the tab bar to the active session.
+tab_bar_filter session:~
 
-Dependencies point from `cmd/kesh` to `internal/app`, then toward the domain,
-storage, and integration packages. Platform packages never import the app, and
-neither the app nor domain packages invoke subprocesses directly. Bubble Tea
-views are pure; filesystem and external-command work runs through commands.
+# Cycle to the previous session.
+map cmd+p goto_session -1
 
-User configuration remains in `~/.config/kesh`; state, sessions, and caches
-remain under the XDG paths described below. The Kitty watcher at
-`config/kitty/scripts/kesh_clear_pins_on_quit.py` is intentionally a thin
-adapter that invokes the installed binary.
+# Free Cmd+0..9 for Kesh pins; switch tabs with Ctrl+number instead.
+# map ctrl+1..9 goto_tab 1..9
 
-## Validation
+# Kesh writes Cmd+0..9 → goto_session mappings here.
+# map cmd+0..9   (blanked so Kesh can bind them)
+include ~/.local/state/kesh/kitty-pins.conf
 
-```sh
-test -z "$(gofmt -l $(find . -name '*.go' -type f))"
-go test -race ./...
-go vet ./...
-go build -o "${TMPDIR:-/tmp}/kesh-dev" ./cmd/kesh
+# Let the pickers handle Ctrl+J/K instead of moving panes.
+map --when-focus-on title:project-picker ctrl+j
+map --when-focus-on title:project-picker ctrl+k
+map --when-focus-on title:kesh ctrl+j
+map --when-focus-on title:kesh ctrl+k
 ```
 
-See `docs/manual-smoke.md` for the real-Kitty checks that automated tests
-cannot perform.
+## Keys
 
-Keys:
+The picker starts in normal mode. Green means an entry is currently open.
 
-The picker starts in normal mode:
+| Key | Action |
+|---|---|
+| `j` `k` · `ctrl+j` `ctrl+k` | Select a row |
+| `enter` | Open a session / focus a tab / focus a window |
+| `l` / `h` | Descend into / return from session → tabs → windows |
+| `e` | Expand or collapse the selected session or tab |
+| `/` | Fuzzy-filter; `tab` / `shift+tab` change filter; `enter` / `esc` returns to command mode |
+| `space` | Toggle a project or SSH host for a multi-tab session |
+| `n` | Name and create a session (one tab per selected item) |
+| `c` | Clone a Git repository into an editable destination |
+| `C` | Check out a GitHub PR (URL, `owner/repo#123`, or a bare number on a selected project) |
+| `s` | Save the selected entry's tabs, splits, and working directories |
+| `S` | Also save foreground commands so restoring reruns them |
+| `p` `0`–`9` | Pin session to a slot (repeat to replace); `p` `x` unpins |
+| `r` | Rename workspace / tab / window (empty workspace name resets it) |
+| `w` | Open the project's Worktrees surface |
+| `o` | Open the selected worktree's exact PR in the browser |
+| `D` `y` | Destroy the focused entry; in Worktrees, destroy worktree + branch |
+| `X` `y` | Remove non-current worktrees merged by Git ancestry or a matching PR |
+| `x` `y` | Close workspace / tab / window; in Worktrees, remove the worktree |
+| `q` | Quit |
 
-- `j` / `k` or `ctrl+j` / `ctrl+k`: select a row
-- `space`: toggle a project or SSH host for a new multi-tab session
-- `n`: name and create a session with one tab per selected item
-- `c`: clone a Git repository into an editable destination and open it
-- `C`: check out a GitHub pull request (paste a URL, `owner/repo#123`, or a bare number on a selected project) — clones if needed, then creates a worktree on the PR head
-- `l`: expand or descend through session → tabs → windows
-- `h`: return to the parent or collapse the current level
-- `enter`: open a session, focus a tab, or focus a window
-- `s`: safely save the selected open project or workspace's tabs, splits, and working directories
-- `S`: additionally save foreground commands so restoring the project or workspace reruns them
-- `p`, then `0`–`9`: pin the selected session to a shortcut slot; repeat an occupied slot to confirm its replacement
-- `p`, then `x`: unpin the selected session
-- `r`: rename the selected workspace, tab, or window; submitting an empty workspace name resets it
-- `e`: expand or collapse the selected session or tab in the main hierarchy
-- `w`: open the selected project's primary Worktrees management surface
-- `o`: open the exact pull request associated with the selected worktree in the browser
-- `X`, then `y`: remove every non-current worktree merged by Git ancestry or by a GitHub pull request at the same branch HEAD
-- `D`, then `y`: destroy the focused entry — close its Kitty session, remove its worktree (only when it is a linked worktree), delete its local branch, and delete its saved record; the confirmation lists exactly which layers apply. In Worktrees, destroys the selected worktree and its branch
-- `x`, then `y`: close the selected workspace, tab, or window; in Worktrees, remove the selected worktree
-- `/`: enter search mode and fuzzy-filter sessions as you type
-- `enter` / `esc`: return to command mode while retaining the filter
-- `tab` / `shift+tab`: change filter
-- `q`: close from command mode; `esc` is a no-op there
+Arrow keys also move through rows and the hierarchy.
 
-Arrow keys remain available for moving through rows and the hierarchy.
+### Worktrees
 
-Worktrees are managed in one surface, opened with `w` from a project and
-closed with `esc`. Its rows are ordered by default branch, open PR, merged PR,
-closed PR, then entries without a matching PR. Use `n` to create, `enter` to
-open/focus, `r` to fetch and refresh, `p` to pull, `g` to open the exact PR,
-`x` to remove, `D` to destroy the worktree and branch, or `X` to remove merged
-worktrees. `space` enables bulk pull/removal.
+Opened with `w`, closed with `esc`. Rows are ordered: default branch, open PR,
+merged PR, closed PR, then entries without a matching PR.
 
-The list keeps a concise second column for paths, commands, counts, and other scan-friendly context when space allows. A detail panel follows every selected row—project, workspace, tab, window, agent, or worktree—and adapts its fields to that row type. Wide layouts keep the list on the left and details immediately beside it on the right inside a centered, width-capped workspace; narrow layouts stack details below the list. Long detail values wrap across lines with a hanging indent under their field label. Session details show each unique window directory instead of treating the first tab's directory as representative, deduplicating paths and summarizing overflow. Rows backed by a Git checkout lazily load its branch and PR summary when focused, keeping Kesh startup fast and showing a warning when local HEAD differs from the PR head. Worktree details include the branch, shortened path, and PR summary. They show GitHub pull-request lifecycle status when the branch and PR head SHA match: green for open, purple for merged, and red for closed without merging. Kesh displays cached status immediately from `${XDG_CACHE_HOME:-~/.cache}/kesh/pr-status.json`, refreshes it in the background when Worktrees opens, and throttles refreshes to once per minute per repository. Capital `X` always bypasses the cache and revalidates merged status before offering removal.
+| Key | Action |
+|---|---|
+| `n` | Create |
+| `enter` | Open / focus |
+| `r` | Fetch and refresh |
+| `p` | Pull |
+| `g` | Open the exact PR |
+| `x` | Remove the worktree |
+| `D` | Destroy worktree and branch |
+| `X` | Remove merged worktrees |
+| `space` | Enable bulk pull / removal |
 
-The `Agents` filter is a flat, most-recently-focused list of Kitty windows running Codex or pi. Its preview refreshes the selected window's visible terminal screen once per second:
+### Agents
 
-- `enter`: focus the selected agent window
-- `p`: show or hide the terminal preview
-- `/`: fuzzy-search agent, project, tab, command, and directory fields
+A flat, most-recently-focused list of Kitty windows running Codex or pi.
 
-Run `kesh agents` to start directly in this view. Kitty invokes it in a tab for `Cmd+Shift+P`; `Cmd+Shift+O` opens the complete hierarchy in an overlay. Every filter has a matching launch subcommand: `kesh agents`, `kesh open`, `kesh projects`, `kesh ssh`, and `kesh saved` start directly in that view, while `kesh` alone opens All.
+| Key | Action |
+|---|---|
+| `enter` | Focus the agent window |
+| `p` | Toggle the live terminal preview |
+| `/` | Fuzzy-search agent, project, tab, command, and directory fields |
 
-Pinned sessions are stored in `${XDG_STATE_HOME:-~/.local/state}/kesh/pins.json`. Kesh also generates `kitty-pins.conf` beside that file and reloads Kitty whenever pins change. `Cmd+0` through `Cmd+9` therefore invoke Kitty's native `goto_session` action directly, without starting Kesh on every switch. Pins apply only to the current Kitty run: Kitty notifies Kesh on a confirmed normal quit, and Kesh clears its state and mappings. Kesh records the active Kitty process; if Kitty is force-terminated, its next start detects the dead process, clears the leftover pins, and reloads the mappings.
+## Configuration
 
-Saved states are catalogued in `${XDG_STATE_HOME:-~/.local/state}/kesh/saved-sessions.json`, with Kitty snapshots under the adjacent `sessions/` directory. Press `s` on an open named project or workspace and confirm with `y` to save it safely without capturing shell foreground commands. Use `S` for an explicit command-aware snapshot: Kesh lists the detected foreground commands before confirmation, and Kitty reruns them when restoring. Saved entries remain in Kesh after they are closed; pressing `enter` restores a closed entry or focuses it when already open. Use `x`, then `y` on a closed saved entry to delete its snapshot.
+All optional — `${XDG_CONFIG_HOME:-~/.config}/kesh/config.yaml`. These are the
+defaults:
 
-The clone destination defaults to `~/workspace`. Override it in `${XDG_CONFIG_HOME:-~/.config}/kesh/config.toml`:
+```yaml
+clone:      # where new clones land
+  root: ~/workspace
 
-```toml
-[clone]
-root = "~/workspace"
+worktree:   # where worktrees are created
+  root: ~/worktree
+
+checkout:   # where existing clones are searched (defaults to the clone root)
+  # root: ~/workspace
 ```
 
-Press `c` to open a form with the Git URL and inferred destination together. Use `tab` to switch fields, edit either value, then press `enter` to clone. After a successful clone, Kesh adds the directory to zoxide and opens its Kitty workspace.
+Press `c` for a clone form (Git URL + inferred destination; `tab` switches
+fields, `enter` clones, then adds to zoxide and opens the workspace). Press
+`C` to check out a PR — re-checking the same PR focuses its existing worktree.
+Workspace names are aliases stored in `names.json`; search matches both the
+alias and the original project or SSH name.
 
-Press `C` to check out a GitHub pull request. Paste the PR's web URL (or `owner/repo#123`, or a bare number with the cursor on one of the project's rows). Kesh reuses an existing local clone — the project under the cursor, or a candidate under the checkout root — cloning first when none exists, then fetches the PR head and creates a worktree on its branch and opens the workspace. Re-checking out the same PR focuses the existing worktree instead of recreating it. The `[checkout] root` option in `config.toml` controls where existing clones are searched and defaults to the clone root:
+## How it works
 
-```toml
-[checkout]
-root = "~/workspace"
-```
+Each row is one source: a single-project Kitty session and its zoxide entry
+share a folder row; multi-project sessions stay as separate session rows;
+SSH locations are marked distinctly. A detail panel follows the selected row
+and adapts to its type — project, workspace, tab, window, agent, or worktree.
 
-Workspace names are Kesh aliases stored in `${XDG_CONFIG_HOME:-~/.config}/kesh/names.json`. Kitty's internal session identity remains unchanged, so aliases can be edited without recreating a live session. Search matches both the alias and the original project or SSH name.
+Pins (`Cmd+0`–`Cmd+9`) switch sessions through Kitty's native `goto_session`
+without starting Kesh each time; they live for the current Kitty run and clear
+on quit. Saved states restore tabs, splits, and working directories (and
+optionally rerun commands); closed saved entries stay available to reopen.
+
+### Filters & launch commands
+
+Every filter has a matching subcommand. In Kitty, `Cmd+Shift+O` opens the full
+hierarchy as an overlay and `Cmd+Shift+P` opens Agents in a tab.
+
+| Command | Opens |
+|---|---|
+| `kesh` | All (full hierarchy) |
+| `kesh open` | Open sessions |
+| `kesh projects` | Projects |
+| `kesh ssh` | SSH hosts |
+| `kesh saved` | Saved sessions |
+| `kesh agents` | Active agents |
+
+---
+
+Architecture, validation, the release process, and behavioral contracts live
+in [AGENTS.md](AGENTS.md).
