@@ -585,11 +585,37 @@ func destroyPrompt(plan destroyPlan) string {
 	if plan.closeSession {
 		lines = append(lines, "  • Close kitty session ("+strconv.Itoa(plan.tabCount)+" tab"+plural(plan.tabCount)+")")
 	}
-	if plan.worktreePath != "" {
+	if len(plan.worktrees) > 1 {
+		lines = append(lines, fmt.Sprintf("  • Remove %d worktrees", len(plan.worktrees)))
+		branchCount := 0
+		for index, worktree := range plan.worktrees {
+			if worktree.Branch != "" {
+				branchCount++
+			}
+			if index >= 4 {
+				if index == 4 {
+					lines = append(lines, fmt.Sprintf("    …and %d more", len(plan.worktrees)-index))
+				}
+				continue
+			}
+			branch := worktree.Branch
+			if branch == "" {
+				branch = "detached HEAD"
+			}
+			lines = append(lines, "    "+branch+"  "+displayPath(worktree.Path, os.Getenv("HOME")))
+		}
+		if branchCount > 0 {
+			branchLabel := "branch"
+			if branchCount > 1 {
+				branchLabel = "branches"
+			}
+			lines = append(lines, fmt.Sprintf("  • Delete %d local %s", branchCount, branchLabel))
+		}
+	} else if plan.worktreePath != "" {
 		lines = append(lines, "  • Remove worktree  "+displayPath(plan.worktreePath, os.Getenv("HOME")))
-	}
-	if plan.branch != "" {
-		lines = append(lines, "  • Delete branch  "+plan.branch)
+		if plan.branch != "" {
+			lines = append(lines, "  • Delete branch  "+plan.branch)
+		}
 	}
 	if plan.saved {
 		lines = append(lines, "  • Delete saved record")

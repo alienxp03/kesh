@@ -1,5 +1,11 @@
 package domain
 
+// LinkedWorktree identifies a linked checkout and its local branch.
+type LinkedWorktree struct {
+	Path   string
+	Branch string
+}
+
 // DestroyTarget describes the independently removable layers associated with
 // one catalog entry.
 type DestroyTarget struct {
@@ -11,6 +17,7 @@ type DestroyTarget struct {
 	Path             string
 	IsLinkedWorktree bool
 	LinkedBranch     string
+	LinkedWorktrees  []LinkedWorktree
 }
 
 // DestroyPlan is the pure result consumed by the application confirmation and
@@ -21,6 +28,7 @@ type DestroyPlan struct {
 	TabCount     int
 	WorktreePath string
 	Branch       string
+	Worktrees    []LinkedWorktree
 	Saved        bool
 }
 
@@ -33,9 +41,21 @@ func PlanDestroy(target DestroyTarget) DestroyPlan {
 		TabCount:     target.TabCount,
 		Saved:        target.Saved,
 	}
+	worktrees := append([]LinkedWorktree(nil), target.LinkedWorktrees...)
 	if target.Kind == "project" && target.Path != "" && target.IsLinkedWorktree {
-		plan.WorktreePath = target.Path
-		plan.Branch = target.LinkedBranch
+		worktrees = append(worktrees, LinkedWorktree{Path: target.Path, Branch: target.LinkedBranch})
+	}
+	seen := make(map[string]bool, len(worktrees))
+	for _, worktree := range worktrees {
+		if worktree.Path == "" || seen[worktree.Path] {
+			continue
+		}
+		seen[worktree.Path] = true
+		plan.Worktrees = append(plan.Worktrees, worktree)
+	}
+	if len(plan.Worktrees) > 0 {
+		plan.WorktreePath = plan.Worktrees[0].Path
+		plan.Branch = plan.Worktrees[0].Branch
 	}
 	return plan
 }

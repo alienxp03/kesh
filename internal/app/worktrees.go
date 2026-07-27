@@ -36,6 +36,17 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
+// sameWorktreePath handles Kitty's occasional case-preserving path variants
+// on case-insensitive filesystems (for example /Workspace vs /workspace).
+func sameWorktreePath(left, right string) bool {
+	if filepath.Clean(left) == filepath.Clean(right) {
+		return true
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
+}
+
 // worktreeCreate is the workspace entry point used by runWktreeNew. It is a
 // package-level variable so tests can substitute a fake without exercising git
 // or Kitty.
@@ -860,9 +871,10 @@ type destroyPlan struct {
 	entryName    string
 	closeSession bool // close the kitty session tabs
 	tabCount     int
-	worktreePath string // linked worktree dir to remove; "" leaves the folder alone
-	branch       string // local branch to delete; "" deletes none
-	saved        bool   // delete the saved-session record + snapshot
+	worktreePath string // first linked worktree, kept for prompt/test compatibility
+	branch       string // first linked branch, kept for prompt/test compatibility
+	worktrees    []domain.LinkedWorktree
+	saved        bool // delete the saved-session record + snapshot
 }
 
 type destroyMsg struct {
@@ -879,18 +891,28 @@ type destroyPlanMsg struct {
 // is a file, not a directory) and returns the checked-out branch. The main
 // checkout and plain directories return ok=false so Destroy never deletes them.
 func linkedWorktreeBranch(dir string) (branch string, ok bool) {
-	info, err := os.Stat(filepath.Join(dir, ".git"))
-	if err != nil || info.IsDir() {
-		return "", false
+	candidate := filepath.Clean(dir)
+	for {
+		info, err := os.Stat(filepath.Join(candidate, ".git"))
+		if err == nil {
+			if info.IsDir() {
+				return "", false
+			}
+			branch, err = (gitx.Repository{Path: candidate}).CheckedOutBranch()
+			if err != nil {
+				return "", true // linked worktree whose branch can't be resolved: drop dir, skip branch
+			}
+			if branch == "" || branch == "HEAD" {
+				return "", true // detached HEAD: remove dir, skip branch
+			}
+			return branch, true
+		}
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			return "", false
+		}
+		candidate = parent
 	}
-	branch, err = (gitx.Repository{Path: dir}).CheckedOutBranch()
-	if err != nil {
-		return "", true // linked worktree whose branch can't be resolved: drop dir, skip branch
-	}
-	if branch == "" || branch == "HEAD" {
-		return "", true // detached HEAD: remove dir, skip branch
-	}
-	return branch, true
 }
 
 // worktreeMainPath returns the main worktree path for the repo containing dir,
@@ -918,24 +940,44 @@ func worktreeMainPath(dir string) string {
 	}
 }
 
-// detectDestroyPlan builds the destroy plan for an entry. Folder and branch
-// removal are restricted to single project entries that resolve to a linked
-// worktree; composed workspaces and plain directories only close/release.
+// detectDestroyPlan builds the destroy plan for an entry. It discovers linked
+// worktrees from the entry path and every visible window directory, allowing a
+// composed worktree session to remove all of its repositories together.
 func detectDestroyPlan(e entry) destroyPlan {
 	target := domain.DestroyTarget{
 		Name: e.name, Saved: e.saved, Open: e.open, TabCount: len(e.tabs),
 		Kind: e.kind, Path: e.path,
 	}
-	if e.kind == "project" && e.path != "" {
-		if branch, ok := linkedWorktreeBranch(e.path); ok {
-			target.IsLinkedWorktree = true
-			target.LinkedBranch = branch
+	linked := make([]domain.LinkedWorktree, 0, 1)
+	addLinked := func(path string) {
+		if path == "" {
+			return
+		}
+		candidate := filepath.Clean(path)
+		for _, existing := range linked {
+			if sameWorktreePath(candidate, existing.Path) {
+				return
+			}
+		}
+		branch, ok := linkedWorktreeBranch(candidate)
+		if !ok {
+			return
+		}
+		linked = append(linked, domain.LinkedWorktree{Path: candidate, Branch: branch})
+	}
+	if e.kind == "project" {
+		addLinked(e.path)
+	}
+	for _, tab := range e.tabs {
+		for _, window := range tab.windows {
+			addLinked(window.cwd)
 		}
 	}
+	target.LinkedWorktrees = linked
 	plan := domain.PlanDestroy(target)
 	return destroyPlan{
 		entryName: plan.EntryName, closeSession: plan.CloseSession, tabCount: plan.TabCount,
-		worktreePath: plan.WorktreePath, branch: plan.Branch, saved: plan.Saved,
+		worktreePath: plan.WorktreePath, branch: plan.Branch, worktrees: plan.Worktrees, saved: plan.Saved,
 	}
 }
 
@@ -953,20 +995,24 @@ func runDestroy(kitty, zoxide string, e entry, plan destroyPlan) tea.Cmd {
 				}
 			}
 		}
-		if plan.worktreePath != "" {
-			ids, _ := worktreeWindowIDs(kitty, plan.worktreePath)
+		worktrees := plan.worktrees
+		if len(worktrees) == 0 && plan.worktreePath != "" {
+			worktrees = []domain.LinkedWorktree{{Path: plan.worktreePath, Branch: plan.branch}}
+		}
+		for _, worktree := range worktrees {
+			ids, _ := worktreeWindowIDs(kitty, worktree.Path)
 			for _, id := range ids {
 				if err := (kittyx.Client{Executable: kitty}).CloseWindow(id); err != nil {
 					return destroyMsg{err: fmt.Errorf("close worktree window %d: %w", id, err)}
 				}
 			}
-			repoDir := worktreeMainPath(plan.worktreePath)
+			repoDir := worktreeMainPath(worktree.Path)
 			repository := gitx.Repository{Path: repoDir}
-			if err := repository.RemoveWorktree(plan.worktreePath, true); err != nil {
+			if err := repository.RemoveWorktree(worktree.Path, true); err != nil {
 				return destroyMsg{err: err}
 			}
-			if plan.branch != "" {
-				if err := repository.DeleteBranch(plan.branch); err != nil {
+			if worktree.Branch != "" {
+				if err := repository.DeleteBranch(worktree.Branch); err != nil {
 					return destroyMsg{err: err}
 				}
 			}

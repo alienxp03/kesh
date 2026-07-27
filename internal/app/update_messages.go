@@ -232,6 +232,10 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancelMode()
 			if msg.err != nil {
 				m.err = msg.err
+				if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
+					entryIndex := m.worktreeFilterEntryIndex
+					return m, fetchWorktrees(m.entries[entryIndex].path, entryIndex, -1, -1)
+				}
 				return m, nil
 			}
 			if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {

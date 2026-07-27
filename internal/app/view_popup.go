@@ -19,6 +19,9 @@ func (m model) popupView(width int) string {
 	if m.mode == modeClone || (m.mode == modeSaveConfirm && m.saveForeground) || m.mode == modeWorktreeCreate || (m.mode == modeCloseConfirm && m.closeRow.section == "wt-filter") {
 		popupWidth = min(72, max(36, width-6))
 	}
+	if m.mode == modeCloseConfirm && m.destroyPlan != nil {
+		popupWidth = min(64, max(36, width-6))
+	}
 	// PR URLs and worktree paths are often long. Let this form use the available
 	// terminal width instead of leaving an artificial empty right-hand column.
 	if m.mode == modeCheckoutPR {

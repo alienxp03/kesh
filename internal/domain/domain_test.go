@@ -54,6 +54,19 @@ func TestEntryLess(t *testing.T) {
 	}
 }
 
+func TestPlanDestroySupportsComposedWorktrees(t *testing.T) {
+	plan := PlanDestroy(DestroyTarget{
+		Name: "dotfiles/worktree-1", Kind: "workspace", Open: true, TabCount: 2,
+		LinkedWorktrees: []LinkedWorktree{
+			{Path: "/worktrees/dotfiles/worktree-1", Branch: "worktree-1"},
+			{Path: "/worktrees/kesh/worktree-1", Branch: "worktree-1"},
+		},
+	})
+	if len(plan.Worktrees) != 2 || plan.WorktreePath != "/worktrees/dotfiles/worktree-1" || plan.Branch != "worktree-1" {
+		t.Fatalf("composed plan = %#v", plan)
+	}
+}
+
 func TestPlanDestroyOnlyRemovesLinkedProjectWorktrees(t *testing.T) {
 	linked := PlanDestroy(DestroyTarget{
 		Name: "feature", Saved: true, Open: true, TabCount: 2,

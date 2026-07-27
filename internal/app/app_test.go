@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"gopkg.in/yaml.v3"
 
+	"github.com/alienxp03/kesh/internal/domain"
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	"github.com/alienxp03/kesh/internal/system"
 	"github.com/alienxp03/kesh/internal/workspace"
@@ -310,12 +311,45 @@ func TestDestroyPromptListsApplicableLayers(t *testing.T) {
 			t.Fatalf("destroy prompt missing %q:\n%s", want, got)
 		}
 	}
+	multiple := destroyPrompt(destroyPlan{
+		entryName: "testing-3",
+		worktrees: []domain.LinkedWorktree{
+			{Path: "/worktrees/dotfiles/testing-3", Branch: "testing-3"},
+			{Path: "/worktrees/kesh/testing-3", Branch: "testing-3"},
+		},
+	})
+	if !strings.Contains(multiple, "Delete 2 local branches") {
+		t.Fatalf("multi-worktree prompt must state branch deletion:\n%s", multiple)
+	}
+
 	// A plan with only some layers omits the rest.
 	minimal := destroyPrompt(destroyPlan{entryName: "drafts", saved: true})
 	for _, absent := range []string{"worktree", "branch", "session"} {
 		if strings.Contains(minimal, absent) {
 			t.Fatalf("minimal destroy prompt should omit inapplicable layers:\n%s", minimal)
 		}
+	}
+}
+
+func TestDestroyPopupFitsTypicalWorktreePaths(t *testing.T) {
+	t.Setenv("HOME", "/Users/azuan")
+	path := "/Users/azuan/Workspace/worktree/alienxp03/dotfiles/testing-3"
+	plan := destroyPlan{
+		entryName:    "testing-3",
+		worktrees:    []domain.LinkedWorktree{{Path: path, Branch: "testing-3"}},
+		worktreePath: path,
+		branch:       "testing-3",
+	}
+	m := model{
+		modeState: modeState{
+			mode:              modeCloseConfirm,
+			closeConfirmation: &closeConfirmation{destroyPlan: &plan},
+		},
+		entries: []entry{{name: "testing-3"}},
+	}
+	popup := ansi.Strip(m.popupView(100))
+	if !strings.Contains(popup, "~/Workspace/worktree/alienxp03/dotfiles/testing-3") {
+		t.Fatalf("destroy popup wrapped a typical worktree path:\n%s", popup)
 	}
 }
 
@@ -365,6 +399,21 @@ esac
 	plan := detectDestroyPlan(entry{name: "wt", kind: "project", path: wt})
 	if plan.worktreePath != wt || plan.branch != "feat/destroy" {
 		t.Fatalf("linked worktree plan = %#v, want worktreePath=%s branch=feat/destroy", plan, wt)
+	}
+
+	second := t.TempDir()
+	if err := os.WriteFile(filepath.Join(second, ".git"), []byte("gitdir: /fake/main/.git/worktrees/second"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	composed := detectDestroyPlan(entry{
+		name: "dotfiles/worktree-1", kind: "workspace", open: true,
+		tabs: []tabItem{
+			{windows: []windowItem{{cwd: wt}, {cwd: wt}}},
+			{windows: []windowItem{{cwd: second}}},
+		},
+	})
+	if len(composed.worktrees) != 2 {
+		t.Fatalf("composed worktree plan = %#v, want two worktrees", composed)
 	}
 }
 
