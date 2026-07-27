@@ -139,7 +139,10 @@ func TestWriteSessionFileIsStableAndPrivate(t *testing.T) {
 }
 
 func TestOpenLayoutUsesGotoSessionAndListenSocket(t *testing.T) {
-	runner := &kittyRunner{lsOutput: "[]"}
+	runner := &kittyRunner{lsOutputs: []string{
+		"[]",
+		`[{"tabs":[{"id":6,"windows":[{"id":24,"cwd":"/tmp/app","env":{"KESH_KITTY_SESSION":"repo/feature"}}]}]}]`,
+	}}
 	status, err := OpenLayout(context.Background(), layout.OpenOptions{
 		SessionName: "repo/feature",
 		Windows:     []layout.Window{{Name: "app", WorktreePath: "/tmp/app"}},
@@ -150,11 +153,36 @@ func TestOpenLayoutUsesGotoSessionAndListenSocket(t *testing.T) {
 	if err != nil || status != 0 {
 		t.Fatalf("status=%d err=%v", status, err)
 	}
-	assertKittyCommands(t, runner.calls, []string{"--version", "@ --to unix:/tmp/kitty.sock ls", "@ --to unix:/tmp/kitty.sock action goto_session"})
-	last := runner.calls[len(runner.calls)-1]
-	if filepath.Ext(last.args[len(last.args)-1]) != ".kitty-session" {
-		t.Fatalf("goto args = %#v", last.args)
+	assertKittyCommands(t, runner.calls, []string{"--version", "@ --to unix:/tmp/kitty.sock ls", "@ --to unix:/tmp/kitty.sock action goto_session", "@ --to unix:/tmp/kitty.sock ls", "@ --to unix:/tmp/kitty.sock set-tab-title --match id:6 app"})
+	gotoCall := runner.calls[2]
+	if filepath.Ext(gotoCall.args[len(gotoCall.args)-1]) != ".kitty-session" {
+		t.Fatalf("goto args = %#v", gotoCall.args)
 	}
+}
+
+func TestOpenLayoutSetsLiveWorkspaceTabTitles(t *testing.T) {
+	runner := &kittyRunner{lsOutputs: []string{
+		"[]",
+		`[{"tabs":[{"id":6,"windows":[{"id":24,"cwd":"/tmp/dotfiles","env":{"KESH_KITTY_SESSION":"testing-3"}}]},{"id":7,"windows":[{"id":28,"cwd":"/tmp/kesh","env":{"KESH_KITTY_SESSION":"testing-3"}}]}]}]`,
+	}}
+	status, err := OpenLayout(context.Background(), layout.OpenOptions{
+		SessionName: "testing-3",
+		Windows: []layout.Window{
+			{Name: "dotfiles", WorktreePath: "/tmp/dotfiles"},
+			{Name: "kesh", WorktreePath: "/tmp/kesh"},
+		},
+		Env:      map[string]string{"KITTY_WINDOW_ID": "1"},
+		CacheDir: t.TempDir(),
+		Runner:   run.RunnerFunc(runner.run),
+	})
+	if err != nil || status != 0 {
+		t.Fatalf("status=%d err=%v", status, err)
+	}
+	assertKittyCommands(t, runner.calls, []string{
+		"--version", "@ ls", "@ action goto_session", "@ ls",
+		"@ set-tab-title --match id:6 dotfiles",
+		"@ set-tab-title --match id:7 kesh",
+	})
 }
 
 func TestOpenLayoutFocusesExistingGeneratedSession(t *testing.T) {
@@ -253,6 +281,8 @@ type kittyCall struct {
 type kittyRunner struct {
 	calls       []kittyCall
 	lsOutput    string
+	lsOutputs   []string
+	lsCalls     int
 	lsStderr    string
 	lsExit      int
 	versionExit int
@@ -267,7 +297,12 @@ func (runner *kittyRunner) run(_ context.Context, command string, args []string,
 		return run.Result{ExitCode: runner.versionExit, Stderr: "not found"}
 	}
 	if args[len(args)-1] == "ls" {
-		return run.Result{ExitCode: runner.lsExit, Stdout: runner.lsOutput, Stderr: runner.lsStderr}
+		output := runner.lsOutput
+		if runner.lsCalls < len(runner.lsOutputs) {
+			output = runner.lsOutputs[runner.lsCalls]
+		}
+		runner.lsCalls++
+		return run.Result{ExitCode: runner.lsExit, Stdout: output, Stderr: runner.lsStderr}
 	}
 	return run.Result{}
 }

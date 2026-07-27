@@ -103,6 +103,19 @@ func assertNoExtraWorktree(t *testing.T, repo string) {
 // TestSessionNameForOpen covers the launch session-name override: a non-empty
 // user name wins (sanitized); empty or sanitized-away falls back to the derived
 // repo name so the session always has a valid identifier.
+func TestWorktreeSessionUsesBranchName(t *testing.T) {
+	sel := selection{
+		ConfigRepoSlug: "owner/dotfiles",
+		Workspaces: []worktreeSpec{
+			{Name: "dotfiles"},
+			{Name: "kesh"},
+		},
+	}
+	if got := sessionName(sel, "worktree-1"); got != "worktree-1" {
+		t.Fatalf("worktree session name = %q, want %q", got, "worktree-1")
+	}
+}
+
 func TestSessionNameForOpen(t *testing.T) {
 	sel := selection{ConfigRepoSlug: "owner/repo"}
 

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/alienxp03/kesh/internal/workspace/config"
-	"github.com/alienxp03/kesh/internal/workspace/kitty"
 	"github.com/alienxp03/kesh/internal/workspace/layout"
 	"github.com/alienxp03/kesh/internal/workspace/run"
 	"github.com/alienxp03/kesh/internal/workspace/setup"
@@ -76,16 +75,7 @@ func Open(ctx context.Context, opts OpenOptions) error {
 	}
 	addToZoxide(ctx, pathsToAdd, opts.Runner)
 
-	windows := openWindows(folders)
-	_, err = kitty.OpenLayout(ctx, layout.OpenOptions{
-		Mode:        layout.ModeWindow,
-		SessionName: sessionNameForOpen(sel, opts.SessionName),
-		Windows:     windows,
-		Env:         opts.Env,
-		CacheDir:    cacheDir(opts.Env),
-		Runner:      opts.Runner,
-	})
-	return err
+	return openWorkspaceLayout(ctx, sessionNameForOpen(sel, opts.SessionName), openWindows(folders), opts.Env, opts.Runner)
 }
 
 // openSelectionOpts builds the CreateOptions shape resolveSelection consumes,
@@ -166,16 +156,17 @@ func openContexts(folders []openFolder) map[string]setup.Context {
 func openWindows(folders []openFolder) []layout.Window {
 	windows := make([]layout.Window, 0, len(folders))
 	for _, f := range folders {
-		windows = append(windows, layout.Window{
-			Name:         nameComponent(f.Spec.Name),
-			WorktreePath: f.Path,
-			Commands:     paneCommands(config.WorkspacePanes(f.Spec.Config)),
-		})
+		windows = append(windows, workspaceWindow(
+			f.Spec.Name,
+			f.Path,
+			config.WorkspacePanes(f.Spec.Config),
+		))
 	}
 	return windows
 }
 
-// sessionNameOpen derives the Kitty session name for an existing repository.
+// sessionNameOpen derives the fallback Kitty session name for an existing
+// repository when the launch form's Session field is empty.
 func sessionNameOpen(sel selection) string {
 	return repoName(sel.ConfigRepoSlug)
 }

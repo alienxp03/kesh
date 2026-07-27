@@ -121,16 +121,7 @@ func Create(ctx context.Context, opts CreateOptions) error {
 	}
 	addToZoxide(ctx, pathsToAdd, opts.Runner)
 
-	windows := kittyWindows(worktrees)
-	_, err = kitty.OpenLayout(ctx, layout.OpenOptions{
-		Mode:        layout.ModeWindow,
-		SessionName: sessionName(selection, opts.Branch),
-		Windows:     windows,
-		Env:         opts.Env,
-		CacheDir:    cacheDir(opts.Env),
-		Runner:      opts.Runner,
-	})
-	return err
+	return openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), kittyWindows(worktrees), opts.Env, opts.Runner)
 }
 
 // Mode values for CreateOptions.Mode.
@@ -430,13 +421,38 @@ func workspaceContexts(worktrees []worktreeWithSpec) map[string]setup.Context {
 func kittyWindows(worktrees []worktreeWithSpec) []layout.Window {
 	windows := make([]layout.Window, 0, len(worktrees))
 	for _, wt := range worktrees {
-		windows = append(windows, layout.Window{
-			Name:         nameComponent(wt.Spec.Name),
-			WorktreePath: workspacePath(wt.Spec, wt.Worktree.WorktreePath),
-			Commands:     paneCommands(config.WorkspacePanes(wt.Spec.Config)),
-		})
+		windows = append(windows, workspaceWindow(
+			wt.Spec.Name,
+			workspacePath(wt.Spec, wt.Worktree.WorktreePath),
+			config.WorkspacePanes(wt.Spec.Config),
+		))
 	}
 	return windows
+}
+
+// workspaceWindow is shared by native folder launches and worktree launches so
+// both flows use the workspace name for Kitty tabs and the same pane mapping.
+func workspaceWindow(name, path string, commands []config.PaneCommand) layout.Window {
+	return layout.Window{
+		Name:         nameComponent(name),
+		WorktreePath: path,
+		Commands:     paneCommands(commands),
+	}
+}
+
+// openWorkspaceLayout is the common terminal path for opening current folders
+// and newly created worktrees. Callers only resolve the session name and each
+// workspace directory; tab names and panes have identical semantics.
+func openWorkspaceLayout(ctx context.Context, sessionName string, windows []layout.Window, env map[string]string, runner run.Runner) error {
+	_, err := kitty.OpenLayout(ctx, layout.OpenOptions{
+		Mode:        layout.ModeWindow,
+		SessionName: sessionName,
+		Windows:     windows,
+		Env:         env,
+		CacheDir:    cacheDir(env),
+		Runner:      runner,
+	})
+	return err
 }
 
 func paneCommands(commands []config.PaneCommand) []layout.PaneCommand {
@@ -463,13 +479,12 @@ func workspacePath(ws worktreeSpec, worktreePath string) string {
 
 // --- session naming ---
 
-func sessionName(sel selection, branch string) string {
+func sessionName(_ selection, branch string) string {
 	branchSlug, err := paths.BranchSlug(branch)
 	if err != nil {
 		branchSlug = "branch"
 	}
-	repositoryName := repoName(sel.ConfigRepoSlug)
-	return joinNameSegments(repositoryName + "/" + nameComponent(branchSlug))
+	return nameComponent(branchSlug)
 }
 
 func repoName(repoSlug string) string {

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alienxp03/kesh/internal/workspace/layout"
 	"github.com/alienxp03/kesh/internal/workspace/run"
@@ -94,7 +95,77 @@ func OpenLayout(ctx context.Context, options layout.OpenOptions) (int, error) {
 	if result.Err != nil || result.ExitCode != 0 {
 		return 1, errors.New(run.FailureMessage("kitty", args, result))
 	}
+	if err := setLayoutTabTitles(ctx, runner, options); err != nil {
+		return 1, err
+	}
 	return 0, nil
+}
+
+// setLayoutTabTitles makes workspace names sticky. Kitty's startup-session
+// new_tab title can fall back to the worktree directory after goto_session;
+// setting the live tab title explicitly avoids every tab becoming the branch
+// name while preserving workspace-specific window titles.
+func setLayoutTabTitles(ctx context.Context, runner run.Runner, options layout.OpenOptions) error {
+	attempts := 1
+	if _, realRunner := runner.(run.DefaultRunner); realRunner {
+		attempts = 40
+	}
+	titledTabs := map[int64]bool{}
+	readyPolls := map[int64]int{}
+	for attempt := 0; attempt < attempts; attempt++ {
+		windows, _, err := listWindows(ctx, runner, options.Env)
+		if err != nil {
+			return err
+		}
+		for _, expected := range options.Windows {
+			expectedPanes := max(1, len(expected.Commands))
+			for _, window := range windows {
+				if window.Env[sessionEnv] != options.SessionName || titledTabs[window.TabID] || !samePath(window.CWD, expected.WorktreePath) {
+					continue
+				}
+				paneCount := 0
+				for _, candidate := range windows {
+					if candidate.TabID == window.TabID && candidate.Env[sessionEnv] == options.SessionName {
+						paneCount++
+					}
+				}
+				if paneCount < expectedPanes {
+					readyPolls[window.TabID] = 0
+					break
+				}
+				readyPolls[window.TabID]++
+				if attempts > 1 && readyPolls[window.TabID] < 5 {
+					break
+				}
+				args := remoteArgs(options.Env, "set-tab-title", "--match", "id:"+strconv.FormatInt(window.TabID, 10), expected.Name)
+				result := runner.Run(ctx, "kitty", args, remoteRunOptions(options.Env))
+				if result.Err != nil || result.ExitCode != 0 {
+					return errors.New(run.FailureMessage("kitty", args, result))
+				}
+				titledTabs[window.TabID] = true
+				break
+			}
+		}
+		if len(titledTabs) == len(options.Windows) {
+			return nil
+		}
+		if attempt < attempts-1 {
+			time.Sleep(25 * time.Millisecond)
+		}
+	}
+	if attempts == 1 {
+		return nil
+	}
+	return fmt.Errorf("kitty session %q opened, but its tabs were not ready for naming", options.SessionName)
+}
+
+func samePath(left, right string) bool {
+	if filepath.Clean(left) == filepath.Clean(right) {
+		return true
+	}
+	leftInfo, leftErr := os.Stat(left)
+	rightInfo, rightErr := os.Stat(right)
+	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }
 
 func KillLayout(ctx context.Context, options layout.KillOptions) error {
@@ -181,10 +252,7 @@ func RenderSession(sessionName string, windows []layout.Window) (string, error) 
 			if command.Size != "" {
 				return "", fmt.Errorf("kitty provider does not support panes[].size; use percentage")
 			}
-			args := []string{"launch"}
-			if commandIndex == 0 {
-				args = append(args, "--title="+window.Name)
-			}
+			args := []string{"launch", "--title=" + window.Name}
 			if commandIndex > 0 && !stableTallLayout {
 				location := "vsplit"
 				if command.Split == "vertical" {
@@ -310,12 +378,14 @@ type listedTab struct {
 
 type listedWindow struct {
 	ID  int64             `json:"id"`
+	CWD string            `json:"cwd"`
 	Env map[string]string `json:"env"`
 }
 
 type sessionWindow struct {
 	ID    int64
 	TabID int64
+	CWD   string
 	Env   map[string]string
 }
 
@@ -336,7 +406,7 @@ func listWindows(ctx context.Context, runner run.Runner, env map[string]string) 
 	for _, osWindow := range osWindows {
 		for _, tab := range osWindow.Tabs {
 			for _, window := range tab.Windows {
-				windows = append(windows, sessionWindow{ID: window.ID, TabID: tab.ID, Env: window.Env})
+				windows = append(windows, sessionWindow{ID: window.ID, TabID: tab.ID, CWD: window.CWD, Env: window.Env})
 			}
 		}
 	}
