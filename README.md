@@ -273,6 +273,10 @@ package above.
 ```sh
 make ci       # format check, lint, tests, and build
 make build    # installs the development binary to ~/.local/bin/kesh
+make release-dry-run BUMP=patch
+make release BUMP=patch                     # prompt before pushing the tag
+make release BUMP=minor RELEASE_FLAGS=-y     # publish without prompting
+make release VERSION=v1.0.0                  # explicit version
 ```
 
 See [AGENTS.md](AGENTS.md) for project architecture and contributor

@@ -41,13 +41,24 @@ cannot perform.
 
 ## Release
 
-Releases are cut locally with GoReleaser and published to the
-`alienxp03/homebrew-tap` tap (see `.goreleaser.yaml`):
+Releases are published by `.github/workflows/release.yml` when a `v*` tag is
+pushed. The workflow publishes GitHub release archives and the generated
+`Formula/kesh.rb` formula to the `alienxp03/homebrew-tap` repository.
+
+The tap repository needs a `HOMEBREW_TAP_GITHUB_TOKEN` secret with Contents
+write access to `alienxp03/homebrew-tap`; the default workflow token cannot
+write to a different repository. The local helper requires Git push access to
+`origin` and creates the tag that starts the workflow:
 
 ```sh
-git tag v0.1.0
-goreleaser release
+make release-dry-run VERSION=v0.1.0
+make release BUMP=patch                       # e.g. v0.1.0 -> v0.1.1
+make release BUMP=minor RELEASE_FLAGS=-y       # e.g. v0.1.1 -> v0.2.0
+make release VERSION=v1.0.0                   # explicit version, then prompt
 ```
+
+For direct local publishing, export both `GITHUB_TOKEN` and
+`HOMEBREW_TAP_GITHUB_TOKEN`, then run `goreleaser release --clean`.
 
 ## XDG paths
 

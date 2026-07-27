@@ -9,8 +9,15 @@ import (
 	"github.com/alienxp03/kesh/internal/app"
 )
 
+var version = "dev"
+
 func main() {
-	if err := app.Run(os.Args[1:]); err != nil {
+	args := os.Args[1:]
+	if versionRequested(args) {
+		fmt.Println(version)
+		return
+	}
+	if err := app.Run(args); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		var usage *app.UsageError
 		if errors.As(err, &usage) {
@@ -18,4 +25,8 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+func versionRequested(args []string) bool {
+	return len(args) == 1 && (args[0] == "-v" || args[0] == "--version")
 }

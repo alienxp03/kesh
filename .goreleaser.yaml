@@ -16,11 +16,13 @@ builds:
       - darwin_arm64
       - darwin_amd64
       - linux_amd64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
 
 archives:
   - formats: [tar.gz]
     name_template: >-
-      {{ .ProjectName }}_{{ .Version }}_{{ .Title .Os }}_{{ .Arch }}
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
 
 checksum:
   name_template: "checksums.txt"
@@ -46,7 +48,8 @@ brews:
     repository:
       owner: alienxp03
       name: homebrew-tap
-      branch: main
+      branch: master
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: https://github.com/alienxp03/kesh
     description: "Keyboard-driven Kitty workspace manager for zoxide projects, SSH hosts, and agents."

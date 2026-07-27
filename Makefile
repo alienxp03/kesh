@@ -1,7 +1,7 @@
 ## kesh development tasks.
 ## Tool versions are pinned in .mise.toml; run `mise install` to provision.
 
-.PHONY: tools fmt lint vet test build ci check
+.PHONY: tools fmt lint vet test build ci check release release-dry-run
 
 ## tools: install editor-side helpers (golangci-lint itself comes via mise).
 tools:
@@ -34,3 +34,15 @@ ci: lint test build
 check:
 	@out=$$(golangci-lint fmt --diff ./... 2>&1); \
 	if [ -n "$$out" ]; then echo "$$out"; echo "run 'make fmt'"; exit 1; fi
+
+## release: run a snapshot, then prompt before pushing a version tag.
+release:
+	@if [ -n "$(VERSION)" ] && [ -n "$(BUMP)" ]; then echo "set VERSION or BUMP, not both"; exit 1; fi
+	@test -n "$(VERSION)$(BUMP)" || (echo "usage: make release VERSION=vX.Y.Z or BUMP=patch|minor|major [RELEASE_FLAGS=-y]"; exit 1)
+	$(if $(BUMP),go run ./cmd/release $(RELEASE_FLAGS) --bump $(BUMP),go run ./cmd/release $(RELEASE_FLAGS) $(VERSION))
+
+## release-dry-run: build release artifacts without prompting or publishing.
+release-dry-run:
+	@if [ -n "$(VERSION)" ] && [ -n "$(BUMP)" ]; then echo "set VERSION or BUMP, not both"; exit 1; fi
+	@test -n "$(VERSION)$(BUMP)" || (echo "usage: make release-dry-run VERSION=vX.Y.Z or BUMP=patch|minor|major"; exit 1)
+	$(if $(BUMP),go run ./cmd/release --dry-run --bump $(BUMP),go run ./cmd/release --dry-run $(VERSION))

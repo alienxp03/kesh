@@ -12,6 +12,11 @@ coverage.html
 # Local dev binary (see Makefile `build`)
 /kesh-dev
 
+# Local secrets
+.env
+.env.*
+!.env.example
+
 # Editor / OS
 .DS_Store
 *.swp
