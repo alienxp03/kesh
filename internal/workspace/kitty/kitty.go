@@ -86,7 +86,12 @@ func OpenLayout(ctx context.Context, options layout.OpenOptions) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	path, err := WriteSessionFile(options.CacheDir, options.SessionName, content)
+	path := options.SessionFile
+	if path == "" {
+		path, err = WriteSessionFile(options.CacheDir, options.SessionName, content)
+	} else {
+		err = WriteSessionFileAt(path, content)
+	}
 	if err != nil {
 		return 1, err
 	}
@@ -287,36 +292,47 @@ func RenderSession(sessionName string, windows []layout.Window) (string, error) 
 	return output.String(), nil
 }
 
+func SessionFilePath(cacheDir string, sessionName string) (string, error) {
+	return sessionFilePath(cacheDir, sessionName)
+}
+
 func WriteSessionFile(cacheDir string, sessionName string, content string) (string, error) {
-	path, err := sessionFilePath(cacheDir, sessionName)
+	path, err := SessionFilePath(cacheDir, sessionName)
 	if err != nil {
 		return "", err
 	}
+	if err := WriteSessionFileAt(path, content); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func WriteSessionFileAt(path string, content string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("create Kitty session cache: %w", err)
+		return fmt.Errorf("create Kitty session cache: %w", err)
 	}
 	temporary, err := os.CreateTemp(dir, ".kitty-session-*")
 	if err != nil {
-		return "", fmt.Errorf("create Kitty session file: %w", err)
+		return fmt.Errorf("create Kitty session file: %w", err)
 	}
 	temporaryPath := temporary.Name()
 	defer os.Remove(temporaryPath)
 	if err := temporary.Chmod(0o600); err != nil {
 		temporary.Close()
-		return "", err
+		return err
 	}
 	if _, err := temporary.WriteString(content); err != nil {
 		temporary.Close()
-		return "", fmt.Errorf("write Kitty session file: %w", err)
+		return fmt.Errorf("write Kitty session file: %w", err)
 	}
 	if err := temporary.Close(); err != nil {
-		return "", err
+		return err
 	}
 	if err := os.Rename(temporaryPath, path); err != nil {
-		return "", fmt.Errorf("install Kitty session file: %w", err)
+		return fmt.Errorf("install Kitty session file: %w", err)
 	}
-	return path, nil
+	return nil
 }
 
 func RemoveSessionFile(cacheDir string, sessionName string) error {

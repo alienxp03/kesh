@@ -121,7 +121,7 @@ func Create(ctx context.Context, opts CreateOptions) error {
 	}
 	addToZoxide(ctx, pathsToAdd, opts.Runner)
 
-	return openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), kittyWindows(worktrees), opts.Env, opts.Runner)
+	return openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), "", kittyWindows(worktrees), opts.Env, opts.Runner)
 }
 
 // Mode values for CreateOptions.Mode.
@@ -443,10 +443,11 @@ func workspaceWindow(name, path string, commands []config.PaneCommand) layout.Wi
 // openWorkspaceLayout is the common terminal path for opening current folders
 // and newly created worktrees. Callers only resolve the session name and each
 // workspace directory; tab names and panes have identical semantics.
-func openWorkspaceLayout(ctx context.Context, sessionName string, windows []layout.Window, env map[string]string, runner run.Runner) error {
+func openWorkspaceLayout(ctx context.Context, sessionName, sessionFile string, windows []layout.Window, env map[string]string, runner run.Runner) error {
 	_, err := kitty.OpenLayout(ctx, layout.OpenOptions{
 		Mode:        layout.ModeWindow,
 		SessionName: sessionName,
+		SessionFile: sessionFile,
 		Windows:     windows,
 		Env:         env,
 		CacheDir:    cacheDir(env),

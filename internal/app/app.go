@@ -29,6 +29,8 @@ func Run(args []string) error {
 	switch pinCommand {
 	case "init":
 		return initProject()
+	case "start":
+		return runStart(kitty)
 	case "begin-run":
 		return beginKittyRun(kitty, currentKittyPID())
 	case "clear-pins":
@@ -42,7 +44,7 @@ func Run(args []string) error {
 
 	fmt.Print("\033]2;kesh\007")
 	entries, zoxideCtx, loadErr := loadEntriesFast(kitty)
-	staleErr := clearStalePinsIfNeeded()
+	staleErr := clearStaleKittyRunStateIfNeeded()
 	pins, pinErr := loadPins()
 	names, nameErr := loadNames()
 	if loadErr == nil && pinErr != nil {
@@ -99,6 +101,8 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 		return filterAll, "", "", nil
 	case len(args) == 1 && args[0] == "init":
 		return filterAll, "", "init", nil
+	case len(args) == 1 && args[0] == "start":
+		return filterAll, "", "start", nil
 	case len(args) == 1 && args[0] == "agents":
 		return filterAgents, "", "", nil
 	case len(args) == 1 && args[0] == "ssh":
@@ -114,7 +118,7 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	case len(args) == 2 && args[0] == "switch" && validSlot(args[1]):
 		return filterAll, args[1], "", nil
 	default:
-		return 0, "", "", &UsageError{message: "usage: kesh [init | agents | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
+		return 0, "", "", &UsageError{message: "usage: kesh [init | start | agents | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
 	}
 }
 
@@ -163,7 +167,7 @@ func savedSessionDirectory() string { return config.FromEnvironment().Sessions()
 func pinShortcutsPath() string      { return config.FromEnvironment().PinShortcuts() }
 func kittyRunPath() string          { return config.FromEnvironment().KittyRun() }
 func configPath() string            { return config.FromEnvironment().File() }
-func namesPath() string             { return config.FromEnvironment().Names() }
+func aliasesPath() string           { return config.FromEnvironment().Aliases() }
 
 func loadCloneRoot() (string, error) {
 	return config.CloneRoot(configPath(), os.Getenv("HOME"))
@@ -251,11 +255,11 @@ func expandHomePath(path string) (string, error) {
 }
 
 func loadNames() (nameStore, error) {
-	return state.LoadNames(namesPath())
+	return state.LoadNames(aliasesPath())
 }
 
 func saveNames(names nameStore) error {
-	return state.SaveNames(namesPath(), names)
+	return state.SaveNames(aliasesPath(), names)
 }
 
 func applyNames(entries []entry, names nameStore) {
@@ -341,6 +345,20 @@ func clearAllPins(kitty string, reloadConfig bool) error {
 	return syncPinShortcuts(kitty, pins)
 }
 
+func clearAliases() error {
+	return saveNames(nameStore{})
+}
+
+func clearKittyRunState(kitty string, reloadConfig bool) error {
+	if err := clearAllPins(kitty, reloadConfig); err != nil {
+		return fmt.Errorf("clear pins: %w", err)
+	}
+	if err := clearAliases(); err != nil {
+		return fmt.Errorf("clear aliases: %w", err)
+	}
+	return nil
+}
+
 func currentKittyPID() int {
 	if pid, err := strconv.Atoi(os.Getenv("KESH_KITTY_PID")); err == nil && pid > 0 {
 		return pid
@@ -348,13 +366,13 @@ func currentKittyPID() int {
 	return os.Getppid()
 }
 
-// clearStalePinsIfNeeded resets pins left by a previous Kitty run when this is
-// the first picker launch of a new run. Without the Kitty watcher, the picker
-// is the only Kesh component that runs during a Kitty session, so it owns
-// detecting that the previous Kitty (whether it quit normally or was
-// force-killed) is gone. It only clears the persisted store; the picker's
-// normal shortcut sync propagates the empty state to Kitty's keybindings.
-func clearStalePinsIfNeeded() error {
+// clearStaleKittyRunStateIfNeeded resets state left by a previous Kitty run
+// when this is the first picker launch of a new run. Without the Kitty
+// watcher, the picker is the only Kesh component that runs during a Kitty
+// session, so it owns detecting that the previous Kitty (whether it quit
+// normally or was force-killed) is gone. It writes the empty shortcut file;
+// the picker's normal shortcut sync propagates the empty state to Kitty.
+func clearStaleKittyRunStateIfNeeded() error {
 	marker := kittyRunPath()
 	if content, err := os.ReadFile(marker); err == nil {
 		previousPID, parseErr := strconv.Atoi(strings.TrimSpace(string(content)))
@@ -370,7 +388,7 @@ func clearStalePinsIfNeeded() error {
 	if err := os.WriteFile(marker, []byte(strconv.Itoa(currentKittyPID())+"\n"), 0o600); err != nil {
 		return fmt.Errorf("save Kitty run marker: %w", err)
 	}
-	return savePins(pinStore{})
+	return clearKittyRunState("", false)
 }
 
 func beginKittyRun(kitty string, pid int) error {
@@ -384,8 +402,8 @@ func beginKittyRun(kitty string, pid int) error {
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("read Kitty run marker: %w", err)
 	}
-	if err := clearAllPins(kitty, true); err != nil {
-		return fmt.Errorf("clear pins left by an unclean Kitty exit: %w", err)
+	if err := clearKittyRunState(kitty, true); err != nil {
+		return fmt.Errorf("clear Kitty run state left by an unclean Kitty exit: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(marker), 0o700); err != nil {
 		return fmt.Errorf("create Kesh state directory: %w", err)
@@ -401,7 +419,7 @@ func kittyProcessRunning(pid int) bool {
 }
 
 func endKittyRun(kitty string) error {
-	if err := clearAllPins(kitty, false); err != nil {
+	if err := clearKittyRunState(kitty, false); err != nil {
 		return err
 	}
 	if err := os.Remove(kittyRunPath()); err != nil && !os.IsNotExist(err) {

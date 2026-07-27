@@ -179,7 +179,7 @@ workspaces:
 Other setup options include randomized ports and generated environment values.
 These settings do not run when opening an existing folder.
 
-Global paths are configured in `~/.config/kesh/config.yaml`:
+Global paths and default Kitty startup sessions are configured in `~/.config/kesh/config.yaml`:
 
 ```yaml
 clone:
@@ -188,7 +188,19 @@ worktree:
   root: ~/workspace/worktrees
 checkout:
   root: ~/workspace
+
+startup:
+  sessions:
+    - path: ~/workspace/aurora
+      pin: 0
+    - path: ~/workspace/flux
+      pin: 1
 ```
+
+Run `kesh start` to launch the configured sessions in the current Kitty OS
+window. A path with `.kesh.yaml` uses its configured layout and workspaces; a
+path without one opens as a plain folder session. Startup refuses to run when
+named Kitty sessions already exist, preventing a partial or duplicated launch.
 
 ## Manual Kitty sessions
 
@@ -230,6 +242,7 @@ normally or when it detects a stale Kitty process.
 
 ```text
 kesh                         Open the workspace picker
+kesh start                   Launch configured default sessions
 kesh init                    Create .kesh.yaml in the current directory
 kesh agents                 Show active agent windows
 kesh ssh                    Show configured SSH hosts

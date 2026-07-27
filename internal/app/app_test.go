@@ -170,6 +170,7 @@ func TestParseArgs(t *testing.T) {
 	}{
 		{wantFilter: filterAll},
 		{args: []string{"init"}, wantFilter: filterAll, wantPinCommand: "init"},
+		{args: []string{"start"}, wantFilter: filterAll, wantPinCommand: "start"},
 		{args: []string{"agents"}, wantFilter: filterAgents},
 		{args: []string{"ssh"}, wantFilter: filterSSH},
 		{args: []string{"saved"}, wantFilter: filterSaved},
@@ -188,6 +189,47 @@ func TestParseArgs(t *testing.T) {
 		if err == nil && (filter != test.wantFilter || slot != test.wantSlot || pinCommand != test.wantPinCommand) {
 			t.Errorf("parseArgs(%q) = (%d, %q, %q), want (%d, %q, %q)", test.args, filter, slot, pinCommand, test.wantFilter, test.wantSlot, test.wantPinCommand)
 		}
+	}
+}
+
+func TestStartupSessionNameDisambiguatesPaths(t *testing.T) {
+	used := map[string]bool{}
+	first := startupSessionName("", "/workspace/aurora", used)
+	used[first] = true
+	second := startupSessionName("", "/other/aurora", used)
+	if first != "aurora" || second != "aurora-"+shortHash("/other/aurora") {
+		t.Fatalf("startup names = %q, %q", first, second)
+	}
+}
+
+func TestHasNamedKittySession(t *testing.T) {
+	unnamed := kittyx.State{
+		kittyx.OSWindow{
+			Tabs: []kittyx.Tab{
+				{
+					Windows: []kittyx.Window{
+						{Env: map[string]string{}},
+					},
+				},
+			},
+		},
+	}
+	if hasNamedKittySession(unnamed) {
+		t.Fatal("unnamed Kitty window should not block startup")
+	}
+	named := kittyx.State{
+		kittyx.OSWindow{
+			Tabs: []kittyx.Tab{
+				{
+					Windows: []kittyx.Window{
+						{SessionName: "aurora"},
+					},
+				},
+			},
+		},
+	}
+	if !hasNamedKittySession(named) {
+		t.Fatal("named Kitty session should block startup")
 	}
 }
 
@@ -2221,13 +2263,18 @@ func TestClearAllPinsResetsStateAndKittyMappings(t *testing.T) {
 
 func TestKittyRunLifecycleClearsPinsAfterUncleanExit(t *testing.T) {
 	stateHome := t.TempDir()
+	t.Setenv("HOME", stateHome)
 	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(stateHome, ".config"))
 	kittyLog := filepath.Join(stateHome, "kitty.log")
 	kitty := filepath.Join(stateHome, "kitty")
 	if err := os.WriteFile(kitty, []byte("#!/bin/sh\nprintf '%s' \"$*\" >> "+kittyLog+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := savePins(pinStore{"2": {Key: "/projects/stale", Name: "stale"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveNames(nameStore{"workspace:stale": "Stale"}); err != nil {
 		t.Fatal(err)
 	}
 	marker := kittyRunPath()
@@ -2241,11 +2288,18 @@ func TestKittyRunLifecycleClearsPinsAfterUncleanExit(t *testing.T) {
 	if err != nil || len(pins) != 0 {
 		t.Fatalf("pins after unclean exit recovery = %#v, err = %v", pins, err)
 	}
+	aliases, err := loadNames()
+	if err != nil || len(aliases) != 0 {
+		t.Fatalf("aliases after unclean exit recovery = %#v, err = %v", aliases, err)
+	}
 	markerContent, err := os.ReadFile(marker)
 	if err != nil || strings.TrimSpace(string(markerContent)) != strconv.Itoa(os.Getpid()) {
 		t.Fatalf("run marker = %q, err = %v", markerContent, err)
 	}
 	if err := savePins(pinStore{"3": {Key: "/projects/current", Name: "current"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveNames(nameStore{"workspace:current": "Current"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := beginKittyRun(kitty, os.Getpid()); err != nil {
@@ -2255,12 +2309,20 @@ func TestKittyRunLifecycleClearsPinsAfterUncleanExit(t *testing.T) {
 	if err != nil || len(pins) != 1 || pins["3"].Key != "/projects/current" {
 		t.Fatalf("pins from active run = %#v, err = %v", pins, err)
 	}
+	aliases, err = loadNames()
+	if err != nil || aliases["workspace:current"] != "Current" {
+		t.Fatalf("aliases from active run = %#v, err = %v", aliases, err)
+	}
 	if err := endKittyRun(kitty); err != nil {
 		t.Fatal(err)
 	}
 	pins, err = loadPins()
 	if err != nil || len(pins) != 0 {
 		t.Fatalf("pins after normal exit = %#v, err = %v", pins, err)
+	}
+	aliases, err = loadNames()
+	if err != nil || len(aliases) != 0 {
+		t.Fatalf("aliases after normal exit = %#v, err = %v", aliases, err)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Fatalf("run marker still exists: %v", err)
@@ -2271,25 +2333,33 @@ func TestKittyRunLifecycleClearsPinsAfterUncleanExit(t *testing.T) {
 	}
 }
 
-func TestClearStalePinsIfNeededClearsAfterDeadKitty(t *testing.T) {
+func TestClearStaleKittyRunStateIfNeededClearsAfterDeadKitty(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("HOME", stateHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(stateHome, ".config"))
 	t.Setenv("KESH_KITTY_PID", "") // picker path resolves Kitty via parent PID
 
 	if err := savePins(pinStore{"2": {Key: "/projects/stale", Name: "stale"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveNames(nameStore{"workspace:stale": "Stale"}); err != nil {
 		t.Fatal(err)
 	}
 	marker := kittyRunPath()
 	if err := os.WriteFile(marker, []byte("999999\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := clearStalePinsIfNeeded(); err != nil {
+	if err := clearStaleKittyRunStateIfNeeded(); err != nil {
 		t.Fatal(err)
 	}
 	pins, err := loadPins()
 	if err != nil || len(pins) != 0 {
 		t.Fatalf("stale pins were not cleared: %#v, err = %v", pins, err)
+	}
+	aliases, err := loadNames()
+	if err != nil || len(aliases) != 0 {
+		t.Fatalf("stale aliases were not cleared: %#v, err = %v", aliases, err)
 	}
 	markerContent, err := os.ReadFile(marker)
 	if err != nil || strings.TrimSpace(string(markerContent)) != strconv.Itoa(currentKittyPID()) {
@@ -2297,25 +2367,33 @@ func TestClearStalePinsIfNeededClearsAfterDeadKitty(t *testing.T) {
 	}
 }
 
-func TestClearStalePinsIfNeededKeepsPinsWhileKittyAlive(t *testing.T) {
+func TestClearStaleKittyRunStateIfNeededKeepsStateWhileKittyAlive(t *testing.T) {
 	stateHome := t.TempDir()
 	t.Setenv("XDG_STATE_HOME", stateHome)
 	t.Setenv("HOME", stateHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(stateHome, ".config"))
 
 	if err := savePins(pinStore{"3": {Key: "/projects/current", Name: "current"}}); err != nil {
 		t.Fatal(err)
 	}
+	if err := saveNames(nameStore{"workspace:current": "Current"}); err != nil {
+		t.Fatal(err)
+	}
 	marker := kittyRunPath()
-	// Own PID is, by definition, still running — pins must survive.
+	// Own PID is, by definition, still running — state must survive.
 	if err := os.WriteFile(marker, []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := clearStalePinsIfNeeded(); err != nil {
+	if err := clearStaleKittyRunStateIfNeeded(); err != nil {
 		t.Fatal(err)
 	}
 	pins, err := loadPins()
 	if err != nil || len(pins) != 1 || pins["3"].Key != "/projects/current" {
 		t.Fatalf("pins from active run were cleared: %#v, err = %v", pins, err)
+	}
+	aliases, err := loadNames()
+	if err != nil || aliases["workspace:current"] != "Current" {
+		t.Fatalf("aliases from active run were cleared: %#v, err = %v", aliases, err)
 	}
 }
 
@@ -2510,7 +2588,7 @@ func TestWorkspaceNamesRoundTripInConfigHome(t *testing.T) {
 	if len(got) != len(want) || got["/projects/payments"] != "Payments" || got["ssh://production"] != "Production" {
 		t.Fatalf("workspace names = %#v, want %#v", got, want)
 	}
-	info, err := os.Stat(filepath.Join(home, ".config", "kesh", "names.json"))
+	info, err := os.Stat(filepath.Join(home, ".config", "kesh", "aliases.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -34,17 +34,17 @@ func writeFixture(t *testing.T, path, name string, replacements map[string]strin
 	}
 }
 
-func TestNamesFixtureAndRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "names.json")
-	writeFixture(t, path, "names.json", nil)
-	names, err := LoadNames(path)
+func TestAliasesFixtureAndRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "aliases.json")
+	writeFixture(t, path, "aliases.json", nil)
+	aliases, err := LoadNames(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if names["workspace:kesh-dotfiles"] != "Dotfiles" || names["ssh://production"] != "Production" {
-		t.Fatalf("loaded names = %#v", names)
+	if aliases["workspace:kesh-dotfiles"] != "Dotfiles" || aliases["ssh://production"] != "Production" {
+		t.Fatalf("loaded aliases = %#v", aliases)
 	}
-	if err := SaveNames(path, names); err != nil {
+	if err := SaveNames(path, aliases); err != nil {
 		t.Fatal(err)
 	}
 	assertPrivateFile(t, path)

@@ -56,7 +56,7 @@ Resolved by `internal/config/paths.go` via `FromEnvironment()`:
 | Kind | Location |
 |---|---|
 | Config | `${XDG_CONFIG_HOME:-~/.config}/kesh/config.yaml` |
-| Names | `${XDG_CONFIG_HOME:-~/.config}/kesh/names.json` |
+| Aliases | `${XDG_CONFIG_HOME:-~/.config}/kesh/aliases.json` |
 | Pins | `${XDG_STATE_HOME:-~/.local/state}/kesh/pins.json` |
 | Pin shortcuts | `${XDG_STATE_HOME:-~/.local/state}/kesh/kitty-pins.conf` |
 | Saved sessions | `${XDG_STATE_HOME:-~/.local/state}/kesh/saved-sessions.json` |
@@ -70,17 +70,18 @@ non-default `XDG_STATE_HOME` will desync kesh's writes from kitty's read.
 
 ## Behavioral contracts
 
-### Pin lifecycle
+### Pin and alias lifecycle
 
 Pinned sessions are stored in `pins.json`; kesh also generates `kitty-pins.conf`
 beside it and reloads Kitty whenever pins change. The generated `kesh_pin_0`–
 `kesh_pin_9` action aliases invoke Kitty's native `goto_session` directly;
 users choose their own Kitty mappings without starting kesh on every switch.
 
-Pins apply only to the current Kitty run. On a confirmed normal quit, Kitty
-notifies kesh, which clears its state and mappings. Kesh records the active
-Kitty process; if Kitty is force-terminated, its next start detects the dead
-process, clears the leftover pins, and reloads the mappings.
+Pins and session aliases apply only to the current Kitty run. On a confirmed
+normal quit, Kitty notifies kesh, which clears both states and the pin mappings.
+Kesh records the active Kitty process; if Kitty is force-terminated, its next
+start detects the dead process, clears the leftover pins and aliases, and
+reloads the mappings.
 
 ### Saved sessions
 

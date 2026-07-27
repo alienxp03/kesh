@@ -138,6 +138,21 @@ func TestWriteSessionFileIsStableAndPrivate(t *testing.T) {
 	}
 }
 
+func TestWriteSessionFileAtUsesRequestedPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state", "startup.kitty-session")
+	if err := WriteSessionFileAt(path, "layout splits\n"); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != "layout splits\n" {
+		t.Fatalf("content = %q err = %v", content, err)
+	}
+	info, err := os.Stat(path)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode = %v err = %v", info.Mode(), err)
+	}
+}
+
 func TestOpenLayoutUsesGotoSessionAndListenSocket(t *testing.T) {
 	runner := &kittyRunner{lsOutputs: []string{
 		"[]",

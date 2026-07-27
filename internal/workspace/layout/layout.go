@@ -11,6 +11,7 @@ const (
 type OpenOptions struct {
 	Mode        string
 	SessionName string
+	SessionFile string
 	Windows     []Window
 	Env         map[string]string
 	CacheDir    string

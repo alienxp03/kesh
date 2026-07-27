@@ -532,7 +532,7 @@ func unmergeRenamedSessionSources(entries []entry, _ nameStore, ctx *zoxideMerge
 		}
 		// The catalog normally merges a single-project session into its project
 		// entry. Give the live session its own identity before restoring the
-		// source path; names.json aliases remain cosmetic only.
+		// source path; aliases.json entries remain cosmetic only.
 		entry.key = "workspace:" + entry.session
 		entry.kind = "workspace"
 		delete(ctx.merged, entry.path)

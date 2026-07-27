@@ -31,6 +31,43 @@ func TestRootsPreserveDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+func TestStartupSessionsResolvePathsAndPins(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator), "home", "stan")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := "startup:\n  sessions:\n    - path: ~/workspace/aurora\n      pin: 0\n    - name: tools\n      path: /tmp/tools\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions, err := StartupSessions(path, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions) != 2 || sessions[0].Path != filepath.Join(home, "workspace/aurora") || sessions[0].Pin == nil || *sessions[0].Pin != 0 || sessions[1].Name != "tools" {
+		t.Fatalf("startup sessions = %#v", sessions)
+	}
+}
+
+func TestStartupSessionsRejectInvalidValues(t *testing.T) {
+	home := filepath.Join(string(filepath.Separator), "home", "stan")
+	for name, content := range map[string]string{
+		"missing path":  "startup:\n  sessions:\n    - pin: 0\n",
+		"relative path": "startup:\n  sessions:\n    - path: workspace/aurora\n",
+		"invalid pin":   "startup:\n  sessions:\n    - path: ~/workspace/aurora\n      pin: 10\n",
+		"unknown key":   "startup:\n  sessions:\n    - path: ~/workspace/aurora\n      pinn: 0\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := StartupSessions(path, home); err == nil {
+				t.Fatal("expected invalid startup config")
+			}
+		})
+	}
+}
+
 func TestCheckoutDefaultsToConfiguredCloneRoot(t *testing.T) {
 	home := filepath.Join(string(filepath.Separator), "home", "stan")
 	path := filepath.Join(t.TempDir(), "config.yaml")

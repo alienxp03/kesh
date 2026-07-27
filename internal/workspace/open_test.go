@@ -100,6 +100,28 @@ func assertNoExtraWorktree(t *testing.T, repo string) {
 	}
 }
 
+func TestOpenFolderLaunchesNamedPlainSession(t *testing.T) {
+	root := t.TempDir()
+	folder := filepath.Join(root, "plain")
+	if err := os.MkdirAll(folder, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sessionFile := filepath.Join(root, "state", "plain.kitty-session")
+	runner := &featureRunner{}
+	if err := OpenFolder(context.Background(), folder, "plain", sessionFile, map[string]string{"HOME": root}, runner); err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(sessionFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"KESH_KITTY_SESSION=plain", folder, "layout splits"} {
+		if !strings.Contains(string(content), want) {
+			t.Fatalf("plain session missing %q:\n%s", want, content)
+		}
+	}
+}
+
 func TestOpenFoldersUsesConfiguredSubdirectoryOnce(t *testing.T) {
 	repoRoot := t.TempDir()
 	workspaceRoot := filepath.Join(repoRoot, "projects", "frontier")

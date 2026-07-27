@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/alienxp03/kesh/internal/workspace/config"
@@ -27,6 +28,9 @@ type OpenOptions struct {
 	// SessionName overrides the Kitty session name. Empty defers to the
 	// auto-derived name (recipe template, or the repo name).
 	SessionName string
+	// SessionFile optionally specifies the persistent Kitty session file to
+	// write. Empty uses Kesh's cache file, as in normal interactive opens.
+	SessionFile string
 	// Env is the process environment used for Kitty remote control and cache
 	// resolution. Nil falls back to the current process environment.
 	Env map[string]string
@@ -75,7 +79,7 @@ func Open(ctx context.Context, opts OpenOptions) error {
 	}
 	addToZoxide(ctx, pathsToAdd, opts.Runner)
 
-	return openWorkspaceLayout(ctx, sessionNameForOpen(sel, opts.SessionName), openWindows(folders), opts.Env, opts.Runner)
+	return openWorkspaceLayout(ctx, sessionNameForOpen(sel, opts.SessionName), opts.SessionFile, openWindows(folders), opts.Env, opts.Runner)
 }
 
 // openSelectionOpts builds the CreateOptions shape resolveSelection consumes,
@@ -92,6 +96,30 @@ func openSelectionOpts(opts OpenOptions) CreateOptions {
 type openFolder struct {
 	Spec worktreeSpec
 	Path string
+}
+
+// OpenFolder launches a plain shell session for an existing folder without
+// requiring Git or a .kesh.yaml recipe.
+func OpenFolder(ctx context.Context, path, sessionName, sessionFile string, env map[string]string, runner run.Runner) error {
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	path, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("folder not found: %s", path)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("folder not found: %s", path)
+	}
+	addToZoxide(ctx, []string{path}, runner)
+	return openWorkspaceLayout(ctx, sessionName, sessionFile, []layout.Window{{
+		Name:         filepath.Base(path),
+		WorktreePath: path,
+	}}, env, runner)
 }
 
 // openFolders resolves each selected workspace's launch path — its existing

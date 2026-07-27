@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,6 +20,17 @@ type fileConfig struct {
 	Checkout struct {
 		Root string `yaml:"root"`
 	} `yaml:"checkout"`
+	Startup StartupConfig `yaml:"startup"`
+}
+
+type StartupConfig struct {
+	Sessions []StartupSession `yaml:"sessions"`
+}
+
+type StartupSession struct {
+	Name string `yaml:"name"`
+	Path string `yaml:"path"`
+	Pin  *int   `yaml:"pin"`
 }
 
 func readFile(path string) (fileConfig, error) {
@@ -30,8 +42,38 @@ func readFile(path string) (fileConfig, error) {
 	if err != nil {
 		return result, fmt.Errorf("read Kesh config: %w", err)
 	}
-	if err := yaml.Unmarshal(content, &result); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&result); err != nil {
 		return fileConfig{}, fmt.Errorf("invalid Kesh config: %w", err)
+	}
+	return result, nil
+}
+
+func StartupSessions(path, home string) ([]StartupSession, error) {
+	configuration, err := readFile(path)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]StartupSession, len(configuration.Startup.Sessions))
+	for index, session := range configuration.Startup.Sessions {
+		label := fmt.Sprintf("startup.sessions[%d]", index)
+		if strings.TrimSpace(session.Path) == "" {
+			return nil, fmt.Errorf("invalid Kesh config: %s.path is required", label)
+		}
+		expanded, err := ExpandHomePath(session.Path, home)
+		if err != nil {
+			return nil, fmt.Errorf("invalid Kesh config: %s.path: %w", label, err)
+		}
+		if !filepath.IsAbs(expanded) {
+			return nil, fmt.Errorf("invalid Kesh config: %s.path must be absolute or home-relative", label)
+		}
+		if session.Pin != nil && (*session.Pin < 0 || *session.Pin > 9) {
+			return nil, fmt.Errorf("invalid Kesh config: %s.pin must be between 0 and 9", label)
+		}
+		session.Path = filepath.Clean(expanded)
+		session.Name = strings.TrimSpace(session.Name)
+		result[index] = session
 	}
 	return result, nil
 }
