@@ -1,6 +1,7 @@
 # kesh
 
-kesh is a keyboard-driven [Kitty](https://sw.kovidgoyal.net/kitty/) workspace manager.
+kesh is a keyboard-driven [Kitty](https://sw.kovidgoyal.net/kitty/) session manager,
+powered by [Kitty session](https://sw.kovidgoyal.net/kitty/sessions).
 
 ![kesh](docs/images/kesh.png)
 
@@ -13,6 +14,18 @@ kesh is a keyboard-driven [Kitty](https://sw.kovidgoyal.net/kitty/) workspace ma
 - **Git worktrees and pull requests** — create worktrees, clone repositories, and check out GitHub pull requests.
 - **Native Kitty pins** — assign Kitty shortcuts to sessions during the current Kitty run.
 - **Agent visibility** — find active `Codex`, `Claude` and `pi` windows with live terminal previews.
+
+## Why Kitty instead of tmux?
+
+kesh is built around Kitty’s native workspace features rather than a terminal
+multiplexer. I used [sesh](https://github.com/joshmedeski/sesh) heavily in the
+past, and kesh grew from wanting similar project and session discovery while
+using Kitty directly.
+
+tmux remains a better choice for terminal-agnostic or headless workflows,
+especially on remote servers. It can keep a background session alive so you can
+detach and resume running processes later. kesh intentionally does not provide
+that behavior because I don't need such feature for my local machines.
 
 ## Install
 
@@ -48,21 +61,21 @@ kesh
 
 ## Common keybindings
 
-| Key              | Action                                                        |
-| ---------------- | ------------------------------------------------------------- |
-| `enter`          | Open, focus, or restore the selected item                     |
+| Key              | Action                                                          |
+| ---------------- | --------------------------------------------------------------- |
+| `enter`          | Open, focus, or restore the selected item                       |
 | `n`              | Create a named session; use `space` to select multiple projects |
-| `o`              | Open a project with its configured `.kesh.yaml` layout        |
-| `s`              | Save the current layout                                       |
-| `S`              | Save the layout and restart foreground commands when restored |
-| `w`              | Open the worktree manager                                     |
-| `c`              | Clone a repository                                            |
-| `C`              | Check out a GitHub pull request                               |
-| `p` then `0`–`9` | Pin a session                                                 |
-| `r`              | Rename a session, tab, or window                              |
-| `x` then `y`     | Close or remove the selected item                             |
-| `?`              | Show all keymaps                                              |
-| `q`              | Quit                                                          |
+| `o`              | Open a project with its configured `.kesh.yaml` layout          |
+| `s`              | Save the current layout                                         |
+| `S`              | Save the layout and restart foreground commands when restored   |
+| `w`              | Open worktrees from a window or unopened project folder         |
+| `c`              | Clone a repository                                              |
+| `C`              | Check out a GitHub pull request                                 |
+| `p` then `0`–`9` | Pin a session                                                   |
+| `r`              | Rename a session, tab, or window                                |
+| `x` then `y`     | Close or remove the selected item                               |
+| `?`              | Show all keymaps                                                |
+| `q`              | Quit                                                            |
 
 ### Saved sessions
 
@@ -87,6 +100,11 @@ to focus one and `p` to show its live terminal preview.
 
 ## Project configuration
 
+![layout](docs/images/layout.png)
+
+This is useful when you are working on multiple projects at the same time.
+For example, you have `backend` and `frontend` that are in separate repositories.
+
 Run this from a project root:
 
 ```sh
@@ -97,7 +115,7 @@ This creates `.kesh.yaml`. A minimal layout looks like this:
 
 ```yaml
 workspaces:
-  - name: app
+  - name: backend
     repo: .
     panes:
       - commands: [nvim]
@@ -107,9 +125,59 @@ workspaces:
       - split: horizontal
 ```
 
+### Multiple repositories
+
+For a layout spanning separate repositories, add another workspace. Paths are
+relative to `.kesh.yaml`; this example assumes `frontend` is next to `backend`:
+
+```yaml
+workspaces:
+  - name: backend
+    repo: .
+    panes:
+      - commands: [nvim]
+        focus: true
+      - commands: [pnpm run dev]
+        split: horizontal
+  - name: frontend
+    repo: ~/Workspace/frontend
+    panes:
+      - commands: [nvim]
+        focus: true
+      - commands: [pnpm run dev]
+        split: horizontal
+```
+
 `workspaces` can describe multiple repositories. `panes` defines the tabs and
-splits kesh opens. Worktree settings can add one-time setup such as copied
-files, symlinks, hooks, and randomized ports.
+splits kesh opens.
+
+### Worktree setup
+
+Worktree settings run once when creating a worktree with `w`, then `n`. Shared
+defaults can copy files into every worktree; workspace-specific settings can
+also symlink files and run post-create hooks:
+
+```yaml
+worktree:
+  defaults:
+    files:
+      copy:
+        - .env
+
+workspaces:
+  - name: backend
+    repo: .
+    worktree:
+      files:
+        symlink:
+          - .env.local
+      hooks:
+        post_create:
+          - pnpm install
+```
+
+Other setup options include randomized ports and generated environment values.
+These settings do not run when opening an existing folder.
 
 Global paths are configured in `~/.config/kesh/config.yaml`:
 
