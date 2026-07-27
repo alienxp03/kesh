@@ -70,9 +70,8 @@ func Run(args []string) error {
 	}
 	applyPins(entries, pins)
 	cloneRoot, cloneRootErr := loadCloneRoot()
-	checkoutRoot, checkoutRootErr := loadCheckoutRoot()
 	worktreeRoot, worktreeRootErr := loadWorktreeRoot()
-	for _, configErr := range []error{cloneRootErr, checkoutRootErr, worktreeRootErr} {
+	for _, configErr := range []error{cloneRootErr, worktreeRootErr} {
 		if loadErr == nil && configErr != nil {
 			loadErr = configErr
 		}
@@ -80,7 +79,7 @@ func Run(args []string) error {
 	m := model{
 		entries: entries, err: loadErr, kitty: kitty, zoxide: zoxide, pins: pins, names: names,
 		filter: filter, showPreview: true, selected: map[string]bool{},
-		cloneBaseRoot: cloneRoot, checkoutBaseRoot: checkoutRoot, worktreeRoot: worktreeRoot,
+		cloneBaseRoot: cloneRoot, worktreeRoot: worktreeRoot,
 		worktreeFilterEntryIndex: -1,
 		zoxideCtx:                zoxideCtx, zoxidePending: zoxide != "",
 	}
@@ -175,14 +174,6 @@ func loadCloneRoot() (string, error) {
 
 func loadWorktreeRoot() (string, error) {
 	return config.WorktreeRoot(configPath(), os.Getenv("HOME"))
-}
-
-// loadCheckoutRoot returns the directory searched for an existing clone when
-// checking out a pull request. It defaults to the clone root so the feature
-// works with no configuration, and only falls back here when [checkout].root
-// is unset — a configured value always wins.
-func loadCheckoutRoot() (string, error) {
-	return config.CheckoutRoot(configPath(), os.Getenv("HOME"))
 }
 
 // loadRecipe discovers the nearest .kesh.yaml between path and its Git root

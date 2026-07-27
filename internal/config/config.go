@@ -17,9 +17,6 @@ type fileConfig struct {
 	Worktree struct {
 		Root string `yaml:"root"`
 	} `yaml:"worktree"`
-	Checkout struct {
-		Root string `yaml:"root"`
-	} `yaml:"checkout"`
 	Startup StartupConfig `yaml:"startup"`
 }
 
@@ -92,18 +89,6 @@ func WorktreeRoot(path, home string) (string, error) {
 		return "", err
 	}
 	return resolveRoot(configuration.Worktree.Root, filepath.Join(home, "worktree"), home, "worktree")
-}
-
-func CheckoutRoot(path, home string) (string, error) {
-	configuration, err := readFile(path)
-	if err != nil {
-		return "", err
-	}
-	cloneRoot, err := resolveRoot(configuration.Clone.Root, filepath.Join(home, "workspace"), home, "clone")
-	if err != nil {
-		return "", err
-	}
-	return resolveRoot(configuration.Checkout.Root, cloneRoot, home, "checkout")
 }
 
 func resolveRoot(configured, fallback, home, label string) (string, error) {

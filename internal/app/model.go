@@ -491,7 +491,6 @@ type model struct {
 	previewBusy              bool
 	showPreview              bool
 	cloneBaseRoot            string
-	checkoutBaseRoot         string
 	worktreeRoot             string
 	mergedWorktreeBusy       bool
 	worktreePullBusy         bool

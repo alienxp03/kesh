@@ -16,7 +16,7 @@ func TestRootsPreserveDefaultsAndOverrides(t *testing.T) {
 		t.Fatalf("default worktree root = %q, %v", got, err)
 	}
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	content := "clone:\n  root: ~/src\nworktree:\n  root: /tmp/trees\ncheckout:\n  root: ~/checkouts\n"
+	content := "clone:\n  root: ~/src\nworktree:\n  root: /tmp/trees\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -25,9 +25,6 @@ func TestRootsPreserveDefaultsAndOverrides(t *testing.T) {
 	}
 	if got, err := WorktreeRoot(path, home); err != nil || got != "/tmp/trees" {
 		t.Fatalf("configured worktree root = %q, %v", got, err)
-	}
-	if got, err := CheckoutRoot(path, home); err != nil || got != filepath.Join(home, "checkouts") {
-		t.Fatalf("configured checkout root = %q, %v", got, err)
 	}
 }
 
@@ -65,17 +62,6 @@ func TestStartupSessionsRejectInvalidValues(t *testing.T) {
 				t.Fatal("expected invalid startup config")
 			}
 		})
-	}
-}
-
-func TestCheckoutDefaultsToConfiguredCloneRoot(t *testing.T) {
-	home := filepath.Join(string(filepath.Separator), "home", "stan")
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("clone:\n  root: ~/src\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if got, err := CheckoutRoot(path, home); err != nil || got != filepath.Join(home, "src") {
-		t.Fatalf("checkout root = %q, %v", got, err)
 	}
 }
 

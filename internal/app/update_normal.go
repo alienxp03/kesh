@@ -124,15 +124,15 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case "C":
-		if m.cloneBaseRoot == "" || m.checkoutBaseRoot == "" {
-			m.err = fmt.Errorf("checkout roots are not configured")
+		if m.cloneBaseRoot == "" {
+			m.err = fmt.Errorf("clone root is not configured")
 			return m, nil
 		}
 		m.activateMode(modeCheckoutPR)
 		m.prCheckoutValue = ""
 		m.prCheckoutBranch = ""
 		m.checkoutCloneRoot = m.cloneBaseRoot
-		m.checkoutRoot = m.checkoutBaseRoot
+		m.checkoutRoot = m.cloneBaseRoot
 		m.err = nil
 		return m, nil
 	case "r":

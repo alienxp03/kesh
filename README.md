@@ -33,6 +33,19 @@ that behavior because I don't need such feature for my local machines.
 brew install alienxp03/tap/kesh
 ```
 
+## Requirements
+
+| Dependency | Status | Used for |
+| --- | --- | --- |
+| [Kitty](https://sw.kovidgoyal.net/kitty/) | **Required** | Running kesh and opening workspaces; remote control must be enabled below |
+| [Git](https://git-scm.com/) | **Required for Git features** | Cloning repositories, Git worktrees, and repository metadata |
+| [zoxide](https://github.com/ajeetdsouza/zoxide) | Optional | Frecency-ranked project discovery; without it, Kitty, saved-session, and SSH sources still work |
+| [GitHub CLI (`gh`)](https://cli.github.com/) | Optional | GitHub pull-request status and the `C` checkout action; run `gh auth login` first |
+| OpenSSH client (`ssh`) | Optional | Opening configured SSH hosts |
+
+The `c` clone action uses `git clone` directly; `gh` is not required for ordinary
+repository cloning. GitHub PR checkout and status features do require `gh`.
+
 ## Kitty setup
 
 kesh controls Kitty through remote control. Add this to `kitty.conf`:
@@ -189,17 +202,17 @@ Global paths and default Kitty startup sessions are configured in `~/.config/kes
 
 ```yaml
 clone:
-  root: ~/workspace
+  root: ~/workspace # repository clones and PR checkouts
 worktree:
-  root: ~/workspace/worktrees
-checkout:
-  root: ~/workspace
+  root: ~/workspace/worktrees # PR worktrees
 
 startup:
   sessions:
-    - path: ~/workspace/aurora
+    - name: backend
+      path: ~/workspace/backend
       pin: 0
-    - path: ~/workspace/flux
+    - name: frontend
+      path: ~/workspace/frontend
       pin: 1
 ```
 
@@ -257,6 +270,23 @@ kesh switch SLOT             Focus pin 0–9
 kesh clear-pins              Clear pins
 kesh clear-pins --on-quit    Clear pins when Kitty quits
 ```
+
+## SSH hosts
+
+kesh discovers SSH hosts from `~/.ssh/config`. Add named `Host` entries there;
+wildcard-only entries such as `Host *` are not shown as hosts in kesh:
+
+```sshconfig
+Host production
+    HostName production.example.com
+    User stan
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+```
+
+Run `kesh ssh` to view only SSH hosts, or select one from the main picker. kesh
+launches `ssh` with the host alias, so SSH options such as `User`, `Port`, and
+`IdentityFile` continue to be applied by OpenSSH.
 
 ## Troubleshooting
 
