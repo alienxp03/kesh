@@ -101,7 +101,10 @@ func openFolders(sel selection) ([]openFolder, error) {
 	folders := make([]openFolder, 0, len(sel.Workspaces))
 	seen := map[string]string{}
 	for _, ws := range sel.Workspaces {
-		path := cleanAbsPath(workspacePath(ws, ws.WorkspaceRoot))
+		// workspacePath appends WorkspaceRelPath to a repository root. Using
+		// WorkspaceRoot here would append the configured subdirectory twice
+		// when it lives inside a larger Git repository.
+		path := cleanAbsPath(workspacePath(ws, ws.RepoRoot))
 		if prev, ok := seen[path]; ok {
 			return nil, fmt.Errorf("workspaces %q and %q resolve to the same folder: %s", prev, ws.Name, path)
 		}
@@ -118,7 +121,7 @@ func openFolders(sel selection) ([]openFolder, error) {
 // The context env is required because launched panes source it. Worktree setup
 // files, environment mutations, port randomization, and hooks are skipped so
 // opening a current checkout has no setup side effects.
-func runSetupForOpen(ctx context.Context, sel selection, folders []openFolder, stdout, stderr io.Writer) error {
+func runSetupForOpen(_ context.Context, sel selection, folders []openFolder, stdout, stderr io.Writer) error {
 	contexts := openContexts(folders)
 	baseLogger := setup.Logger{Stdout: stdout, Stderr: stderr}
 	var problems []string

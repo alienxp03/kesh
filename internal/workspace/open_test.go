@@ -100,6 +100,27 @@ func assertNoExtraWorktree(t *testing.T, repo string) {
 	}
 }
 
+func TestOpenFoldersUsesConfiguredSubdirectoryOnce(t *testing.T) {
+	repoRoot := t.TempDir()
+	workspaceRoot := filepath.Join(repoRoot, "projects", "frontier")
+	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	folders, err := openFolders(selection{Workspaces: []worktreeSpec{{
+		Name:             "frontier",
+		RepoRoot:         repoRoot,
+		WorkspaceRoot:    workspaceRoot,
+		WorkspaceRelPath: filepath.Join("projects", "frontier"),
+	}}})
+	if err != nil {
+		t.Fatalf("openFolders failed: %v", err)
+	}
+	if len(folders) != 1 || folders[0].Path != workspaceRoot {
+		t.Fatalf("folders = %#v, want %q", folders, workspaceRoot)
+	}
+}
+
 // TestSessionNameForOpen covers the launch session-name override: a non-empty
 // user name wins (sanitized); empty or sanitized-away falls back to the derived
 // repo name so the session always has a valid identifier.
