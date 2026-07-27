@@ -118,9 +118,11 @@ workspaces:
   - name: backend
     repo: .
     panes:
-      - commands: [nvim]
+      - commands:
+          - nvim
         focus: true
-      - commands: [pnpm run dev]
+      - commands:
+          - pnpm run dev
         split: horizontal
       - split: horizontal
 ```
@@ -135,16 +137,20 @@ workspaces:
   - name: backend
     repo: .
     panes:
-      - commands: [nvim]
+      - commands:
+          - nvim
         focus: true
-      - commands: [pnpm run dev]
+      - commands:
+          - pnpm run dev
         split: horizontal
   - name: frontend
     repo: ~/Workspace/frontend
     panes:
-      - commands: [nvim]
+      - commands:
+          - nvim
         focus: true
-      - commands: [pnpm run dev]
+      - commands:
+          - pnpm run dev
         split: horizontal
 ```
 
