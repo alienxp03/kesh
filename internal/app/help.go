@@ -1,56 +1,123 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
+type helpItem struct {
+	keys   string
+	action string
+}
+
 type helpSection struct {
 	title string
-	body  string
+	items []helpItem
 }
 
 var keymapHelp = []helpSection{
 	{
 		title: "Navigation",
-		body:  "j/k, arrows, ctrl+j/k move  •  ctrl+d/u page  •  home/end/G jump  •  h/l descend or return  •  e expand",
+		items: []helpItem{
+			{keys: "j/k, arrows", action: "move"},
+			{keys: "ctrl+d/u", action: "page up/down"},
+			{keys: "home/end/G", action: "jump"},
+			{keys: "h/l", action: "descend or return"},
+			{keys: "e", action: "expand or collapse"},
+		},
 	},
 	{
 		title: "Sessions and projects",
-		body:  "enter open/focus/restore  •  space select  •  n new session  •  s/S save  •  p then 0–9 pin  •  p then x unpin  •  r rename",
+		items: []helpItem{
+			{keys: "enter", action: "open, focus, or restore"},
+			{keys: "space", action: "select"},
+			{keys: "n", action: "new session"},
+			{keys: "s/S", action: "save"},
+			{keys: "p then 0–9", action: "pin"},
+			{keys: "p then x", action: "unpin"},
+			{keys: "r", action: "rename"},
+		},
 	},
 	{
 		title: "Project actions",
-		body:  "o launch layout  •  c clone  •  C check out PR  •  g open PR  •  x then y close  •  D then y delete closed  •  X then y remove merged",
+		items: []helpItem{
+			{keys: "o", action: "launch layout"},
+			{keys: "c", action: "clone"},
+			{keys: "C", action: "check out PR"},
+			{keys: "g", action: "open PR"},
+			{keys: "x then y", action: "close"},
+			{keys: "D then y", action: "delete closed"},
+			{keys: "X then y", action: "remove merged"},
+		},
 	},
 	{
 		title: "Worktrees",
-		body:  "w open worktrees  •  n create  •  enter focus  •  p pull  •  r refresh  •  g PR  •  x then y remove  •  D then y destroy  •  X then y remove merged  •  space bulk select  •  esc back",
+		items: []helpItem{
+			{keys: "w", action: "open worktrees"},
+			{keys: "n", action: "create"},
+			{keys: "enter", action: "focus"},
+			{keys: "p", action: "pull"},
+			{keys: "r", action: "refresh"},
+			{keys: "g", action: "open PR"},
+			{keys: "x then y", action: "remove"},
+			{keys: "D then y", action: "destroy"},
+			{keys: "X then y", action: "remove merged"},
+			{keys: "space", action: "bulk select"},
+			{keys: "esc", action: "back"},
+		},
 	},
 	{
 		title: "Agents",
-		body:  "tab to Agents  •  enter focus  •  p preview  •  r rename  •  x then y close",
+		items: []helpItem{
+			{keys: "tab", action: "open Agents"},
+			{keys: "enter", action: "focus"},
+			{keys: "p", action: "preview"},
+			{keys: "r", action: "rename"},
+			{keys: "x then y", action: "close"},
+		},
 	},
 	{
 		title: "Search and forms",
-		body:  "/ search  •  type filter  •  backspace delete  •  ctrl+u clear  •  tab/shift+tab change field or filter  •  enter confirm  •  esc cancel",
+		items: []helpItem{
+			{keys: "/", action: "search"},
+			{keys: "type", action: "filter"},
+			{keys: "backspace", action: "delete"},
+			{keys: "ctrl+u", action: "clear"},
+			{keys: "tab/shift+tab", action: "change field or filter"},
+			{keys: "enter", action: "confirm"},
+			{keys: "esc", action: "cancel"},
+		},
 	},
 	{
 		title: "General",
-		body:  "? show or close help  •  q quit",
+		items: []helpItem{
+			{keys: "?", action: "show or close help"},
+			{keys: "q", action: "quit"},
+		},
 	},
 }
 
-func (m model) helpPopupView(width int) string {
-	popupWidth := min(100, max(36, width-6))
+func (m model) helpPopupView(width, height int) string {
+	popupWidth := min(82, max(36, width-6))
 	contentWidth := popupWidth - 6
-	lines := []string{accentStyle.Render("Keyboard shortcuts"), strings.Repeat("─", contentWidth)}
-	for _, section := range keymapHelp {
-		line := focusStyle.Render(section.title) + "  " + section.body
-		lines = append(lines, lipgloss.NewStyle().Width(contentWidth).Render(line))
+	allLines := helpContent(contentWidth)
+	viewportHeight := max(1, height-13)
+	if height <= 0 {
+		viewportHeight = len(allLines)
 	}
-	lines = append(lines, "", dimStyle.Render("Press ? or Esc to close"))
+	maxScroll := max(0, len(allLines)-viewportHeight)
+	scroll := min(max(0, m.helpScroll), maxScroll)
+	visible := allLines[scroll:min(len(allLines), scroll+viewportHeight)]
+
+	lines := []string{accentStyle.Render("Keyboard shortcuts"), strings.Repeat("─", contentWidth)}
+	lines = append(lines, visible...)
+	help := "Press ? or Esc to close"
+	if maxScroll > 0 {
+		help = fmt.Sprintf("j/k scroll  •  %d/%d  •  ? / Esc close", scroll+1, maxScroll+1)
+	}
+	lines = append(lines, "", dimStyle.Render(help))
 	body := strings.Join(lines, "\n")
 	return lipgloss.NewStyle().
 		Width(popupWidth).
@@ -58,4 +125,20 @@ func (m model) helpPopupView(width int) string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("205")).
 		Render(body)
+}
+
+func helpContent(width int) []string {
+	keyWidth := min(18, max(10, width/3))
+	lines := make([]string, 0, 40)
+	for index, section := range keymapHelp {
+		if index > 0 {
+			lines = append(lines, "")
+		}
+		lines = append(lines, focusStyle.Render(section.title))
+		for _, item := range section.items {
+			line := fmt.Sprintf("  %-*s  %s", keyWidth, item.keys, item.action)
+			lines = append(lines, lipgloss.NewStyle().Width(width).Render(line))
+		}
+	}
+	return lines
 }

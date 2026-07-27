@@ -13,7 +13,7 @@ func (m model) popupView(width int) string {
 		return ""
 	}
 	if m.mode == modeHelp {
-		return m.helpPopupView(width)
+		return m.helpPopupView(width, m.height)
 	}
 	popupWidth := min(50, max(28, width-10))
 	if m.mode == modeClone || (m.mode == modeSaveConfirm && m.saveForeground) || m.mode == modeWorktreeCreate || (m.mode == modeCloseConfirm && m.closeRow.section == "wt-filter") {

@@ -45,6 +45,18 @@ func (m model) updateHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc", "?", "q":
 		m.cancelMode()
+	case "up", "k", "ctrl+k":
+		m.helpScroll = max(0, m.helpScroll-1)
+	case "down", "j", "ctrl+j":
+		m.helpScroll++
+	case "pgup", "ctrl+u":
+		m.helpScroll = max(0, m.helpScroll-5)
+	case "pgdown", "ctrl+d":
+		m.helpScroll += 5
+	case "home", "g":
+		m.helpScroll = 0
+	case "end", "G":
+		m.helpScroll = 1 << 30
 	}
 	return m, nil
 }

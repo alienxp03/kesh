@@ -480,6 +480,7 @@ type model struct {
 	zoxidePending            bool
 	width                    int
 	height                   int
+	helpScroll               int
 	err                      error
 	kitty                    string
 	zoxide                   string

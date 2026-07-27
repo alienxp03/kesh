@@ -14,6 +14,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.activateMode(modeHelp)
+		m.helpScroll = 0
 		m.err = nil
 		return m, nil
 	case "esc":
