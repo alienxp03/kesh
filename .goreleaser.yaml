@@ -49,7 +49,7 @@ brews:
       branch: main
     directory: Formula
     homepage: https://github.com/alienxp03/kesh
-    description: "Bubble Tea picker for zoxide projects, Kitty workspaces, SSH hosts, and agents."
+    description: "Keyboard-driven Kitty workspace manager for zoxide projects, SSH hosts, and agents."
     license: MIT
     test: |
       assert_predicate "#{bin}/kesh", :executable?

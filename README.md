@@ -1,19 +1,23 @@
 # kesh
 
-kesh is a keyboard-driven workspace manager for [Kitty](https://sw.kovidgoyal.net/kitty/).
-It helps you find projects, open repeatable layouts, create Git worktrees, and
-return to saved terminal sessions.
+kesh is a keyboard-driven [Kitty](https://sw.kovidgoyal.net/kitty/) workspace manager.
+
+![kesh](docs/images/kesh.png)
+
+## Features
+
+- **Keyboard-driven Kitty picker** — browse and switch projects, sessions, tabs, windows, SSH hosts, and saved layouts.
+- **Project layouts** — define workspaces, panes, startup commands, and worktree setup in `.kesh.yaml`.
+- **Zoxide integration** — discover and open your frequently used projects quickly.
+- **Save and restore sessions** — build on Kitty’s [session support](https://sw.kovidgoyal.net/kitty/sessions/) to save tabs, splits, and working directories, with optional foreground command restoration.
+- **Git worktrees and pull requests** — create worktrees, clone repositories, and check out GitHub pull requests.
+- **Native Kitty pins** — assign Kitty shortcuts to sessions during the current Kitty run.
+- **Agent visibility** — find active `Codex`, `Claude` and `pi` windows with live terminal previews.
 
 ## Install
 
 ```sh
 brew install alienxp03/tap/kesh
-```
-
-Upgrade later with:
-
-```sh
-brew upgrade kesh
 ```
 
 ## Kitty setup
@@ -23,12 +27,14 @@ kesh controls Kitty through remote control. Add this to `kitty.conf`:
 ```conf
 allow_remote_control yes
 listen_on unix:/tmp/kitty
+enabled_layouts splits:split_axis=horizontal,tall,stack
 
 map cmd+shift+o launch --type=overlay kesh
 ```
 
-Reload Kitty after changing its configuration. You can also start kesh from a
-shell by running:
+Reload Kitty after changing its configuration. The `enabled_layouts` setting
+keeps the nested pane layouts used by kesh intact. You can also start kesh from
+a shell by running:
 
 ```sh
 kesh
@@ -40,24 +46,23 @@ kesh
 2. Select a project and press `enter`.
 3. Use `l` and `h` to move through sessions, tabs, and windows.
 
-kesh discovers projects from Kitty, zoxide, and your saved sessions.
+## Common keybindings
 
-## Everyday actions
-
-| Key | Action |
-|---|---|
-| `enter` | Open, focus, or restore the selected item |
-| `n` | Create a named session from selected projects |
-| `s` | Save the current layout |
-| `S` | Save the layout and restart foreground commands when restored |
-| `w` | Open the worktree manager |
-| `c` | Clone a repository |
-| `C` | Check out a GitHub pull request |
-| `p` then `0`–`9` | Pin a session |
-| `r` | Rename a session, tab, or window |
-| `x` then `y` | Close or remove the selected item |
-| `?` | Show all keymaps |
-| `q` | Quit |
+| Key              | Action                                                        |
+| ---------------- | ------------------------------------------------------------- |
+| `enter`          | Open, focus, or restore the selected item                     |
+| `n`              | Create a named session; use `space` to select multiple projects |
+| `o`              | Open a project with its configured `.kesh.yaml` layout        |
+| `s`              | Save the current layout                                       |
+| `S`              | Save the layout and restart foreground commands when restored |
+| `w`              | Open the worktree manager                                     |
+| `c`              | Clone a repository                                            |
+| `C`              | Check out a GitHub pull request                               |
+| `p` then `0`–`9` | Pin a session                                                 |
+| `r`              | Rename a session, tab, or window                              |
+| `x` then `y`     | Close or remove the selected item                             |
+| `?`              | Show all keymaps                                              |
+| `q`              | Quit                                                          |
 
 ### Saved sessions
 
@@ -179,14 +184,6 @@ listen_on unix:/tmp/kitty
 
 Then reload Kitty and run `kesh` again.
 
-### Nested panes are flattened
-
-Enable Kitty's `tall` layout:
-
-```conf
-enabled_layouts splits:split_axis=horizontal,tall,stack
-```
-
 ## Development
 
 This section is for contributors. End users should install the Homebrew
@@ -194,9 +191,8 @@ package above.
 
 ```sh
 make ci       # format check, lint, tests, and build
-make build    # writes the development binary to ./bin/kesh
+make build    # installs the development binary to ~/.local/bin/kesh
 ```
 
 See [AGENTS.md](AGENTS.md) for project architecture and contributor
-instructions. See [docs/manual-smoke.md](docs/manual-smoke.md) for checks that
-require a real Kitty instance.
+instructions.

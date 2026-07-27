@@ -25,7 +25,7 @@ test:
 
 ## build: compile the CLI into ./bin.
 build:
-	go build -o bin/kesh ./cmd/kesh
+	go build -o ~/.local/bin/kesh ./cmd/kesh
 
 ## ci: the full local gate — lint, test, build.
 ci: lint test build
