@@ -273,14 +273,19 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, planDestroy(entry)
 	case "w":
-		// Open the Worktree tab for the project under the cursor.
+		// Worktrees need a real repository directory. A window row supplies its
+		// current working directory; an unopened project row supplies its folder.
+		// Session and tab rows are labels, not repository targets.
 		if len(m.rows) == 0 {
 			m.err = fmt.Errorf("no entry selected")
 			return m, nil
 		}
 		selected := m.rows[m.cursor]
-		if selected.section != "" {
-			m.err = fmt.Errorf("select a project entry, not a worktree or window")
+		entry := m.entries[selected.entryIndex]
+		windowRow := selected.windowIndex >= 0
+		unopenedFolder := selected.section == "" && selected.tabIndex < 0 && selected.windowIndex < 0 && entry.kind == "project" && !entry.open
+		if selected.section != "" || (!windowRow && !unopenedFolder) {
+			m.err = fmt.Errorf("place the cursor on a window or unopened project folder")
 			return m, nil
 		}
 		m.previousFilter = m.filter
@@ -290,7 +295,6 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.worktreeFilterRows = nil
 
 		// Fetch worktrees if not already loaded
-		entry := m.entries[selected.entryIndex]
 		if !entry.worktreesLoaded {
 			return m, fetchWorktrees(entry.path, selected.entryIndex, -1, -1)
 		}

@@ -3619,23 +3619,34 @@ func TestLaunchLayoutRejectsOpenSessionRows(t *testing.T) {
 	}
 }
 
-func TestRenamedSessionSupportsWorktreeCreation(t *testing.T) {
+func TestWorktreeKeyRejectsSessionAndTabRows(t *testing.T) {
 	m := model{
-		filter:  filterAll,
-		entries: []entry{{key: "workspace:dotfiles", name: "dotfiles-project", kind: "workspace", path: "/p/dotfiles", session: "dotfiles", worktreesLoaded: true}},
+		filter: filterAll,
+		entries: []entry{{
+			key: "workspace:dotfiles", name: "dotfiles-project", kind: "workspace", path: "/p/dotfiles", open: true,
+			tabs: []tabItem{{title: "editor", windows: []windowItem{{cwd: "/p/dotfiles"}}}},
+		}},
+		rows: []row{
+			{entryIndex: 0, tabIndex: -1, windowIndex: -1},
+			{entryIndex: 0, tabIndex: 0, windowIndex: -1},
+			{entryIndex: 0, tabIndex: 0, windowIndex: 0},
+		},
 	}
-	m.rebuildRows()
 
+	for _, cursor := range []int{0, 1} {
+		m.cursor = cursor
+		updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+		got := updated.(model)
+		if got.filter == filterWorktrees || command != nil || got.err == nil {
+			t.Fatalf("w on row %d should be rejected: filter=%d command=%v err=%v", cursor, got.filter, command != nil, got.err)
+		}
+	}
+
+	m.cursor = 2
+	m.entries[0].worktreesLoaded = true
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
-	m = updated.(model)
-	if m.filter != filterWorktrees {
-		t.Fatalf("w on renamed session filter = %d, want Worktrees", m.filter)
-	}
-
-	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
-	m = updated.(model)
-	if m.mode != modeWorktreeCreate || command == nil || m.err != nil {
-		t.Fatalf("n in renamed session Worktrees = mode %d, command %v, err %v", m.mode, command != nil, m.err)
+	if got := updated.(model); got.filter != filterWorktrees {
+		t.Fatalf("w on window row filter = %d, want Worktrees", got.filter)
 	}
 }
 
@@ -3653,5 +3664,39 @@ func TestWOpensWorktreesWithSelectedProject(t *testing.T) {
 	}
 	if m.worktreeFilterEntryIndex != 0 {
 		t.Fatalf("expected worktreeFilterEntryIndex=0, got %d", m.worktreeFilterEntryIndex)
+	}
+}
+
+func TestWorktreeListKeepsProjectSourceWhenSessionSharesPath(t *testing.T) {
+	const sharedPath = "/projects/dotfiles"
+	m := model{
+		filter: filterAll,
+		entries: []entry{
+			{name: "dotfiles-kesh", kind: "workspace", path: sharedPath, open: true},
+			{name: "dotfiles", kind: "project", path: sharedPath},
+		},
+		rows: []row{{entryIndex: 1, tabIndex: -1, windowIndex: -1}},
+	}
+
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'w'}})
+	if command == nil {
+		t.Fatal("w should fetch worktrees for an unloaded project")
+	}
+	m = updated.(model)
+	if m.worktreeFilterEntryIndex != 1 {
+		t.Fatalf("selected project index = %d, want 1", m.worktreeFilterEntryIndex)
+	}
+
+	updated, _ = m.Update(worktreeListMsg{
+		entryIndex: 1,
+		dir:        sharedPath,
+		worktrees:  []worktreeItem{{path: sharedPath, branch: "master", current: true}},
+	})
+	m = updated.(model)
+	if m.worktreeFilterEntryIndex != 1 {
+		t.Fatalf("worktree list switched to shared session index %d", m.worktreeFilterEntryIndex)
+	}
+	if got := m.entries[1].worktrees; len(got) != 1 || got[0].path != sharedPath {
+		t.Fatalf("project worktrees = %#v", got)
 	}
 }

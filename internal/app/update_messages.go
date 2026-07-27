@@ -281,6 +281,12 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case worktreeListMsg:
 		updated := false
 		entryIndex, _, _ := m.resolveWorktreeDirectory(msg.dir)
+		// A live folder can appear twice: once as a named session and once as
+		// its project source. While Worktrees is open, preserve the entry the
+		// user drilled into instead of letting the first path match win.
+		if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) && m.entries[m.worktreeFilterEntryIndex].path == msg.dir {
+			entryIndex = m.worktreeFilterEntryIndex
+		}
 		if entryIndex >= 0 {
 			e := &m.entries[entryIndex]
 			if msg.err != nil {

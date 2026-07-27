@@ -55,7 +55,7 @@ var keymapHelp = []helpSection{
 	{
 		title: "Worktrees",
 		items: []helpItem{
-			{keys: "w", action: "open worktrees"},
+			{keys: "w", action: "open from a window or unopened folder"},
 			{keys: "n", action: "create"},
 			{keys: "enter", action: "focus"},
 			{keys: "p", action: "pull"},
