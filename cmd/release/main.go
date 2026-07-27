@@ -90,6 +90,10 @@ func run(args []string, input io.Reader, output, errorOutput io.Writer) error {
 	if !clean {
 		return errors.New("working tree is not clean; commit or stash changes before releasing")
 	}
+	branch, err := currentBranch()
+	if err != nil {
+		return err
+	}
 	if exists, err := localTagExists(version); err != nil {
 		return err
 	} else if exists {
@@ -101,6 +105,9 @@ func run(args []string, input io.Reader, output, errorOutput io.Writer) error {
 		return fmt.Errorf("remote tag %s already exists", version)
 	}
 
+	if err := command(output, errorOutput, "git", "push", "origin", branch); err != nil {
+		return fmt.Errorf("push release commit: %w", err)
+	}
 	if err := command(output, errorOutput, "git", "tag", "-a", version, "-m", "Release "+version); err != nil {
 		return fmt.Errorf("create release tag: %w", err)
 	}
@@ -173,6 +180,18 @@ func repositoryIsClean() (bool, error) {
 		return false, fmt.Errorf("check working tree: %w", err)
 	}
 	return len(output) == 0, nil
+}
+
+func currentBranch() (string, error) {
+	output, err := exec.Command("git", "symbolic-ref", "--short", "HEAD").Output()
+	if err != nil {
+		return "", errors.New("release must run from a branch, not a detached HEAD")
+	}
+	branch := strings.TrimSpace(string(output))
+	if branch == "" {
+		return "", errors.New("release branch is empty")
+	}
+	return branch, nil
 }
 
 func localTagExists(version string) (bool, error) {

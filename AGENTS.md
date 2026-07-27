@@ -48,7 +48,7 @@ pushed. The workflow publishes GitHub release archives and the generated
 The tap repository needs a `HOMEBREW_TAP_GITHUB_TOKEN` secret with Contents
 write access to `alienxp03/homebrew-tap`; the default workflow token cannot
 write to a different repository. The local helper requires Git push access to
-`origin` and creates the tag that starts the workflow:
+`origin` and pushes the release commit and tag that starts the workflow:
 
 ```sh
 make release-dry-run VERSION=v0.1.0
