@@ -2570,10 +2570,10 @@ func TestWorkspacePinMigratesToMergedProject(t *testing.T) {
 	}
 }
 
-func TestWorkspaceNamesRoundTripInConfigHome(t *testing.T) {
+func TestWorkspaceNamesRoundTripInStateHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	want := nameStore{
 		"/projects/payments": "Payments",
 		"ssh://production":   "Production",
@@ -2588,7 +2588,7 @@ func TestWorkspaceNamesRoundTripInConfigHome(t *testing.T) {
 	if len(got) != len(want) || got["/projects/payments"] != "Payments" || got["ssh://production"] != "Production" {
 		t.Fatalf("workspace names = %#v, want %#v", got, want)
 	}
-	info, err := os.Stat(filepath.Join(home, ".config", "kesh", "aliases.json"))
+	info, err := os.Stat(filepath.Join(home, ".local", "state", "kesh", "aliases.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2600,7 +2600,7 @@ func TestWorkspaceNamesRoundTripInConfigHome(t *testing.T) {
 func TestSessionRenamePersistsAliasAndEmptyNameResetsIt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
 	e := entry{key: "workspace:payments", name: "payments", originalName: "payments", kind: "workspace", path: "/projects/payments"}
 	selected := row{entryIndex: 0, tabIndex: -1, windowIndex: -1}
 	m := model{entries: []entry{e}, rows: []row{selected}, names: nameStore{}}

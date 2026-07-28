@@ -67,7 +67,7 @@ Resolved by `internal/config/paths.go` via `FromEnvironment()`:
 | Kind | Location |
 |---|---|
 | Config | `${XDG_CONFIG_HOME:-~/.config}/kesh/config.yaml` |
-| Aliases | `${XDG_CONFIG_HOME:-~/.config}/kesh/aliases.json` |
+| Aliases | `${XDG_STATE_HOME:-~/.local/state}/kesh/aliases.json` |
 | Pins | `${XDG_STATE_HOME:-~/.local/state}/kesh/pins.json` |
 | Pin shortcuts | `${XDG_STATE_HOME:-~/.local/state}/kesh/kitty-pins.conf` |
 | Saved sessions | `${XDG_STATE_HOME:-~/.local/state}/kesh/saved-sessions.json` |
