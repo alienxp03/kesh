@@ -53,13 +53,15 @@ kesh controls Kitty through remote control. Add this to `kitty.conf`:
 ```conf
 allow_remote_control yes
 listen_on unix:/tmp/kitty
-enabled_layouts splits:split_axis=horizontal,tall,stack
+enabled_layouts splits,stack
 
 map cmd+shift+o launch --type=overlay kesh
 ```
 
-Reload Kitty after changing its configuration. The `enabled_layouts` setting
-keeps the nested pane layouts used by kesh intact. You can also start kesh from
+Reload Kitty after changing its configuration. Keep `splits` first and do not
+add layout options such as `split_axis`: Kitty rebuilds and flattens live split
+trees when an option-bearing layout is reloaded. Kesh pins the same option-free
+layout list in generated sessions. You can also start kesh from
 a shell by running:
 
 ```sh

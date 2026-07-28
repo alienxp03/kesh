@@ -28,7 +28,7 @@ func TestRenderSessionEscapesCommandsAndMapsSplits(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"launch '--title=back end'\\''s'", "layout splits", "cd '/tmp/work tree'\\''s'",
+		"launch '--title=back end'\\''s'", "enabled_layouts splits,stack", "layout splits", "cd '/tmp/work tree'\\''s'",
 		"new_tab frontend", "--location=vsplit", "--bias=35", "--location=hsplit", "pnpm install && pnpm run dev",
 		"KESH_KITTY_SESSION=repo/feature", "--var", "kesh_focus=yes",
 		"focus_matching_window var:kesh_focus=yes", "focus_tab 0", "focus_os_window",
@@ -37,6 +37,9 @@ func TestRenderSessionEscapesCommandsAndMapsSplits(t *testing.T) {
 		if !strings.Contains(session, want) {
 			t.Fatalf("session missing %q:\n%s", want, session)
 		}
+	}
+	if count := strings.Count(session, "enabled_layouts splits,stack"); count != 2 {
+		t.Fatalf("each tab must pin the supported layouts, got %d directives:\n%s", count, session)
 	}
 	firstTab := session[:strings.Index(session, "new_tab frontend")]
 	if strings.Count(session, "'kesh_focus=yes'") != 2 || !strings.Contains(firstTab, "'kesh_focus=yes'") {
@@ -77,7 +80,7 @@ func TestRenderSessionAllowsShellOnlySplit(t *testing.T) {
 	}
 }
 
-func TestRenderSessionUsesTallForMainPaneAndRightStack(t *testing.T) {
+func TestRenderSessionKeepsMainPaneAndRightStackInSplitsLayout(t *testing.T) {
 	session, err := RenderSession("repo/topic", []layout.Window{{
 		Name: "editor", WorktreePath: "/tmp/repo",
 		Commands: []layout.PaneCommand{
@@ -89,11 +92,11 @@ func TestRenderSessionUsesTallForMainPaneAndRightStack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(session, "layout tall") || strings.Contains(session, "layout splits") {
-		t.Fatalf("session should use stable tall layout:\n%s", session)
+	if !strings.Contains(session, "enabled_layouts splits,stack\nlayout splits") || strings.Contains(session, "layout tall") {
+		t.Fatalf("session must pin splits as its default so later pane locations work:\n%s", session)
 	}
-	if strings.Contains(session, "--location=") {
-		t.Fatalf("tall layout must let Kitty arrange panes without split locations:\n%s", session)
+	if !strings.Contains(session, "--location=vsplit") || !strings.Contains(session, "--location=hsplit") {
+		t.Fatalf("session did not preserve the recipe's nested split locations:\n%s", session)
 	}
 }
 

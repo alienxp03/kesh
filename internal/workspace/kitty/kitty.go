@@ -19,7 +19,10 @@ import (
 	"github.com/alienxp03/kesh/internal/workspace/run"
 )
 
-const sessionEnv = "KESH_KITTY_SESSION"
+const (
+	sessionEnv     = "KESH_KITTY_SESSION"
+	sessionLayouts = "splits,stack"
+)
 
 var unsafeSessionFileChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
@@ -234,15 +237,13 @@ func RenderSession(sessionName string, windows []layout.Window) (string, error) 
 		if len(commands) == 0 {
 			commands = []layout.PaneCommand{{}}
 		}
-		stableTallLayout := usesTallLayout(commands)
-		if stableTallLayout {
-			// Tall recreates the common editor-left, stacked-panes-right shape
-			// deterministically. Unlike a nested splits tree, it remains intact
-			// when Kitty temporarily toggles this tab to another layout.
-			fmt.Fprintln(&output, "layout tall")
-		} else {
-			fmt.Fprintln(&output, "layout splits")
-		}
+		// Pin recipe tabs to option-free layouts with splits first. Kitty otherwise
+		// restores the global default after parsing a goto_session file, even when
+		// the file says "layout splits". Layout options such as split_axis are
+		// intentionally omitted: reloading kitty.conf with an option-bearing splits
+		// layout rebuilds and flattens the live split tree.
+		fmt.Fprintln(&output, "enabled_layouts "+sessionLayouts)
+		fmt.Fprintln(&output, "layout splits")
 		fmt.Fprintf(&output, "cd %s\n", sessionQuote(window.WorktreePath))
 		focusIndex := 0
 		for commandIndex, command := range commands {
@@ -258,7 +259,7 @@ func RenderSession(sessionName string, windows []layout.Window) (string, error) 
 				return "", fmt.Errorf("kitty provider does not support panes[].size; use percentage")
 			}
 			args := []string{"launch", "--title=" + window.Name}
-			if commandIndex > 0 && !stableTallLayout {
+			if commandIndex > 0 {
 				location := "vsplit"
 				if command.Split == "vertical" {
 					location = "hsplit"
@@ -467,22 +468,6 @@ func quoteSessionArgs(args []string) string {
 
 func sessionQuote(value string) string {
 	return layout.SingleQuote(value)
-}
-
-// usesTallLayout recognizes the common nested-split shape declared as a
-// horizontal second pane followed by vertical panes. Kitty's tall layout has
-// the same geometry (one main pane with a stack beside it), but can be toggled
-// away from and back to without losing the shape.
-func usesTallLayout(commands []layout.PaneCommand) bool {
-	if len(commands) < 3 || commands[1].Split != "horizontal" || commands[1].Percentage > 0 {
-		return false
-	}
-	for _, command := range commands[2:] {
-		if command.Split != "vertical" || command.Percentage > 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func containsLineBreak(value string) bool {
