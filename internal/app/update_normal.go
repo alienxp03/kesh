@@ -9,6 +9,13 @@ import (
 
 func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.pendingG {
+		m.pendingG = false
+		if key == "g" {
+			m.cursor = 0
+			return m, m.queuePreview()
+		}
+	}
 	switch key {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -48,9 +55,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cursor = min(m.cursor+m.listPageSize(), max(0, len(m.rows)-1))
 	case "ctrl+u", "pgup":
 		m.cursor = max(0, m.cursor-m.listPageSize())
-	case "home":
-		m.cursor = 0
-	case "end", "G":
+	case "G":
 		m.cursor = max(0, len(m.rows)-1)
 	case "right", "l":
 		m.expandOrDescend()
@@ -62,21 +67,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		m.toggleSelected()
 	case "enter":
-		if len(m.rows) == 0 {
-			return m, nil
-		}
-		r := m.rows[m.cursor]
-		if m.filter == filterWorktrees && r.section == "wt-filter" {
-			// Focus the worktree
-			if m.cursor >= len(m.worktreeFilterRows) {
-				return m, nil
-			}
-			wtRow := m.worktreeFilterRows[m.cursor]
-			wt := wtRow.worktree
-			entry := m.entries[m.worktreeFilterEntryIndex]
-			return m, findWorktreeWindow(m.kitty, entry.key, wt.path)
-		}
-		return m, runAction(m.kitty, m.zoxide, m.entries[r.entryIndex], r)
+		return m.openSelected()
 	case "n":
 		if m.filter == filterWorktrees {
 			return m, m.beginWorktreeCreate()
@@ -96,9 +87,9 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case "o":
-		// Launch the project's .kesh.yaml layout on its existing folders — no
-		// worktree. Additive to Enter (bare folder open); requires a project
-		// entry under the cursor, not a worktree or window row.
+		return m, m.openWorktreePR()
+	case "O":
+		// Bypass a project's .kesh.yaml and open its folder as one plain window.
 		if len(m.rows) == 0 {
 			m.err = fmt.Errorf("no entry selected")
 			return m, nil
@@ -109,7 +100,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("select an unopened project folder")
 			return m, nil
 		}
-		return m, m.beginLaunchLayout()
+		return m, runAction(m.kitty, m.zoxide, entry, selected)
 	case "c":
 		if m.cloneBaseRoot == "" {
 			m.err = fmt.Errorf("clone root is not configured")
@@ -163,22 +154,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case "g":
-		if m.filter == filterWorktrees && len(m.worktreeFilterRows) > 0 && m.cursor < len(m.worktreeFilterRows) {
-			wt := m.worktreeFilterRows[m.cursor].worktree
-			if wt.prURL != "" {
-				prURL := wt.prURL
-				return m, func() tea.Msg {
-					return openPRMsg{err: openURL(prURL)}
-				}
-			}
-			m.err = fmt.Errorf("no PR associated with this worktree")
-			return m, nil
-		}
-		if m.filter == filterWorktrees {
-			return m, m.openWorktreePR()
-		}
-		// vim-style: jump to the top of the list.
-		m.cursor = 0
+		m.pendingG = true
 	case "x":
 		if m.filter == filterWorktrees && len(m.wtBulkSelected) > 0 {
 			// Bulk remove every selected worktree. The tab list can be a
@@ -300,7 +276,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.rebuildWorktreeRows()
 		return m, nil
-	case "p":
+	case "f":
 		if m.filter == filterWorktrees && len(m.wtBulkSelected) > 0 {
 			if m.worktreePullBusy {
 				return m, nil
@@ -325,6 +301,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			return m, pullWorktree(wt.path, entry.path, m.worktreeFilterEntryIndex)
 		}
+	case "p":
 		if m.hasSelectedAgentWindow() {
 			m.showPreview = !m.showPreview
 			if m.showPreview {
@@ -347,6 +324,27 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildRows()
 	}
 	return m, m.queuePreview()
+}
+
+func (m model) openSelected() (tea.Model, tea.Cmd) {
+	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		return m, nil
+	}
+	selected := m.rows[m.cursor]
+	if m.filter == filterWorktrees && selected.section == "wt-filter" {
+		if m.cursor >= len(m.worktreeFilterRows) {
+			return m, nil
+		}
+		worktree := m.worktreeFilterRows[m.cursor].worktree
+		entry := m.entries[m.worktreeFilterEntryIndex]
+		return m, findWorktreeWindow(m.kitty, entry.key, worktree.path)
+	}
+	entry := m.entries[selected.entryIndex]
+	unopenedProject := selected.section == "" && selected.tabIndex < 0 && selected.windowIndex < 0 && entry.kind == "project" && !entry.open
+	if unopenedProject {
+		return m, m.beginLaunchLayoutForEntry(entry)
+	}
+	return m, runAction(m.kitty, m.zoxide, entry, selected)
 }
 
 func findWorktreeWindow(kitty, entryKey, path string) tea.Cmd {

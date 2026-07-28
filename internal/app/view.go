@@ -146,36 +146,18 @@ func (m model) View() string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, listPanel, "  ", detailPanel)
 	}
 
-	footer := "j/k move  space select  n new  c clone  w worktrees  X remove merged  D delete closed  g PR  h/l expand  e expand  enter open  s/S save  p pin  r rename  x close  / search  tab filter  ctrl+d/u g/G  q quit"
-	if showAgentPreview || (m.filter == filterAgents && m.hasSelectedAgentWindow()) {
-		footer = "j/k move  enter focus  p preview  r rename  x close  / search  tab filter  ? help  q quit"
-	} else if m.filter == filterWorktrees {
-		footer = "j/k move  space select  enter focus  n create  p pull  r refresh  g PR  x remove  X merged  G end  esc back  / search  ? help  q quit"
-	} else if workspaceWidth < 100 {
-		footer = "j/k move  enter open  h/l expand  x close  / search  ? help  q quit"
-		if hasSelectedPR {
-			footer = "j/k move  enter open  g PR  h/l expand  x close  / search  ? help  q quit"
-		}
-	}
-	if workspaceWidth < 64 {
-		footer = "j/k move  enter open  ? help  q quit"
-		if hasSelectedPR {
-			footer = "j/k move  enter open  g PR  ? help  q quit"
-		}
-	}
+	footer := m.footerView(workspaceWidth, hasSelectedPR)
 	if m.mode == modeSearch {
-		footer = "type to filter  ctrl+j/k move  backspace delete  ctrl+u clear  enter/esc normal mode"
+		footer = dimStyle.Render("type to filter  ctrl+j/k move  backspace delete  ctrl+u clear  enter open  esc command mode")
 	}
 	if m.saving {
-		footer = "Saving workspace…"
+		footer = dimStyle.Render("Saving workspace…")
 	}
 	if m.zoxidePending && m.mode != modeSearch {
-		footer += "  · loading projects…"
+		footer += dimStyle.Render("  · loading projects…")
 	}
 	if m.err != nil && m.mode != modeRename && m.mode != modeCreateSession && m.mode != modeClone && m.mode != modeSaveConfirm && m.mode != modePin && m.mode != modeCloseConfirm && m.mode != modeWorktreeCreate && !m.mergedWorktreeBusy && !m.worktreePullBusy {
 		footer = errorStyle.Render("Error: " + m.err.Error())
-	} else {
-		footer = dimStyle.Render(footer)
 	}
 
 	content := strings.Join([]string{
@@ -205,6 +187,59 @@ func (m model) View() string {
 		content = strings.Join(lines, "\n")
 	}
 	return lipgloss.NewStyle().Padding(1, 2).Render(content)
+}
+
+func (m model) footerView(width int, hasSelectedPR bool) string {
+	items := []string{"j/k move", "enter open"}
+	dangerous := make([]string, 0, 2)
+
+	switch {
+	case m.filter == filterAgents && m.hasSelectedAgentWindow():
+		items = []string{"j/k move", "enter focus", "p preview"}
+	case m.filter == filterWorktrees:
+		items = []string{"j/k move", "enter open", "f pull", "n create", "x remove", "esc back"}
+		if width >= 90 {
+			items = append(items, "space select", "r refresh")
+		}
+		dangerous = append(dangerous, "D destroy")
+	default:
+		if width >= 90 {
+			items = append(items, "space select", "n new", "h/l tree")
+		}
+		if m.canHintDestroy() {
+			dangerous = append(dangerous, "D destroy")
+		}
+	}
+	items = append(items, "? help")
+	if hasSelectedPR {
+		items = append(items, "o PR")
+	}
+	if m.canHintRemoveMerged() && m.filter != filterAgents {
+		dangerous = append(dangerous, "X merged")
+	}
+	items = append(items, "/ search", "tab filters", "q quit")
+
+	footer := dimStyle.Render(strings.Join(items, "  "))
+	if len(dangerous) > 0 && width >= 76 {
+		footer += "  " + errorStyle.Bold(true).Render(strings.Join(dangerous, "  "))
+	}
+	return footer
+}
+
+func (m model) canHintRemoveMerged() bool {
+	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		return false
+	}
+	return m.worktreeDirectory(m.rows[m.cursor]) != ""
+}
+
+func (m model) canHintDestroy() bool {
+	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		return false
+	}
+	selected := m.rows[m.cursor]
+	entry := m.entries[selected.entryIndex]
+	return selected.section == "wt-filter" || entry.open || entry.saved
 }
 
 func renderListPanel(lines []string, width, height int) string {
@@ -405,7 +440,7 @@ func worktreeInfoView(worktree worktreeItem, width int, compact bool) string {
 	}
 	action := "No matching pull request"
 	if worktree.prURL != "" {
-		action = "g Open PR"
+		action = "o Open PR"
 	}
 	return renderDetailPanel("Worktree", []detailField{
 		{label: "Branch", value: worktree.branch, middle: true},
@@ -464,7 +499,7 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 
 		action := "No matching pull request"
 		if wt.prURL != "" {
-			action = "g Open PR"
+			action = "o Open PR"
 		}
 
 		fields := []detailField{
@@ -522,6 +557,10 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 			}
 		}
 		var screen []string
+		action := "Enter focus · r rename"
+		if window.pathPR.PullRequest.URL != "" {
+			action = "Enter focus · o PR · r rename"
+		}
 		title := "Window"
 		if m.filter == filterAgents {
 			title = "Agent screen"
@@ -536,7 +575,7 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 				screen = []string{"No terminal content"}
 			}
 		}
-		return renderDetailPanel(title, fields, "", screen, width, height, compact)
+		return renderDetailPanel(title, fields, action, screen, width, height, compact)
 	}
 	if selected.tabIndex >= 0 {
 		tab := entry.tabs[selected.tabIndex]
@@ -545,13 +584,15 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 			{label: "Project", value: entry.name},
 			{label: "Windows", value: strconv.Itoa(len(tab.windows))},
 		}
+		action := "Enter focus · r rename"
 		for _, window := range tab.windows {
 			if window.pathPR.PullRequest.Number > 0 {
 				fields = append(fields, detailField{label: "PR", value: pathPRSummary(window.pathPR)})
+				action = "Enter focus · o PR · r rename"
 				break
 			}
 		}
-		return renderDetailPanel("Tab", fields, "Enter focus · r rename", nil, width, height, compact)
+		return renderDetailPanel("Tab", fields, action, nil, width, height, compact)
 	}
 	directoryField := entryDirectoryField(entry)
 	title := "Project"
@@ -573,7 +614,14 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 			{label: "Branch", value: entry.pathPR.Branch, middle: true},
 		}
 	}
-	return renderDetailPanel(title, fields, "Enter open · w worktrees", nil, width, height, compact)
+	action := "Enter open"
+	if entry.kind == "project" && !entry.open {
+		action = "Enter layout · O plain · w worktrees"
+	}
+	if entry.pathPR.PullRequest.URL != "" {
+		action += " · o PR"
+	}
+	return renderDetailPanel(title, fields, action, nil, width, height, compact)
 }
 
 // prCheckoutPreview renders the dim summary block under the PR input. Once gh

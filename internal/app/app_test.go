@@ -661,7 +661,7 @@ func TestWorktreeInfoPanelIsResponsiveAndOmitsFullPRURL(t *testing.T) {
 	}
 	full := worktreeInfoView(worktree, 80, false)
 	plain := ansi.Strip(full)
-	for _, field := range []string{"Worktree", "Branch", "Path", "PR", "#42", "g Open PR"} {
+	for _, field := range []string{"Worktree", "Branch", "Path", "PR", "#42", "o Open PR"} {
 		if !strings.Contains(plain, field) {
 			t.Fatalf("full info panel missing %q:\n%s", field, plain)
 		}
@@ -677,7 +677,7 @@ func TestWorktreeInfoPanelIsResponsiveAndOmitsFullPRURL(t *testing.T) {
 	if got := lipgloss.Height(compact); got > 5 {
 		t.Fatalf("compact info panel height = %d, want <= 5", got)
 	}
-	if strings.Contains(ansi.Strip(compact), "g Open PR") {
+	if strings.Contains(ansi.Strip(compact), "o Open PR") {
 		t.Fatalf("compact info panel should omit action help:\n%s", ansi.Strip(compact))
 	}
 }
@@ -927,9 +927,9 @@ func TestOpenWorktreePROpensExactCachedURL(t *testing.T) {
 		}},
 		rows: []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-filter", wt: 0}},
 	}
-	command := m.openWorktreePR()
+	_, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
 	if command == nil {
-		t.Fatalf("open PR command was not created: %v", m.err)
+		t.Fatalf("o did not create an open PR command: %v", m.err)
 	}
 	message := command().(openPRMsg)
 	if message.err != nil {
@@ -1090,7 +1090,7 @@ printf '%s\n' '[]'
 		worktreeFilterRows:       []worktreeFilterRow{{worktree: worktreeItem{path: repo, branch: "main"}}},
 	}
 	m.rows = []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1, section: "wt-filter", wt: 0}}
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	if !updated.(model).worktreePullBusy {
 		t.Fatal("pull did not mark the worktree busy")
 	}
@@ -2842,6 +2842,69 @@ func TestSearchRanksExactProjectNameFirst(t *testing.T) {
 	}
 }
 
+func TestFooterKeepsHelpVisibleAndNarrowsDangerousActions(t *testing.T) {
+	m := model{
+		entries: []entry{{name: "repo", kind: "project"}},
+		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
+	}
+	footer := m.footerView(100, false)
+	plain := ansi.Strip(footer)
+	if !strings.Contains(plain, "? help") || strings.Contains(plain, "X merged") || strings.Contains(plain, "D destroy") {
+		t.Fatalf("plain project footer = %q", plain)
+	}
+
+	m.entries[0].open = true
+	footer = m.footerView(100, false)
+	if !strings.Contains(footer, errorStyle.Bold(true).Render("D destroy")) {
+		t.Fatalf("dangerous destroy hint is not red/bold: %q", footer)
+	}
+
+	m.entries[0].open = false
+	m.entries[0].path = "/repo"
+	plain = ansi.Strip(m.footerView(100, false))
+	if !strings.Contains(plain, "X merged") || strings.Contains(plain, "D destroy") {
+		t.Fatalf("closed repository footer = %q", plain)
+	}
+}
+
+func TestVimJumpKeysUseGGAndG(t *testing.T) {
+	m := model{
+		entries: []entry{{name: "one"}, {name: "two"}, {name: "three"}},
+		rows: []row{
+			{entryIndex: 0, tabIndex: -1, windowIndex: -1},
+			{entryIndex: 1, tabIndex: -1, windowIndex: -1},
+			{entryIndex: 2, tabIndex: -1, windowIndex: -1},
+		},
+		cursor: 2,
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(model)
+	if !m.pendingG || m.cursor != 2 {
+		t.Fatalf("first g changed cursor or did not arm chord: cursor=%d pending=%t", m.cursor, m.pendingG)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'g'}})
+	m = updated.(model)
+	if m.pendingG || m.cursor != 0 {
+		t.Fatalf("gg result: cursor=%d pending=%t", m.cursor, m.pendingG)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	if got := updated.(model).cursor; got != 2 {
+		t.Fatalf("G moved cursor to %d, want 2", got)
+	}
+}
+
+func TestSearchEnterOpensHighlightedResult(t *testing.T) {
+	m := model{
+		modeState: modeState{mode: modeSearch, searchMode: &searchMode{}},
+		entries:   []entry{{key: "ssh://example", name: "example", kind: "ssh"}},
+		rows:      []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
+	}
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if updated.(model).mode != modeNormal || command == nil {
+		t.Fatalf("search Enter did not return to normal mode and open: mode=%d command=%v", updated.(model).mode, command != nil)
+	}
+}
+
 func TestSlashSearchReturnsToCommandsForSelectionAndCreation(t *testing.T) {
 	m := model{entries: []entry{
 		{key: "/projects/java", name: "java", kind: "project"},
@@ -3734,15 +3797,15 @@ func TestTabNeverCyclesIntoWorktrees(t *testing.T) {
 	}
 }
 
-func TestLaunchLayoutRejectsOpenSessionRows(t *testing.T) {
+func TestPlainOpenRejectsOpenSessionRows(t *testing.T) {
 	m := model{
 		entries: []entry{{key: "/projects/repo", name: "repo", kind: "project", path: "/projects/repo", session: "repo", open: true}},
 		rows:    []row{{entryIndex: 0, tabIndex: -1, windowIndex: -1}},
 	}
-	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'O'}})
 	m = updated.(model)
 	if command != nil || m.mode != modeNormal || m.err == nil || !strings.Contains(m.err.Error(), "unopened project folder") {
-		t.Fatalf("o on open session = mode %d, command %v, err %v", m.mode, command != nil, m.err)
+		t.Fatalf("O on open session = mode %d, command %v, err %v", m.mode, command != nil, m.err)
 	}
 }
 

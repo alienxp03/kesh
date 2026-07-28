@@ -8,8 +8,9 @@ import (
 )
 
 type helpItem struct {
-	keys   string
-	action string
+	keys      string
+	action    string
+	dangerous bool
 }
 
 type helpSection struct {
@@ -23,15 +24,17 @@ var keymapHelp = []helpSection{
 		items: []helpItem{
 			{keys: "j/k, arrows", action: "move"},
 			{keys: "ctrl+d/u", action: "page up/down"},
-			{keys: "home/end/G", action: "jump"},
-			{keys: "h/l", action: "descend or return"},
+			{keys: "gg/G", action: "jump to top/bottom"},
+			{keys: "h", action: "collapse or return to parent"},
+			{keys: "l", action: "expand or descend"},
 			{keys: "e", action: "expand or collapse"},
 		},
 	},
 	{
 		title: "Sessions and projects",
 		items: []helpItem{
-			{keys: "enter", action: "open, focus, or restore"},
+			{keys: "enter", action: "open with layout, focus, or restore"},
+			{keys: "O", action: "open folder without layout"},
 			{keys: "space", action: "select"},
 			{keys: "n", action: "new session"},
 			{keys: "s/S", action: "save"},
@@ -43,13 +46,12 @@ var keymapHelp = []helpSection{
 	{
 		title: "Project actions",
 		items: []helpItem{
-			{keys: "o", action: "launch layout"},
+			{keys: "o", action: "open PR"},
 			{keys: "c", action: "clone"},
 			{keys: "C", action: "check out PR"},
-			{keys: "g", action: "open PR"},
 			{keys: "x then y", action: "close"},
-			{keys: "D then y", action: "delete closed"},
-			{keys: "X then y", action: "remove merged"},
+			{keys: "D then y", action: "destroy entry and linked layers", dangerous: true},
+			{keys: "X then y", action: "remove merged worktrees", dangerous: true},
 		},
 	},
 	{
@@ -57,13 +59,13 @@ var keymapHelp = []helpSection{
 		items: []helpItem{
 			{keys: "w", action: "open from a window or unopened folder"},
 			{keys: "n", action: "create"},
-			{keys: "enter", action: "focus"},
-			{keys: "p", action: "pull"},
+			{keys: "enter", action: "open or focus"},
+			{keys: "f", action: "pull (fetch and rebase)"},
 			{keys: "r", action: "refresh"},
-			{keys: "g", action: "open PR"},
-			{keys: "x then y", action: "remove"},
-			{keys: "D then y", action: "destroy"},
-			{keys: "X then y", action: "remove merged"},
+			{keys: "o", action: "open PR"},
+			{keys: "x then y", action: "remove checkout"},
+			{keys: "D then y", action: "destroy checkout and branch", dangerous: true},
+			{keys: "X then y", action: "remove merged worktrees", dangerous: true},
 			{keys: "space", action: "bulk select"},
 			{keys: "esc", action: "back"},
 		},
@@ -71,7 +73,6 @@ var keymapHelp = []helpSection{
 	{
 		title: "Agents",
 		items: []helpItem{
-			{keys: "tab", action: "open Agents"},
 			{keys: "enter", action: "focus"},
 			{keys: "p", action: "preview"},
 			{keys: "r", action: "rename"},
@@ -85,14 +86,15 @@ var keymapHelp = []helpSection{
 			{keys: "type", action: "filter"},
 			{keys: "backspace", action: "delete"},
 			{keys: "ctrl+u", action: "clear"},
-			{keys: "tab/shift+tab", action: "change field or filter"},
-			{keys: "enter", action: "confirm"},
-			{keys: "esc", action: "cancel"},
+			{keys: "tab/shift+tab", action: "change field"},
+			{keys: "enter", action: "open result or confirm"},
+			{keys: "esc", action: "return to command mode or cancel"},
 		},
 	},
 	{
 		title: "General",
 		items: []helpItem{
+			{keys: "tab/shift+tab", action: "cycle filters"},
 			{keys: "?", action: "show or close help"},
 			{keys: "q", action: "quit"},
 		},
@@ -137,6 +139,9 @@ func helpContent(width int) []string {
 		lines = append(lines, focusStyle.Render(section.title))
 		for _, item := range section.items {
 			line := fmt.Sprintf("  %-*s  %s", keyWidth, item.keys, item.action)
+			if item.dangerous {
+				line = errorStyle.Bold(true).Render(line)
+			}
 			lines = append(lines, lipgloss.NewStyle().Width(width).Render(line))
 		}
 	}

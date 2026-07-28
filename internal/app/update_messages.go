@@ -257,6 +257,9 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		entries := m.worktreeEntries()
+		if m.launchOnFolder {
+			entries = m.launchEntries()
+		}
 		if len(entries) != 1 || entries[0].path != msg.projectPath {
 			return m, nil
 		}
@@ -264,6 +267,13 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancelMode()
 			m.err = msg.err
 			return m, nil
+		}
+		if msg.recipe == nil && m.launchOnFolder {
+			entry := entries[0]
+			m.cancelMode()
+			return m, func() tea.Msg {
+				return actionMsg{err: openProjectSession(m.kitty, m.zoxide, entry.path, entry.nameTaken)}
+			}
 		}
 		m.worktreeRecipe = msg.recipe
 		m.worktreeRecipePath = msg.recipePath

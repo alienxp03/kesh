@@ -121,8 +121,8 @@ func TestLateWorktreeRecipeResultIsIgnoredAfterCancel(t *testing.T) {
 	}
 }
 
-// TestLaunchLayoutOpensRecipeWithoutWorktree drives the `o` flow end-to-end at
-// the app layer: pressing `o` on a project opens the launch form (no branch
+// TestLaunchLayoutOpensRecipeWithoutWorktree drives the default Enter flow end-to-end at
+// the app layer: pressing Enter on a project opens the launch form (no branch
 // field), and Enter dispatches workspace.Open — never workspace.Create — with
 // the project folder as Cwd and no branch.
 func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
@@ -148,14 +148,14 @@ func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
 	}
 	m.rebuildRows()
 
-	// `o` opens the launch form on the cursor entry.
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	// Enter opens the launch form on the cursor entry.
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
 	if m.mode != modeWorktreeCreate || !m.launchOnFolder {
-		t.Fatalf("o transition: mode=%d launchOnFolder=%t", m.mode, m.launchOnFolder)
+		t.Fatalf("enter transition: mode=%d launchOnFolder=%t", m.mode, m.launchOnFolder)
 	}
 	if cmd != nil {
-		// beginLaunchLayout schedules a recipe load; drain it so the form is
+		// Opening with a layout schedules a recipe load; drain it so the form is
 		// ready. The recipe is irrelevant to the dispatch assertion below.
 		_ = cmd()
 	}
@@ -199,8 +199,8 @@ func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
 	}
 }
 
-// TestLaunchLayoutWithoutRecipeFallsBackToFolderOpen confirms `o` on a project
-// with no .kesh.yaml degrades to opening the folder session directly rather
+// TestLaunchLayoutWithoutRecipeFallsBackToFolderOpen confirms Enter on a project
+// with no .kesh.yaml opens the folder session directly rather
 // than erroring.
 func TestLaunchLayoutWithoutRecipeFallsBackToFolderOpen(t *testing.T) {
 	directory := t.TempDir()
@@ -227,12 +227,12 @@ func TestLaunchLayoutWithoutRecipeFallsBackToFolderOpen(t *testing.T) {
 	}
 	m.rebuildRows()
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	updated, recipeCmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
-	// No recipe arrives: the form stays in launch mode with a nil recipe.
-	m.worktreeRecipe = nil
-
-	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if recipeCmd == nil {
+		t.Fatal("recipe lookup was not scheduled")
+	}
+	updated, command := m.Update(recipeCmd())
 	m = updated.(model)
 	if command == nil {
 		t.Fatal("no command dispatched for recipe-less launch")

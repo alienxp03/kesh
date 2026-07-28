@@ -266,7 +266,13 @@ func (m model) popupView(width int) string {
 			}
 		}
 	}
-	body := accentStyle.Render(title) + "\n\n" + field + "\n\n" + dimStyle.Render(help)
+	titleStyle := accentStyle
+	borderColor := lipgloss.Color("205")
+	if m.mode == modeCloseConfirm && m.destroyPlan != nil {
+		titleStyle = errorStyle.Bold(true)
+		borderColor = lipgloss.Color("196")
+	}
+	body := titleStyle.Render(title) + "\n\n" + field + "\n\n" + dimStyle.Render(help)
 	if m.err != nil {
 		body += "\n" + errorStyle.Render(m.err.Error())
 	}
@@ -274,7 +280,7 @@ func (m model) popupView(width int) string {
 		Width(popupWidth).
 		Padding(1, 2).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("205")).
+		BorderForeground(borderColor).
 		Render(body)
 }
 

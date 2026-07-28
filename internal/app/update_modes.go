@@ -476,8 +476,11 @@ func (m model) updateRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "enter":
+	case "esc":
 		m.cancelMode()
+	case "enter":
+		m.cancelMode()
+		return m.openSelected()
 	case "up", "ctrl+k":
 		if m.cursor > 0 {
 			m.cursor--

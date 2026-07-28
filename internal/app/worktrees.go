@@ -488,34 +488,24 @@ func (m *model) beginWorktreeCreate() tea.Cmd {
 	return nil
 }
 
-// beginLaunchLayout opens the launch-layout form for the project under the
-// cursor (or the Worktree-tab project). It reuses the worktree-create form's
-// recipe loading and workspace picker, but sets launchOnFolder so the form
-// hides the branch field and Enter dispatches to runLaunchLayout instead of
-// worktree creation.
-func (m *model) beginLaunchLayout() tea.Cmd {
-	entries := m.worktreeEntries()
-	if len(entries) == 0 {
-		m.err = fmt.Errorf("no project selected")
-		return nil
-	}
-	if len(entries) != 1 {
-		m.err = fmt.Errorf("launch targets a single project")
-		return nil
-	}
-	if entries[0].kind != "project" || entries[0].path == "" {
+// beginLaunchLayoutForEntry opens the launch-layout form for the project under
+// the cursor. It reuses the worktree-create form's recipe loading and workspace
+// picker, but sets launchOnFolder so Enter dispatches to runLaunchLayout.
+func (m *model) beginLaunchLayoutForEntry(entry entry) tea.Cmd {
+	if entry.kind != "project" || entry.path == "" {
 		m.err = fmt.Errorf("select a project entry")
 		return nil
 	}
 	m.activateMode(modeWorktreeCreate)
 	m.launchOnFolder = true
+	m.launchProjectPath = entry.path
 	m.worktreeBranch = ""
 	m.worktreePaths = nil
 	m.worktreeRecipe = nil
 	m.worktreeRecipePath = ""
 	m.worktreeRecipeMode = ""
 	m.worktreeCustomWorkspaces = false
-	projectPath := entries[0].path
+	projectPath := entry.path
 	m.err = nil
 	return func() tea.Msg {
 		recipe, recipePath, err := loadRecipe(projectPath)
@@ -526,11 +516,23 @@ func (m *model) beginLaunchLayout() tea.Cmd {
 	}
 }
 
+func (m *model) launchEntries() []entry {
+	if m.launchProjectPath == "" {
+		return m.worktreeEntries()
+	}
+	for _, candidate := range m.entries {
+		if candidate.path == m.launchProjectPath && candidate.kind == "project" {
+			return []entry{candidate}
+		}
+	}
+	return nil
+}
+
 // confirmLaunchLayout validates the picker and dispatches the no-worktree
 // launch. With no recipe it degrades to a plain folder open; otherwise it
 // launches the recipe layout on the selected workspaces' existing folders.
 func (m model) confirmLaunchLayout() (tea.Model, tea.Cmd) {
-	entries := m.worktreeEntries()
+	entries := m.launchEntries()
 	if len(entries) != 1 || entries[0].path == "" {
 		m.err = fmt.Errorf("select a single project")
 		return m, nil

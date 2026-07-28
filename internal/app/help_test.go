@@ -18,7 +18,7 @@ func TestHelpKeyOpensAndClosesHelp(t *testing.T) {
 		t.Fatalf("mode after help key = %d, want help", m.mode)
 	}
 	popup := m.helpPopupView(100, 100)
-	for _, want := range []string{"Keyboard shortcuts", "Worktrees", "Agents", "Press ? or Esc to close"} {
+	for _, want := range []string{"Keyboard shortcuts", "gg/G", "open folder without layout", "pull (fetch and rebase)", "cycle filters", "Worktrees", "Agents", "Press ? or Esc to close"} {
 		if !strings.Contains(popup, want) {
 			t.Fatalf("help popup missing %q:\n%s", want, popup)
 		}

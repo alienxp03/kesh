@@ -404,7 +404,8 @@ type worktreeCreateForm struct {
 	// launchOnFolder repurposes the form to launch the recipe layout on the
 	// project's existing folders (no worktree). It hides the branch field and
 	// redirects Enter to runLaunchLayout.
-	launchOnFolder bool
+	launchOnFolder    bool
+	launchProjectPath string
 	// worktreeSessionName is the user-typed Kitty session name in launch mode.
 	// Empty falls back to an auto-derived name.
 	worktreeSessionName string
@@ -481,6 +482,7 @@ type model struct {
 	width                    int
 	height                   int
 	helpScroll               int
+	pendingG                 bool
 	err                      error
 	kitty                    string
 	zoxide                   string

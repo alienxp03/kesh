@@ -71,16 +71,17 @@ kesh
 ## First use
 
 1. Open kesh with `cmd+shift+o`, or run `kesh` from a shell.
-2. Select a project and press `enter`.
+2. Select a project and press `enter`. Kesh uses its `.kesh.yaml` layout when one is available.
 3. Use `l` and `h` to move through sessions, tabs, and windows.
 
 ## Common keybindings
 
 | Key              | Action                                                          |
 | ---------------- | --------------------------------------------------------------- |
-| `enter`          | Open, focus, or restore the selected item                       |
+| `enter`          | Open with its layout, focus, or restore the selected item       |
+| `O`              | Open an unopened project folder without its configured layout   |
+| `o`              | Open the pull request associated with the selected item         |
 | `n`              | Create a named session; use `space` to select multiple projects |
-| `o`              | Open a project with its configured `.kesh.yaml` layout          |
 | `s`              | Save the current layout                                         |
 | `S`              | Save the layout and restart foreground commands when restored   |
 | `w`              | Open worktrees from a window or unopened project folder         |
@@ -106,7 +107,8 @@ Saved sessions remain in the list after Kitty closes. Select one and press
 ### Worktrees
 
 Press `w`, then `n`, to create a branch worktree. kesh opens it in Kitty and
-uses the project layout when one is configured.
+uses the project layout when one is configured. In the Worktrees view, use `f`
+to pull the selected worktree with fetch/rebase behavior.
 
 ### Agents
 
