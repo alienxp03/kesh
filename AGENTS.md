@@ -33,8 +33,9 @@ make ci   # golangci-lint run ./... + go test -race ./... + go build ./cmd/kesh
 make fmt  # apply gofmt + goimports (local imports grouped under third-party)
 ```
 
-The pre-commit hook (`.pre-commit-config.yaml`) runs formatting, lint, and tests
-on every commit. Activate once with `prek install` (or `pre-commit install`).
+The pre-push hook (`.pre-commit-config.yaml`) runs formatting, lint, and tests
+before every push. Activate once with `prek install --hook-type pre-push` (or
+`pre-commit install --hook-type pre-push`).
 
 See `docs/manual-smoke.md` for the real-Kitty checks that automated tests
 cannot perform.

@@ -1,10 +1,11 @@
-# Git pre-commit hooks for kesh.
-# Activated with `prek install` (or `pre-commit install`).
+# Git pre-push hooks for kesh.
+# Activated with `prek install --hook-type pre-push` (or
+# `pre-commit install --hook-type pre-push`).
 # Works with prek (Rust) and the Python pre-commit runner.
 minimum_pre_commit_version: "3.2.0"
 
 # Git exports GIT_DIR/GIT_INDEX_FILE/etc. into the hook environment during
-# `git commit`. Without stripping them, any tool that spawns `git` (or `go`
+# `git push`. Without stripping them, any tool that spawns `git` (or `go`
 # with VCS stamping) inherits the wrong repo and breaks — notably the workspace
 # tests that run real `git worktree add` in temp dirs. `env -u` clears them.
 
@@ -18,6 +19,7 @@ repos:
         language: system
         pass_filenames: false
         types: [go]
+        stages: [pre-push]
 
       - id: golangci-lint
         name: golangci-lint
@@ -27,6 +29,7 @@ repos:
         pass_filenames: false
         types: [go]
         require_serial: true
+        stages: [pre-push]
 
       - id: go-test
         name: go test
@@ -35,4 +38,4 @@ repos:
         language: system
         pass_filenames: false
         types: [go]
-        stages: [pre-commit]
+        stages: [pre-push]

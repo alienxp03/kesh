@@ -6,7 +6,7 @@ import (
 )
 
 // gitHookEnvVars are exported by git into the environment when it invokes hooks
-// (e.g. the pre-commit hook during `git commit`). When a `go test` process
+// (e.g. the pre-push hook during `git push`). When a `go test` process
 // inherits them, every subprocess git call — both the mustRun/mustOutput
 // helpers and the production run.DefaultRunner under test — operates on the
 // wrong repository, surfacing as cryptic "index file open failed: Not a
