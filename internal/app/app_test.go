@@ -534,8 +534,8 @@ func TestRowsShowSecondDetailColumnOnlyWhenSpaceAllows(t *testing.T) {
 	// imply a single-project session in the primary list.
 	m.entries = append(m.entries, entry{name: "dot-3", detail: "~/.dotfiles", saved: true})
 	savedRow := row{entryIndex: 2, tabIndex: -1, windowIndex: -1}
-	if rendered := ansi.Strip(m.renderRow(savedRow, 100, false)); !strings.Contains(rendered, "[Saved]") || strings.Contains(rendered, "~/.dotfiles") {
-		t.Fatalf("saved row detail = %q, want [Saved] without source path", rendered)
+	if rendered := ansi.Strip(m.renderRow(savedRow, 100, false)); strings.Contains(rendered, "[Snapshot]") || strings.Contains(rendered, "[Saved]") || strings.Contains(rendered, "~/.dotfiles") {
+		t.Fatalf("saved row detail = %q, want no badge or source path", rendered)
 	}
 	// Tab rows no longer carry a window count (the ▸/▾ arrow signals windows).
 	if rendered := ansi.Strip(m.renderRow(tests[1], 100, false)); strings.Contains(rendered, "1 window") {

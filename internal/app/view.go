@@ -882,15 +882,12 @@ func (m model) renderRow(r row, width int, focused bool) string {
 	left := fmt.Sprintf("%s   %s %s %s %s", selection, pin, arrow, icon, name)
 	// A live session (tabs present) can span multiple tabs and windows across
 	// different directories, so a single folder path on the row misrepresents
-	// it. A saved session instead shows its durable state; its snapshot may
-	// contain multiple folders, so its source path is equally misleading.
-	if len(e.tabs) > 0 && e.kind != "ssh" && !e.saved {
+	// it. Saved snapshots can contain multiple folders too, so keep their rows
+	// focused on the name; the Saved filter already identifies them.
+	if e.saved || (len(e.tabs) > 0 && e.kind != "ssh") {
 		return ansi.Truncate(left, width, "…")
 	}
 	detailValue := e.detail
-	if e.saved {
-		detailValue = "[Saved]"
-	}
 	detail := dimStyle.Render(detailValue)
 	if focused && e.open {
 		detail = focusStyle.Render(ansi.Strip(detail))
