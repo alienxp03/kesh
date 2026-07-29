@@ -90,7 +90,7 @@ kesh
 | `p` then `0`–`9` | Pin a session                                                   |
 | `r`              | Rename a session, tab, or window                                |
 | `x` then `y`     | Close or remove the selected item                               |
-| `?`              | Show all keymaps                                                |
+| `?`              | Show keymaps; press `/` there to search them                    |
 | `q`              | Quit                                                            |
 
 ### Saved sessions

@@ -117,6 +117,7 @@ func TestUpdateSchedulesIOWithoutExecutingItSynchronously(t *testing.T) {
 
 func TestEveryModeCancelsToCleanNormalState(t *testing.T) {
 	modes := []modeKind{
+		modeHelp,
 		modeSearch,
 		modeRename,
 		modeCreateSession,
@@ -133,6 +134,7 @@ func TestEveryModeCancelsToCleanNormalState(t *testing.T) {
 			m.activateMode(kind)
 			payloads := 0
 			for _, present := range []bool{
+				m.helpMode != nil,
 				m.searchMode != nil,
 				m.renameForm != nil,
 				m.createSessionForm != nil,

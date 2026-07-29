@@ -42,7 +42,37 @@ func (m model) updateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := msg.String()
+	if m.helpSearching {
+		switch key {
+		case "esc", "enter":
+			m.helpSearching = false
+		case "up", "ctrl+k":
+			m.helpScroll = max(0, m.helpScroll-1)
+		case "down", "ctrl+j":
+			m.helpScroll++
+		case "backspace":
+			runes := []rune(m.helpQuery)
+			if len(runes) > 0 {
+				m.helpQuery = string(runes[:len(runes)-1])
+				m.helpScroll = 0
+			}
+		case "ctrl+u":
+			m.helpQuery = ""
+			m.helpScroll = 0
+		default:
+			if len(msg.Runes) > 0 && !msg.Alt && !msg.Paste {
+				m.helpQuery += string(msg.Runes)
+				m.helpScroll = 0
+			}
+		}
+		return m, nil
+	}
+
+	switch key {
+	case "/":
+		m.helpSearching = true
+		m.helpScroll = 0
 	case "esc", "?", "q":
 		m.cancelMode()
 	case "up", "k", "ctrl+k":

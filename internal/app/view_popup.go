@@ -119,12 +119,12 @@ func (m model) popupView(width int) string {
 		if m.worktreeBranch != "" && !m.worktreeBusy {
 			cursor = ""
 		}
-		// Worktree-create types a branch; launch types a Kitty session name
-		// (empty default, auto-derived on Enter if left blank).
+		// Worktree-create types a branch; launch types a Kitty session name,
+		// initially prefixed with the selected folder's name.
 		branchField := dimStyle.Render("Branch: ") + focusStyle.Render(m.worktreeBranch+cursor)
 		if launchAction {
 			sessionCursor := "█"
-			if m.worktreeSessionName != "" && !m.worktreeBusy {
+			if m.worktreeBusy {
 				sessionCursor = ""
 			}
 			branchField = dimStyle.Render("Session: ") + focusStyle.Render(m.worktreeSessionName+sessionCursor)

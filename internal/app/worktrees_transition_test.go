@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/alienxp03/kesh/internal/workspace"
 )
@@ -154,6 +155,12 @@ func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
 	if m.mode != modeWorktreeCreate || !m.launchOnFolder {
 		t.Fatalf("enter transition: mode=%d launchOnFolder=%t", m.mode, m.launchOnFolder)
 	}
+	if m.worktreeSessionName != "repo" {
+		t.Fatalf("session prefix = %q, want %q", m.worktreeSessionName, "repo")
+	}
+	if popup := ansi.Strip(m.popupView(100)); !strings.Contains(popup, "Session: repo█") {
+		t.Fatalf("launch popup is missing the folder-prefixed session name:\n%s", popup)
+	}
 	if cmd != nil {
 		// Opening with a layout schedules a recipe load; drain it so the form is
 		// ready. The recipe is irrelevant to the dispatch assertion below.
@@ -183,6 +190,9 @@ func TestLaunchLayoutOpensRecipeWithoutWorktree(t *testing.T) {
 	}
 	if captured.Mode != "" && captured.Mode != "single" {
 		t.Fatalf("workspace.Open Mode = %q", captured.Mode)
+	}
+	if captured.SessionName != "repo" {
+		t.Fatalf("workspace.Open SessionName = %q, want %q", captured.SessionName, "repo")
 	}
 
 	// Completion clears the form and quits (kesh hands off to Kitty).

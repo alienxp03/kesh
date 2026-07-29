@@ -368,6 +368,11 @@ type checkoutForm struct {
 	checkoutCloneRoot string
 }
 
+type helpMode struct {
+	helpQuery     string
+	helpSearching bool
+}
+
 type pinMode struct {
 	pinEntry    int
 	confirmSlot string
@@ -420,6 +425,7 @@ type repoIdentity struct {
 // embedded payload pointer is non-nil for a non-normal mode.
 type modeState struct {
 	mode modeKind
+	*helpMode
 	*searchMode
 	*renameForm
 	*createSessionForm
@@ -440,6 +446,8 @@ func (m *model) cancelMode() {
 func (m *model) activateMode(kind modeKind) {
 	state := modeState{mode: kind}
 	switch kind {
+	case modeHelp:
+		state.helpMode = &helpMode{}
 	case modeSearch:
 		state.searchMode = &searchMode{}
 	case modeRename:

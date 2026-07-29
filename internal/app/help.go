@@ -104,20 +104,34 @@ var keymapHelp = []helpSection{
 func (m model) helpPopupView(width, height int) string {
 	popupWidth := min(82, max(36, width-6))
 	contentWidth := popupWidth - 6
-	allLines := helpContent(contentWidth)
-	viewportHeight := max(1, height-13)
+	allLines := helpContent(contentWidth, m.helpQuery)
+	fullContentHeight := len(helpContent(contentWidth, ""))
+	viewportHeight := min(fullContentHeight, max(1, height-14))
 	if height <= 0 {
-		viewportHeight = len(allLines)
+		viewportHeight = fullContentHeight
 	}
 	maxScroll := max(0, len(allLines)-viewportHeight)
 	scroll := min(max(0, m.helpScroll), maxScroll)
-	visible := allLines[scroll:min(len(allLines), scroll+viewportHeight)]
+	visible := append([]string(nil), allLines[scroll:min(len(allLines), scroll+viewportHeight)]...)
+	for len(visible) < viewportHeight {
+		visible = append(visible, "")
+	}
 
-	lines := []string{accentStyle.Render("Keyboard shortcuts"), strings.Repeat("─", contentWidth)}
+	search := dimStyle.Render("Search  / to filter")
+	if m.helpQuery != "" || m.helpSearching {
+		cursor := ""
+		if m.helpSearching {
+			cursor = "█"
+		}
+		search = dimStyle.Render("Search  ") + accentStyle.Render(m.helpQuery+cursor)
+	}
+	lines := []string{accentStyle.Render("Keyboard shortcuts"), search, strings.Repeat("─", contentWidth)}
 	lines = append(lines, visible...)
-	help := "Press ? or Esc to close"
-	if maxScroll > 0 {
-		help = fmt.Sprintf("j/k scroll  •  %d/%d  •  ? / Esc close", scroll+1, maxScroll+1)
+	help := "/ search  •  Press ? or Esc to close"
+	if m.helpSearching {
+		help = "type to filter  •  backspace delete  •  ctrl+u clear  •  Enter/Esc done"
+	} else if maxScroll > 0 {
+		help = fmt.Sprintf("j/k scroll  •  %d/%d  •  / search  •  ?/Esc close", scroll+1, maxScroll+1)
 	}
 	lines = append(lines, "", dimStyle.Render(help))
 	body := strings.Join(lines, "\n")
@@ -129,21 +143,36 @@ func (m model) helpPopupView(width, height int) string {
 		Render(body)
 }
 
-func helpContent(width int) []string {
+func helpContent(width int, query string) []string {
 	keyWidth := min(18, max(10, width/3))
+	query = strings.ToLower(strings.TrimSpace(query))
 	lines := make([]string, 0, 40)
-	for index, section := range keymapHelp {
-		if index > 0 {
+	for _, section := range keymapHelp {
+		sectionMatch := query != "" && strings.Contains(strings.ToLower(section.title), query)
+		matching := make([]helpItem, 0, len(section.items))
+		for _, item := range section.items {
+			searchable := strings.ToLower(item.keys + " " + item.action)
+			if query == "" || sectionMatch || strings.Contains(searchable, query) {
+				matching = append(matching, item)
+			}
+		}
+		if len(matching) == 0 {
+			continue
+		}
+		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
 		lines = append(lines, focusStyle.Render(section.title))
-		for _, item := range section.items {
+		for _, item := range matching {
 			line := fmt.Sprintf("  %-*s  %s", keyWidth, item.keys, item.action)
 			if item.dangerous {
 				line = errorStyle.Bold(true).Render(line)
 			}
 			lines = append(lines, lipgloss.NewStyle().Width(width).Render(line))
 		}
+	}
+	if len(lines) == 0 {
+		return []string{dimStyle.Render("No shortcuts match “" + query + "”.")}
 	}
 	return lines
 }

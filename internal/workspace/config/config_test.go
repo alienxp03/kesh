@@ -34,6 +34,23 @@ func TestProjectTemplate(t *testing.T) {
 			t.Fatalf("template missing %q:\n%s", want, template)
 		}
 	}
+	panes := strings.Index(template, "    # panes:")
+	workspaceOptional := strings.Index(template, "    # Optional workspace-specific setup")
+	sharedOptional := strings.Index(template, "\n# Optional shared worktree setup")
+	if panes < 0 || workspaceOptional < panes || sharedOptional < workspaceOptional {
+		t.Fatalf("template should present panes before optional settings:\n%s", template)
+	}
+	paneExample := "    # panes:\n" +
+		"    #   - commands:\n" +
+		"    #       - nvim\n" +
+		"    #     focus: true\n" +
+		"    #   - split: horizontal # omit commands to open an interactive shell\n" +
+		"    #   - commands:\n" +
+		"    #       - codex\n" +
+		"    #     split: vertical # splits the immediately preceding pane"
+	if !strings.Contains(template, paneExample) {
+		t.Fatalf("template pane example is not the expected commented layout:\n%s", template)
+	}
 }
 
 func TestWriteProjectTemplateRefusesExistingConfig(t *testing.T) {

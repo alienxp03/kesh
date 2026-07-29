@@ -499,6 +499,10 @@ func (m *model) beginLaunchLayoutForEntry(entry entry) tea.Cmd {
 	m.activateMode(modeWorktreeCreate)
 	m.launchOnFolder = true
 	m.launchProjectPath = entry.path
+	folderName := safeName(filepath.Base(filepath.Clean(entry.path)))
+	if folderName != "" && folderName != "." {
+		m.worktreeSessionName = folderName
+	}
 	m.worktreeBranch = ""
 	m.worktreePaths = nil
 	m.worktreeRecipe = nil
