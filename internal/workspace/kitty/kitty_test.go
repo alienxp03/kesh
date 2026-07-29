@@ -114,6 +114,14 @@ func TestRenderSessionRejectsLineBreaks(t *testing.T) {
 
 func TestWriteSessionFileIsStableAndPrivate(t *testing.T) {
 	cache := t.TempDir()
+	safe, err := WriteSessionFile(cache, "kesh", "layout splits\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filepath.Base(safe) != "kesh.kitty-session" {
+		t.Fatalf("safe session path = %q, want name-preserving filename", safe)
+	}
+
 	first, err := WriteSessionFile(cache, "repo/feature", "first\n")
 	if err != nil {
 		t.Fatal(err)

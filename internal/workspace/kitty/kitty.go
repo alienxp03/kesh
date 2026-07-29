@@ -355,15 +355,19 @@ func sessionFilePath(cacheDir string, sessionName string) (string, error) {
 			return "", fmt.Errorf("resolve Kitty session cache: %w", err)
 		}
 	}
-	digest := sha256.Sum256([]byte(sessionName))
-	name := strings.Trim(unsafeSessionFileChars.ReplaceAllString(sessionName, "-"), "-._")
-	if name == "" {
-		name = "session"
+	name := sessionName
+	preserveName := name == strings.TrimSpace(name) && name != "" && name != "." && name != ".." && len(name) <= 80 && !unsafeSessionFileChars.MatchString(name)
+	if !preserveName {
+		digest := sha256.Sum256([]byte(sessionName))
+		name = strings.Trim(unsafeSessionFileChars.ReplaceAllString(sessionName, "-"), "-._")
+		if name == "" {
+			name = "session"
+		}
+		if len(name) > 80 {
+			name = name[:80]
+		}
+		name += "-" + hex.EncodeToString(digest[:4])
 	}
-	if len(name) > 80 {
-		name = name[:80]
-	}
-	name += "-" + hex.EncodeToString(digest[:4])
 	return filepath.Join(cacheDir, "kesh", "kitty", name+".kitty-session"), nil
 }
 

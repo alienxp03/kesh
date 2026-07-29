@@ -138,7 +138,11 @@ func Assemble(
 			name = filepath.Base(session.path)
 		}
 		_, composed := domain.ComposedSessionName(sessionName)
-		if composedName, ok := domain.ComposedSessionName(sessionName); ok {
+		// Kitty derives session_name from the session filename. Generated cache
+		// files can therefore look like composed sessions (for example
+		// kesh-63c760d5). The explicit layout name carried in the environment is
+		// the authoritative user-facing name.
+		if composedName, ok := domain.ComposedSessionName(sessionName); ok && session.displayName == "" {
 			name = composedName
 		}
 		record, savedSession := state.SavedSessionForName(saved, sessionName)

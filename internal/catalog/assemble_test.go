@@ -55,7 +55,7 @@ func TestAssembleUsesKeshLayoutSessionName(t *testing.T) {
 	entries, _ := Assemble(kitty.State{{Tabs: []kitty.Tab{{
 		ID: 1, Title: "dotfiles",
 		Windows: []kitty.Window{{
-			ID: 11, CWD: "/Users/stan/.dotfiles", SessionName: "kesh-dot-2", LastFocusedAt: 8,
+			ID: 11, CWD: "/Users/stan/.dotfiles", SessionName: "kesh-63c760d5", LastFocusedAt: 8,
 			Env: map[string]string{"PWD": "/Users/stan/.dotfiles", "KESH_KITTY_SESSION": "dot-2"},
 		}},
 	}}}}, state.SavedSessions{}, nil, 999, "/Users/stan")
