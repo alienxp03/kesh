@@ -2,6 +2,7 @@ package app
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	gitx "github.com/alienxp03/kesh/internal/git"
@@ -41,6 +42,23 @@ func TestAddWorktreeForBranch_NewBranchCreatesBranchOffHead(t *testing.T) {
 	want := system.Spec{Name: "git", Args: []string{"-C", "/repo", "worktree", "add", "-b", "rename-session", "/trees/topic"}}
 	if !reflect.DeepEqual(last, want) {
 		t.Fatalf("new-branch spec = %#v, want %#v", last, want)
+	}
+}
+
+func TestFetchWorktreesDefersPerWorktreeStatus(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	recorder := &appGitRunner{out: []byte("worktree /repo\nHEAD abc123\nbranch refs/heads/main\n")}
+	restore := system.SetRunner(recorder)
+	t.Cleanup(restore)
+
+	message := fetchWorktrees("/repo", 0, -1, -1)()
+	if _, ok := message.(worktreeListMsg); !ok {
+		t.Fatalf("fetchWorktrees result = %T", message)
+	}
+	for _, spec := range recorder.specs {
+		if strings.Contains(strings.Join(spec.Args, " "), "status") {
+			t.Fatalf("initial worktree fetch ran blocking status command: %#v", spec)
+		}
 	}
 }
 

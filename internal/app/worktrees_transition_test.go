@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/alienxp03/kesh/internal/system"
 	"github.com/alienxp03/kesh/internal/workspace"
 )
 
@@ -51,7 +52,7 @@ func TestWorktreeSearchAndReturnToOriginatingFilter(t *testing.T) {
 	}
 }
 
-func TestWorktreeCreateRunsRecipeAndRefreshesPrimarySurface(t *testing.T) {
+func TestWorktreeCreateRunsRecipeAndClosesPickerAfterHandoff(t *testing.T) {
 	directory := t.TempDir()
 	repository := filepath.Join(directory, "repo")
 	if err := os.Mkdir(repository, 0o755); err != nil {
@@ -90,10 +91,118 @@ func TestWorktreeCreateRunsRecipeAndRefreshesPrimarySurface(t *testing.T) {
 		t.Fatalf("workspace.Create opts = %#v", captured)
 	}
 
-	updated, refresh := m.Update(message)
+	updated, post := m.Update(message)
 	m = updated.(model)
-	if m.mode != modeNormal || m.filter != filterWorktrees || m.worktreeCreateForm != nil || refresh == nil {
-		t.Fatalf("create completion: mode=%d filter=%d form=%#v refresh=%v", m.mode, m.filter, m.worktreeCreateForm, refresh)
+	if m.mode != modeNormal || m.worktreeCreateForm != nil {
+		t.Fatalf("create completion: mode=%d form=%#v", m.mode, m.worktreeCreateForm)
+	}
+	if post == nil {
+		t.Fatal("create completion should close the picker after Kitty handoff")
+	}
+	if _, ok := post().(tea.QuitMsg); !ok {
+		t.Fatalf("create completion should quit, got %T", post())
+	}
+}
+
+func TestPlainWorktreeCreateOpensNewKittySession(t *testing.T) {
+	recorder := &appGitRunner{}
+	restore := system.SetRunner(recorder)
+	t.Cleanup(restore)
+
+	m := model{
+		filter:                   filterWorktrees,
+		worktreeFilterEntryIndex: 0,
+		worktreeRoot:             "/trees",
+		kitty:                    "kitty",
+		zoxide:                   "zoxide",
+		entries: []entry{{
+			key: "/repo", name: "repo", path: "/repo", kind: "project",
+		}},
+	}
+	m.activateMode(modeWorktreeCreate)
+	m.worktreeBranch = "setup-run-dev"
+
+	updated, validation := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if validation == nil || !m.worktreeBusy {
+		t.Fatalf("plain creation did not start validation: command=%v busy=%t", validation, m.worktreeBusy)
+	}
+	updated, create := m.Update(validation())
+	m = updated.(model)
+	if create == nil || !m.worktreeBusy {
+		t.Fatalf("plain creation did not start after validation: command=%v busy=%t", create, m.worktreeBusy)
+	}
+	completion := create().(worktreeMsg)
+	if completion.err != nil {
+		t.Fatalf("plain worktree creation failed: %v", completion.err)
+	}
+	updated, post := m.Update(completion)
+	m = updated.(model)
+	if m.mode != modeNormal || m.worktreeCreateForm != nil {
+		t.Fatalf("plain create completion: mode=%d form=%#v", m.mode, m.worktreeCreateForm)
+	}
+	if post == nil {
+		t.Fatal("plain create completion should close the picker")
+	}
+	if _, ok := post().(tea.QuitMsg); !ok {
+		t.Fatalf("plain create completion should quit, got %T", post())
+	}
+
+	var added, opened bool
+	for _, spec := range recorder.specs {
+		arguments := strings.Join(spec.Args, " ")
+		added = added || (spec.Name == "git" && strings.Contains(arguments, "worktree add"))
+		opened = opened || (spec.Name == "kitty" && strings.Contains(arguments, "goto_session"))
+	}
+	if !added || !opened {
+		t.Fatalf("plain creation did not add and open worktree: specs=%#v", recorder.specs)
+	}
+}
+
+func TestPlainWorktreeCreateLocksFormDuringValidation(t *testing.T) {
+	directory := t.TempDir()
+	repository := filepath.Join(directory, "repo")
+	if err := os.Mkdir(repository, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	m := model{
+		filter:                   filterWorktrees,
+		worktreeFilterEntryIndex: 0,
+		worktreeRoot:             filepath.Join(directory, "worktrees"),
+		entries: []entry{{
+			key: repository, name: "repo", path: repository, kind: "project",
+		}},
+	}
+	m.activateMode(modeWorktreeCreate)
+	m.worktreeBranch = "setup-run-dev"
+
+	updated, validation := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if validation == nil || !m.worktreeBusy {
+		t.Fatalf("first Enter should start validation: command=%v busy=%t", validation, m.worktreeBusy)
+	}
+
+	updated, duplicate := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if duplicate != nil || !m.worktreeBusy {
+		t.Fatalf("second Enter during validation should be ignored: command=%v busy=%t", duplicate, m.worktreeBusy)
+	}
+
+	message := validation().(worktreeMsg)
+	if !message.validation || message.err != nil {
+		t.Fatalf("validation result = %#v", message)
+	}
+	updated, create := m.Update(message)
+	m = updated.(model)
+	if create == nil || !m.worktreeBusy {
+		t.Fatalf("successful validation should start creation: command=%v busy=%t", create, m.worktreeBusy)
+	}
+
+	updated, duplicate = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if duplicate != nil || !m.worktreeBusy {
+		t.Fatalf("Enter during creation should be ignored: command=%v busy=%t", duplicate, m.worktreeBusy)
 	}
 }
 

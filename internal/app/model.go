@@ -236,7 +236,8 @@ type pinsPersistMsg struct {
 }
 
 type worktreeMsg struct {
-	err error
+	err        error
+	validation bool
 }
 
 type worktreeRecipeMsg struct {
@@ -254,6 +255,18 @@ type worktreeListMsg struct {
 	dir         string
 	worktrees   []worktreeItem
 	err         error
+}
+
+type worktreeSyncState struct {
+	dirty   bool
+	ahead   int
+	behind  int
+	changes []string
+}
+
+type worktreeSyncMsg struct {
+	dir      string
+	statuses map[string]worktreeSyncState
 }
 
 type worktreeRemoveMsg struct {
@@ -485,6 +498,7 @@ type model struct {
 	previousFilter           int
 	worktreeFilterEntryIndex int
 	worktreeFilterRows       []worktreeFilterRow
+	worktreeLoading          bool
 	zoxideCtx                zoxideMergeContext
 	zoxidePending            bool
 	width                    int

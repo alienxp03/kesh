@@ -36,6 +36,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = m.previousFilter
 			m.worktreeFilterEntryIndex = -1
 			m.worktreeFilterRows = nil
+			m.worktreeLoading = false
 			m.query = ""
 			m.rebuildRows()
 			return m, nil
@@ -270,10 +271,15 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.query = ""
 		m.worktreeFilterRows = nil
 
-		// Fetch worktrees if not already loaded
+		// Never render stale rows from the originating list under the Worktrees
+		// header. Paint an explicit loading state while the lightweight list loads.
 		if !entry.worktreesLoaded {
+			m.rows = nil
+			m.cursor = 0
+			m.worktreeLoading = true
 			return m, fetchWorktrees(entry.path, selected.entryIndex, -1, -1)
 		}
+		m.worktreeLoading = false
 		m.rebuildWorktreeRows()
 		return m, nil
 	case "f":

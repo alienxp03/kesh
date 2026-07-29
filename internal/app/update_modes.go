@@ -342,7 +342,14 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.worktreeBusy = true
 			return m, runWktreeNew(m.worktreeRecipePath, m.worktreeRecipeMode, m.worktreeBranch, selected)
 		}
-		return m, m.validateWorktreeBranch()
+		validation := m.validateWorktreeBranch()
+		if validation == nil {
+			return m, nil
+		}
+		// Keep the form busy while the path check runs so a second Enter cannot
+		// queue another validation while the first creation is starting.
+		m.worktreeBusy = true
+		return m, validation
 	case "backspace":
 		if m.launchOnFolder {
 			runes := []rune(m.worktreeSessionName)

@@ -328,11 +328,11 @@ func (m *model) validateWorktreeBranch() tea.Cmd {
 			owner, repo := getRepoOwner(entry.path)
 			worktreePath := filepath.Join(worktreeRoot, owner, repo, branch)
 			if _, err := os.Stat(worktreePath); err == nil {
-				return worktreeMsg{err: fmt.Errorf("worktree already exists at %s", displayPath(worktreePath, home))}
+				return worktreeMsg{err: fmt.Errorf("worktree already exists at %s", displayPath(worktreePath, home)), validation: true}
 			}
 		}
-		// Validation successful - return nil error to indicate valid
-		return worktreeMsg{err: nil}
+		// Validation successful - return nil error to indicate valid.
+		return worktreeMsg{validation: true}
 	}
 
 }
@@ -340,8 +340,10 @@ func (m *model) createWorktree() tea.Cmd {
 	entries := m.worktreeEntries()
 	branch := m.worktreeBranch
 	worktreeRoot := m.worktreeRoot
+	kitty := m.kitty
 	zoxide := m.zoxide
 	return func() tea.Msg {
+		created := make([]string, 0, len(entries))
 		for _, entry := range entries {
 			if entry.kind != "project" {
 				continue
@@ -354,12 +356,18 @@ func (m *model) createWorktree() tea.Cmd {
 				return worktreeMsg{err: fmt.Errorf("failed to create worktree for %s: %w", entry.name, err)}
 			}
 
-			// Add to zoxide
-			_ = (catalog.Zoxide{Executable: zoxide}).Add(worktreePath)
+			created = append(created, worktreePath)
 		}
-
-		// Return success - worktrees are created and added to zoxide
-		return worktreeMsg{err: nil}
+		if len(created) == 0 {
+			return worktreeMsg{err: fmt.Errorf("no project selected for worktree creation")}
+		}
+		// Native creation has no recipe engine to perform the Kitty handoff.
+		// Open the new folder explicitly so Enter behaves like recipe-backed
+		// creation instead of silently returning to the worktree list.
+		if err := openProjectSession(kitty, zoxide, created[0], false); err != nil {
+			return worktreeMsg{err: fmt.Errorf("open created worktree: %w", err)}
+		}
+		return worktreeMsg{}
 	}
 }
 
@@ -1234,10 +1242,31 @@ func fetchWorktrees(dir string, entryIndex, tabIndex, windowIndex int) tea.Cmd {
 			worktrees[i].prURL = pullRequest.URL
 			worktrees[i].prNumber = pullRequest.Number
 			worktrees[i].prExact = exact
-			worktrees[i].dirty, worktrees[i].ahead, worktrees[i].behind, worktrees[i].changes = worktreeSyncStatus(worktrees[i].path)
 		}
 		sortWorktreeItems(worktrees)
 		return worktreeListMsg{entryIndex: entryIndex, tabIndex: tabIndex, windowIndex: windowIndex, dir: dir, worktrees: worktrees}
+	}
+}
+
+// fetchWorktreeSyncStatuses enriches an already-visible worktree list with
+// dirty/ahead/behind state. Keeping these per-worktree git status calls out of
+// fetchWorktrees lets large repositories paint after one worktree-list command.
+func fetchWorktreeSyncStatuses(dir string, worktrees []worktreeItem) tea.Cmd {
+	paths := make([]string, 0, len(worktrees))
+	for _, worktree := range worktrees {
+		if worktree.path != "" {
+			paths = append(paths, worktree.path)
+		}
+	}
+	return func() tea.Msg {
+		statuses := make(map[string]worktreeSyncState, len(paths))
+		for _, path := range paths {
+			dirty, ahead, behind, changes := worktreeSyncStatus(path)
+			statuses[path] = worktreeSyncState{
+				dirty: dirty, ahead: ahead, behind: behind, changes: changes,
+			}
+		}
+		return worktreeSyncMsg{dir: dir, statuses: statuses}
 	}
 }
 

@@ -226,32 +226,35 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode != modeWorktreeCreate {
 			return m, nil
 		}
-		if m.worktreeBusy {
-			// Creation completed.
-			m.worktreeBusy = false
-			m.cancelMode()
-			if msg.err != nil {
-				m.err = msg.err
-				if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
-					entryIndex := m.worktreeFilterEntryIndex
-					return m, fetchWorktrees(m.entries[entryIndex].path, entryIndex, -1, -1)
-				}
+		if msg.validation {
+			if !m.worktreeBusy {
 				return m, nil
 			}
+			if msg.err != nil {
+				m.worktreeBusy = false
+				m.err = msg.err
+				return m, nil
+			}
+			// Validation passed; keep the form busy while creation runs.
+			return m, m.createWorktree()
+		}
+		if !m.worktreeBusy {
+			return m, nil
+		}
+		// Creation completed.
+		m.worktreeBusy = false
+		m.cancelMode()
+		if msg.err != nil {
+			m.err = msg.err
 			if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
 				entryIndex := m.worktreeFilterEntryIndex
 				return m, fetchWorktrees(m.entries[entryIndex].path, entryIndex, -1, -1)
 			}
-			return m, tea.Quit
-		}
-		// Validation runs only on Enter. On success, proceed to create;
-		// otherwise surface the error without leaving the form.
-		if msg.err != nil {
-			m.err = msg.err
 			return m, nil
 		}
-		m.worktreeBusy = true
-		return m, m.createWorktree()
+		// Both native and recipe-backed creation have already handed focus to the
+		// new Kitty session. Close the picker instead of jumping back to its list.
+		return m, tea.Quit
 	case worktreeRecipeMsg:
 		if m.mode != modeWorktreeCreate {
 			return m, nil
@@ -300,6 +303,7 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// user drilled into instead of letting the first path match win.
 		if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) && m.entries[m.worktreeFilterEntryIndex].path == msg.dir {
 			entryIndex = m.worktreeFilterEntryIndex
+			m.worktreeLoading = false
 		}
 		if entryIndex >= 0 {
 			e := &m.entries[entryIndex]
@@ -320,13 +324,42 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 				e.worktrees = msg.worktrees
 				e.worktreesLoaded = true
 				m.rebuildWorktreeRows()
-				return m, m.refreshPRStatuses(msg.dir, false)
+				return m, tea.Batch(
+					m.refreshPRStatuses(msg.dir, false),
+					fetchWorktreeSyncStatuses(msg.dir, msg.worktrees),
+				)
 			}
 		}
 		if updated {
 			m.err = nil
 			m.rebuildRows()
-			return m, m.refreshPRStatuses(msg.dir, false)
+			return m, tea.Batch(
+				m.refreshPRStatuses(msg.dir, false),
+				fetchWorktreeSyncStatuses(msg.dir, msg.worktrees),
+			)
+		}
+		return m, nil
+	case worktreeSyncMsg:
+		entryIndex, _, _ := m.resolveWorktreeDirectory(msg.dir)
+		if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) && m.entries[m.worktreeFilterEntryIndex].path == msg.dir {
+			entryIndex = m.worktreeFilterEntryIndex
+		}
+		if entryIndex < 0 {
+			return m, nil
+		}
+		entry := &m.entries[entryIndex]
+		for index := range entry.worktrees {
+			status, ok := msg.statuses[entry.worktrees[index].path]
+			if !ok {
+				continue
+			}
+			entry.worktrees[index].dirty = status.dirty
+			entry.worktrees[index].ahead = status.ahead
+			entry.worktrees[index].behind = status.behind
+			entry.worktrees[index].changes = status.changes
+		}
+		if m.filter == filterWorktrees && entryIndex == m.worktreeFilterEntryIndex {
+			m.rebuildWorktreeRows()
 		}
 		return m, nil
 	case worktreeFetchedMsg:

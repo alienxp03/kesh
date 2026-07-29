@@ -1004,7 +1004,19 @@ printf '%s\n' '[{"headRefName":"feat/open","headRefOid":"bbb","state":"OPEN","me
 	if refreshCommand == nil {
 		t.Fatal("background PR refresh was not started")
 	}
-	cachedModel, queryCommand := listed.Update(refreshCommand())
+	refreshMessage := refreshCommand()
+	batch, ok := refreshMessage.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("background refresh = %T, want tea.BatchMsg", refreshMessage)
+	}
+	var cacheMessage prStatusCacheMsg
+	for _, command := range batch {
+		if message, ok := command().(prStatusCacheMsg); ok {
+			cacheMessage = message
+			break
+		}
+	}
+	cachedModel, queryCommand := listed.Update(cacheMessage)
 	if queryCommand == nil {
 		t.Fatal("PR query was not started after the cache lookup")
 	}
@@ -3863,6 +3875,7 @@ func TestWorktreeListKeepsProjectSourceWhenSessionSharesPath(t *testing.T) {
 	const sharedPath = "/projects/dotfiles"
 	m := model{
 		filter: filterAll,
+		width:  120, height: 24,
 		entries: []entry{
 			{name: "dotfiles-kesh", kind: "workspace", path: sharedPath, open: true},
 			{name: "dotfiles", kind: "project", path: sharedPath},
@@ -3878,6 +3891,13 @@ func TestWorktreeListKeepsProjectSourceWhenSessionSharesPath(t *testing.T) {
 	if m.worktreeFilterEntryIndex != 1 {
 		t.Fatalf("selected project index = %d, want 1", m.worktreeFilterEntryIndex)
 	}
+	if !m.worktreeLoading || len(m.rows) != 0 {
+		t.Fatalf("initial worktree state should be loading without stale rows: loading=%t rows=%#v", m.worktreeLoading, m.rows)
+	}
+	loadingView := ansi.Strip(m.View())
+	if !strings.Contains(loadingView, "Loading worktrees…") || strings.Contains(loadingView, "dotfiles-kesh") {
+		t.Fatalf("initial worktree view leaked the originating list:\n%s", loadingView)
+	}
 
 	updated, _ = m.Update(worktreeListMsg{
 		entryIndex: 1,
@@ -3890,5 +3910,32 @@ func TestWorktreeListKeepsProjectSourceWhenSessionSharesPath(t *testing.T) {
 	}
 	if got := m.entries[1].worktrees; len(got) != 1 || got[0].path != sharedPath {
 		t.Fatalf("project worktrees = %#v", got)
+	}
+	if m.worktreeLoading || len(m.rows) != 1 {
+		t.Fatalf("loaded worktree state = loading:%t rows:%#v", m.worktreeLoading, m.rows)
+	}
+}
+
+func TestWorktreeSyncStatusEnrichesVisibleRows(t *testing.T) {
+	m := model{
+		filter:                   filterWorktrees,
+		worktreeFilterEntryIndex: 0,
+		entries: []entry{{
+			path: "/repo", worktreesLoaded: true,
+			worktrees: []worktreeItem{{path: "/trees/feature", branch: "feature"}},
+		}},
+	}
+	m.rebuildWorktreeRows()
+
+	updated, _ := m.Update(worktreeSyncMsg{
+		dir: "/repo",
+		statuses: map[string]worktreeSyncState{
+			"/trees/feature": {dirty: true, ahead: 2, behind: 1, changes: []string{" M app.go"}},
+		},
+	})
+	m = updated.(model)
+	worktree := m.entries[0].worktrees[0]
+	if !worktree.dirty || worktree.ahead != 2 || worktree.behind != 1 || !reflect.DeepEqual(worktree.changes, []string{" M app.go"}) {
+		t.Fatalf("enriched worktree = %#v", worktree)
 	}
 }

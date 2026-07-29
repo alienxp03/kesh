@@ -129,10 +129,12 @@ func (m model) View() string {
 	if len(m.rows) == 0 {
 		empty := "  No matching sessions"
 		if m.filter == filterWorktrees {
-			// Worktrees is only ever opened scoped to a project (via w), so an
-			// empty list means that project has no worktrees yet — not that a
-			// search matched nothing.
+			// Worktrees is only ever opened scoped to a project (via w). Distinguish
+			// the initial asynchronous load from a genuinely empty repository.
 			empty = "  No worktrees — press n to create one"
+			if m.worktreeLoading {
+				empty = "  Loading worktrees…"
+			}
 		}
 		listLines = append(listLines, dimStyle.Render(empty))
 	}
@@ -486,6 +488,9 @@ func entryDirectoryField(entry entry) detailField {
 
 func (m model) detailPanelView(width, height int, compact bool) string {
 	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		if m.filter == filterWorktrees && m.worktreeLoading {
+			return renderDetailPanel("Worktrees", []detailField{{value: "Loading repository worktrees…"}}, "", nil, width, height, compact)
+		}
 		return renderDetailPanel("Info", []detailField{{value: "No matching rows — change or clear the filter."}}, "", nil, width, height, compact)
 	}
 	selected := m.rows[m.cursor]
