@@ -110,14 +110,16 @@ Press `w`, then `n`, to create a branch worktree. kesh opens it in Kitty and
 uses the project layout when one is configured. In the Worktrees view, use `f`
 to pull the selected worktree with fetch/rebase behavior.
 
-Press `C` to check out a GitHub pull request. The root repository path is
-editable with `Tab`; Kesh validates manually entered paths as Git repositories
-before fetching or creating the worktree.
+Press `C` to check out a GitHub pull request. Enter a full PR URL,
+`owner/repo#123`, or just the PR number when a project is selected. The root
+repository path is editable with `Tab`; Kesh validates manually entered paths
+as Git repositories before fetching or creating the worktree.
 
 ### Agents
 
 Run `kesh agents` to list active Claude, Codex, and pi windows. Press `enter`
-to focus one and `p` to show its live terminal preview.
+to focus one. The selected agent's live terminal preview refreshes automatically;
+press `p` to toggle it.
 
 For exact lifecycle status, install the Kesh integration once for each agent
 you use: `kesh agents setup pi`, `kesh agents setup codex`, or
@@ -221,7 +223,7 @@ Global paths and default Kitty startup sessions are configured in `~/.config/kes
 clone:
   root: ~/workspace # repository clones and PR checkouts
 worktree:
-  root: ~/workspace/worktrees # PR worktrees
+  root: ~/workspace/worktrees # worktrees created through the picker
 
 startup:
   sessions:
@@ -327,7 +329,8 @@ This section is for contributors. End users should install the Homebrew
 package above.
 
 ```sh
-make ci       # format check, lint, tests, and build
+make fmt      # apply gofmt and goimports
+make ci       # lint, race-enabled tests, and build
 make build    # installs the development binary to ~/.local/bin/kesh
 make release-dry-run BUMP=patch
 make release BUMP=patch                     # prompt before pushing the tag
