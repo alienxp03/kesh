@@ -10,8 +10,10 @@ func VisibleCommand(worktreePath string, command string) string {
 	return strings.Join([]string{
 		SourceShellStartupCommand(),
 		"printf '%s\\n' " + SingleQuote("$ "+command),
+		"trap ':' INT",
 		setup.SourceEnvCommand(worktreePath, "eval "+SingleQuote(command)),
 		"kesh_status=$?",
+		"trap - INT",
 		"if [ \"$kesh_status\" -ne 0 ]; then printf '%s\\n' " + SingleQuote("warning: pane command failed: "+command) + " >&2; fi",
 		"exec \"${SHELL:-/bin/sh}\" -i",
 	}, "; ")
