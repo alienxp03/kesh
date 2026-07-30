@@ -44,4 +44,5 @@ func (p Paths) PinShortcuts() string  { return filepath.Join(p.StateDirectory, "
 func (p Paths) KittyRun() string      { return filepath.Join(p.StateDirectory, "kitty-run") }
 func (p Paths) File() string          { return filepath.Join(p.ConfigDirectory, "config.yaml") }
 func (p Paths) Aliases() string       { return filepath.Join(p.StateDirectory, "aliases.json") }
+func (p Paths) AgentStatuses() string { return filepath.Join(p.StateDirectory, "agent-status") }
 func (p Paths) PRCache() string       { return filepath.Join(p.CacheDirectory, "pr-status.json") }

@@ -110,10 +110,20 @@ Press `w`, then `n`, to create a branch worktree. kesh opens it in Kitty and
 uses the project layout when one is configured. In the Worktrees view, use `f`
 to pull the selected worktree with fetch/rebase behavior.
 
+Press `C` to check out a GitHub pull request. The root repository path is
+editable with `Tab`; Kesh validates manually entered paths as Git repositories
+before fetching or creating the worktree.
+
 ### Agents
 
 Run `kesh agents` to list active Claude, Codex, and pi windows. Press `enter`
 to focus one and `p` to show its live terminal preview.
+
+For exact Pi lifecycle status, install the Kesh integration once with
+`kesh agents setup pi`, then restart Pi or run `/reload` in existing sessions.
+Kesh shows working, finished, errored, and idle state and acknowledges a
+finished session when you focus it. Use `kesh agents status` to inspect the
+integration or `kesh agents remove pi` to uninstall it.
 
 ## Project configuration
 
@@ -268,6 +278,9 @@ kesh                         Open the workspace picker
 kesh start                   Launch configured default sessions
 kesh init                    Create .kesh.yaml in the current directory
 kesh agents                 Show active agent windows
+kesh agents setup pi        Install/update Pi status integration
+kesh agents remove pi       Remove Pi status integration
+kesh agents status          Show agent integration status
 kesh ssh                    Show configured SSH hosts
 kesh saved                  Show saved sessions
 kesh switch SLOT             Focus pin 0–9

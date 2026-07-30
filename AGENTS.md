@@ -74,6 +74,7 @@ Resolved by `internal/config/paths.go` via `FromEnvironment()`:
 | Saved sessions | `${XDG_STATE_HOME:-~/.local/state}/kesh/saved-sessions.json` |
 | Session snapshots | `${XDG_STATE_HOME:-~/.local/state}/kesh/sessions/` |
 | Kitty run marker | `${XDG_STATE_HOME:-~/.local/state}/kesh/kitty-run` |
+| Agent statuses | `${XDG_STATE_HOME:-~/.local/state}/kesh/agent-status/` |
 | PR status cache | `${XDG_CACHE_HOME:-~/.cache}/kesh/pr-status.json` |
 
 Note: kitty's `include ~/.local/state/kesh/kitty-pins.conf` is a hardcoded
@@ -139,7 +140,10 @@ in the background when Worktrees opens, and throttles refreshes to once per
 minute per repository. Capital `X` always bypasses the cache and revalidates
 merged status before offering removal.
 
-### Agents preview
+### Agents preview and status
 
 The `Agents` filter previews the selected window's visible terminal screen,
-refreshing once per second.
+refreshing once per second. Pi lifecycle status comes from the managed global
+extension installed by `kesh agents setup pi`; it writes per-Kitty-window state
+under the Agent statuses path. Kesh polls those small files once per second and
+acknowledges finished or errored state when the window is focused.

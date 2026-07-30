@@ -200,29 +200,40 @@ func (m model) popupView(width int) string {
 	} else if m.mode == modeCheckoutPR {
 		title = "Checkout pull request"
 		fieldWidth := popupWidth - 6
-		cursor := "█"
-		if m.prCheckoutBusy {
-			cursor = ""
+		prCursor, pathCursor := "", ""
+		if !m.prCheckoutBusy {
+			if m.prCheckoutPathFocus {
+				pathCursor = "█"
+			} else {
+				prCursor = "█"
+			}
 		}
-		inputField := lipgloss.NewStyle().Width(fieldWidth).Render(
-			dimStyle.Render("PR: ") + focusStyle.Render(m.prCheckoutValue+cursor),
+		prStyle, pathStyle := focusStyle, focusStyle
+		if !m.prCheckoutBusy && !m.prCheckoutPathFocus {
+			prStyle = selectedTextStyle
+		}
+		if !m.prCheckoutBusy && m.prCheckoutPathFocus {
+			pathStyle = selectedTextStyle
+		}
+		prField := lipgloss.NewStyle().Width(fieldWidth).Render(
+			dimStyle.Render("PR: ") + prStyle.Render(m.prCheckoutValue+prCursor),
+		)
+		cloneNote := ""
+		if m.prCheckoutClone && !m.prCheckoutPathEdited {
+			cloneNote = dimStyle.Render(" (new clone)")
+		}
+		pathField := lipgloss.NewStyle().Width(fieldWidth).Render(
+			dimStyle.Render("Root repo path: ") + pathStyle.Render(m.prCheckoutPath+pathCursor) + cloneNote,
 		)
 		previewField := ""
 		if !m.prCheckoutBusy {
-			selectedRepoPath := ""
-			if m.cursor >= 0 && m.cursor < len(m.rows) {
-				entryIndex := m.rows[m.cursor].entryIndex
-				if entryIndex >= 0 && entryIndex < len(m.entries) {
-					selectedRepoPath = m.entries[entryIndex].path
-				}
-			}
-			previewField = prCheckoutPreview(m.prCheckoutValue, m.prCheckoutBranch, selectedRepoPath, m.prCheckoutPath, m.prCheckoutClone, m.checkoutCloneRoot, m.worktreeRoot, fieldWidth)
+			previewField = prCheckoutPreview(m.prCheckoutValue, m.prCheckoutBranch, m.prCheckoutClone, m.checkoutCloneRoot, m.worktreeRoot, fieldWidth)
 		}
-		field = inputField + previewField
+		field = prField + "\n\n" + pathField + previewField
 		if m.prCheckoutBusy {
-			help = "Fetching…"
+			help = "Validating and checking out…"
 		} else {
-			help = "Enter checkout  •  Esc cancel"
+			help = "Tab switch field  •  Enter checkout  •  Esc cancel"
 		}
 	} else if m.mode == modePin {
 		title = "Pin " + m.entries[m.pinEntry].name

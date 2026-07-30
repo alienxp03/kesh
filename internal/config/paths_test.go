@@ -16,6 +16,9 @@ func TestFromEnvironmentUsesXDGLocations(t *testing.T) {
 	if got, want := paths.Aliases(), filepath.Join("/state", "kesh", "aliases.json"); got != want {
 		t.Fatalf("Aliases() = %q, want %q", got, want)
 	}
+	if got, want := paths.AgentStatuses(), filepath.Join("/state", "kesh", "agent-status"); got != want {
+		t.Fatalf("AgentStatuses() = %q, want %q", got, want)
+	}
 }
 
 func TestFromEnvironmentFallsBackToHome(t *testing.T) {

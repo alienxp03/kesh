@@ -97,24 +97,104 @@ func runClone(kitty, zoxide, repository, destination string) tea.Cmd {
 	}
 }
 
-// runCheckoutPR turns a GitHub pull request into an open workspace. It resolves
-// an existing local clone (the project under the cursor, or a candidate under
-// the checkout root), cloning first when none exists; fetches the PR head into a
+// runCheckoutPR turns a GitHub pull request into an open workspace. It uses an
+// explicitly validated root repository when supplied, otherwise resolves a
+// candidate under the checkout root and clones when none exists; fetches the PR head into a
 // local branch named after the PR's head ref; creates a worktree for it; and
 // opens the workspace. If a worktree on that branch already exists it is focused
 // instead, so re-checking out the same PR is a no-op.
 // resolvePRPreview fetches only the head branch for the input preview. Its
 // value is carried with the result so Update can ignore stale lookups.
-func resolvePRPreview(value, owner, repo string, number int, checkoutRoot, cloneRoot string) tea.Cmd {
+func resolvePRPreview(value, owner, repo string, number int, selectedRepoPath, checkoutRoot, cloneRoot string) tea.Cmd {
 	return func() tea.Msg {
 		branch, _ := lookupPRHeadBranch(owner, repo, number, "")
-		repoPath := filepath.Join(checkoutRoot, owner, repo)
+		repoPath := ""
+		if selectedRepoPath != "" {
+			selectedOwner, selectedRepo := getRepoOwner(selectedRepoPath)
+			if strings.EqualFold(selectedOwner, owner) && strings.EqualFold(selectedRepo, repo) {
+				if root, err := (gitx.Repository{Path: selectedRepoPath}).Root(); err == nil {
+					repoPath = root
+				}
+			}
+		}
+		if repoPath == "" {
+			repoPath = filepath.Join(checkoutRoot, owner, repo)
+		}
 		newClone := !dirExists(repoPath)
 		if newClone {
 			repoPath = filepath.Join(cloneRoot, owner, repo)
 		}
 		return prPreviewMsg{value: value, branch: branch, repoPath: repoPath, newClone: newClone}
 	}
+}
+
+func validatePRCheckout(owner, repo string, number int, useSelected bool, selectedRepoPath, pathValue string, pathEdited, newClone bool) tea.Cmd {
+	return func() tea.Msg {
+		if strings.TrimSpace(pathValue) == "" && useSelected {
+			pathValue = selectedRepoPath
+		}
+		if strings.TrimSpace(pathValue) == "" {
+			return prCheckoutValidationMsg{err: fmt.Errorf("root repo path is required")}
+		}
+		if !pathEdited && newClone {
+			if err := validateNewClonePath(pathValue); err != nil {
+				return prCheckoutValidationMsg{err: err}
+			}
+			return prCheckoutValidationMsg{owner: owner, repo: repo, number: number}
+		}
+		repoPath, err := validateCheckoutRepoPath(pathValue)
+		if err != nil {
+			return prCheckoutValidationMsg{err: err}
+		}
+		if useSelected {
+			owner, repo = getRepoOwner(repoPath)
+			if owner == "" || repo == "" {
+				return prCheckoutValidationMsg{err: fmt.Errorf("cannot determine GitHub repository for %s", displayPath(repoPath, os.Getenv("HOME")))}
+			}
+		}
+		return prCheckoutValidationMsg{owner: owner, repo: repo, number: number, repoPath: repoPath}
+	}
+}
+
+func validateCheckoutRepoPath(value string) (string, error) {
+	path, err := expandHomePath(strings.TrimSpace(value))
+	if err != nil {
+		return "", fmt.Errorf("invalid root repo path: %w", err)
+	}
+	if !filepath.IsAbs(path) {
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return "", fmt.Errorf("invalid root repo path: %w", err)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("invalid root repo path: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("invalid root repo path: not a directory")
+	}
+	root, err := (gitx.Repository{Path: path}).Root()
+	if err != nil {
+		return "", fmt.Errorf("invalid root repo path: not a Git repository")
+	}
+	return filepath.Clean(root), nil
+}
+
+func validateNewClonePath(value string) error {
+	path, err := expandHomePath(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("invalid root repo path: %w", err)
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("invalid root repo path: enter an absolute path or one beginning with ~")
+	}
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("clone destination already exists: %s", displayPath(path, os.Getenv("HOME")))
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("invalid root repo path: %w", err)
+	}
+	return nil
 }
 
 func lookupPRHeadBranch(owner, repo string, number int, dir string) (string, error) {
@@ -129,7 +209,7 @@ func lookupPRHeadBranch(owner, repo string, number int, dir string) (string, err
 	return (githubx.Client{Executable: gh}).PullRequestHead(owner, repo, number, dir)
 }
 
-func runCheckoutPR(kitty, zoxide, owner, repo string, number int, selectedRepoPath, checkoutRoot, cloneRoot string) tea.Cmd {
+func runCheckoutPR(kitty, zoxide, owner, repo string, number int, repoPathOverride, checkoutRoot, cloneRoot string) tea.Cmd {
 	cloneURL := "https://github.com/" + owner + "/" + repo + ".git"
 	return func() tea.Msg {
 		matchesRepo := func(path string) bool {
@@ -137,11 +217,9 @@ func runCheckoutPR(kitty, zoxide, owner, repo string, number int, selectedRepoPa
 			return strings.EqualFold(remoteOwner, owner) && strings.EqualFold(remoteRepo, repo)
 		}
 
-		// 1. Resolve an existing local clone, preferring the selected project.
-		repoPath := ""
-		if selectedRepoPath != "" && matchesRepo(selectedRepoPath) {
-			repoPath = selectedRepoPath
-		}
+		// 1. Use the validated form path when supplied, otherwise resolve a
+		// conventional checkout-root candidate.
+		repoPath := repoPathOverride
 		if repoPath == "" {
 			if candidate := filepath.Join(checkoutRoot, owner, repo); dirExists(candidate) && matchesRepo(candidate) {
 				repoPath = candidate

@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"gopkg.in/yaml.v3"
 
+	"github.com/alienxp03/kesh/internal/agentstatus"
 	"github.com/alienxp03/kesh/internal/domain"
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
 	"github.com/alienxp03/kesh/internal/system"
@@ -174,6 +175,10 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"init"}, wantFilter: filterAll, wantPinCommand: "init"},
 		{args: []string{"start"}, wantFilter: filterAll, wantPinCommand: "start"},
 		{args: []string{"agents"}, wantFilter: filterAgents},
+		{args: []string{"agents", "setup", "pi"}, wantFilter: filterAll, wantPinCommand: "agents-setup-pi"},
+		{args: []string{"agents", "remove", "pi"}, wantFilter: filterAll, wantPinCommand: "agents-remove-pi"},
+		{args: []string{"agents", "status"}, wantFilter: filterAll, wantPinCommand: "agents-status"},
+		{args: []string{"agents", "setup", "codex"}, wantError: true},
 		{args: []string{"ssh"}, wantFilter: filterSSH},
 		{args: []string{"saved"}, wantFilter: filterSaved},
 		{args: []string{"begin-run"}, wantFilter: filterAll, wantPinCommand: "begin-run"},
@@ -1624,6 +1629,80 @@ func TestAgentRowsAreFlatSearchableAndMostRecentFirst(t *testing.T) {
 	}
 }
 
+func TestAgentStatusUpdatesVisiblePiRow(t *testing.T) {
+	m := model{
+		filter: filterAgents,
+		entries: []entry{{
+			name: "frontier",
+			tabs: []tabItem{{title: "agents", windows: []windowItem{{id: 42, title: "device setup", agent: "pi"}}}},
+		}},
+	}
+	m.rebuildRows()
+	m.applyAgentStatuses(map[int]string{42: "working"})
+
+	line := ansi.Strip(m.renderRow(m.rows[0], 80, false))
+	if !strings.Contains(line, agentSpinnerFrames[0]) || !strings.Contains(line, "device setup") {
+		t.Fatalf("working Pi row = %q", line)
+	}
+	updated, command := m.Update(agentStatusMsg{statuses: map[int]string{42: "finished"}})
+	m = updated.(model)
+	if command == nil || m.entries[0].tabs[0].windows[0].agentStatus != "finished" {
+		t.Fatalf("finished status was not applied: command=%v model=%#v", command, m.entries)
+	}
+}
+
+func TestWorkingAgentSpinnerAdvancesWhileActive(t *testing.T) {
+	m := model{entries: []entry{{tabs: []tabItem{{windows: []windowItem{{agentStatus: "working"}}}}}}}
+	command := m.queueAgentSpinner()
+	if command == nil || !m.agentSpinnerPending {
+		t.Fatalf("working spinner did not start: command=%v pending=%t", command, m.agentSpinnerPending)
+	}
+
+	updated, next := m.Update(agentSpinnerTickMsg{})
+	m = updated.(model)
+	if m.agentSpinnerFrame != 1 || next == nil || !m.agentSpinnerPending {
+		t.Fatalf("spinner tick = frame:%d next:%v pending:%t", m.agentSpinnerFrame, next, m.agentSpinnerPending)
+	}
+	m.entries[0].tabs[0].windows[0].agentStatus = "finished"
+	updated, next = m.Update(agentSpinnerTickMsg{})
+	m = updated.(model)
+	if next != nil || m.agentSpinnerPending {
+		t.Fatalf("finished spinner kept running: next=%v pending=%t", next, m.agentSpinnerPending)
+	}
+}
+
+func TestOpeningFinishedAgentAcknowledgesStatus(t *testing.T) {
+	directory := t.TempDir()
+	record := `{"version":1,"tool":"pi","windowId":42,"pid":123,"sessionId":"session","status":"finished","updatedAt":"2026-07-30T00:00:00Z"}`
+	if err := os.WriteFile(filepath.Join(directory, "pi-42.json"), []byte(record), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &appGitRunner{}
+	restore := system.SetRunner(recorder)
+	t.Cleanup(restore)
+	m := model{
+		kitty: "kitty", filter: filterAgents, agentStatusDir: directory,
+		entries: []entry{{
+			name: "frontier",
+			tabs: []tabItem{{windows: []windowItem{{id: 42, title: "device setup", agent: "pi", agentStatus: "finished"}}}},
+		}},
+	}
+	m.rebuildRows()
+
+	updated, command := m.openSelected()
+	m = updated.(model)
+	if command == nil || m.entries[0].tabs[0].windows[0].agentStatus != "idle" {
+		t.Fatalf("finished status was not acknowledged in model: command=%v entries=%#v", command, m.entries)
+	}
+	if message, ok := command().(actionMsg); !ok || message.err != nil {
+		t.Fatalf("focus result = %#v", message)
+	}
+	records, err := agentstatus.ReadDirectory(directory)
+	if err != nil || records[42].Status != "idle" {
+		t.Fatalf("acknowledged status = %#v, %v", records, err)
+	}
+}
+
 func TestPreviewIgnoresStaleResponse(t *testing.T) {
 	m := model{previewID: 12, previewBusy: true}
 	updated, _ := m.Update(previewMsg{windowID: 11, content: "old"})
@@ -1679,6 +1758,27 @@ func TestRenameResultResolvesStableWindowAfterEntryReorder(t *testing.T) {
 	}
 }
 
+func TestAgentRenameUpdatesVisibleRow(t *testing.T) {
+	m := model{
+		filter: filterAgents,
+		entries: []entry{{
+			key: "workspace:frontier", name: "frontier",
+			tabs: []tabItem{{id: 2, title: "agents", windows: []windowItem{{id: 20, title: "old name", agent: "pi"}}}},
+		}},
+	}
+	m.rebuildRows()
+
+	updated, _ := m.Update(renameMsg{
+		target: renameTarget{entryKey: "workspace:frontier", tabID: 2, windowID: 20},
+		title:  "device setup",
+	})
+	m = updated.(model)
+	line := ansi.Strip(m.renderRow(m.rows[0], 80, false))
+	if !strings.Contains(line, "device setup") || strings.Contains(line, "old name") {
+		t.Fatalf("agent row did not reflect renamed window: %q", line)
+	}
+}
+
 func TestWorktreeResultResolvesStableDirectoryAfterEntryReorder(t *testing.T) {
 	m := model{entries: []entry{
 		{key: "other", path: "/other"},
@@ -1716,19 +1816,38 @@ func TestWindowIconPrioritizesAgentIcons(t *testing.T) {
 	}
 }
 
-func TestAgentRowPrioritizesProjectNameOverTruncatedTabTitle(t *testing.T) {
-	m := model{showPreview: true}
+func TestAgentRowPrioritizesCustomTitleWithoutPath(t *testing.T) {
+	m := model{}
 	line := ansi.Strip(m.renderAgentRow(
-		entry{name: "configurable-chat-component"},
-		tabItem{title: "aurora-long-running-agent-task"},
-		windowItem{agent: "pi"},
-		44,
+		entry{name: "dotfiles"},
+		tabItem{title: "agents"},
+		windowItem{agent: "pi", title: "bug a", cwd: "/Users/stan/.dotfiles"},
+		60,
 	))
-	if !strings.Contains(line, "configurable-chat-component") {
-		t.Errorf("agent row did not retain its project name: %q", line)
+	for _, expected := range []string{"pi", "bug a"} {
+		if !strings.Contains(line, expected) {
+			t.Errorf("agent row did not contain %q: %q", expected, line)
+		}
 	}
-	if strings.Contains(line, "…") || strings.Contains(line, "aurora") {
-		t.Errorf("agent row retained a truncated tab title: %q", line)
+	if strings.Contains(line, "π") || strings.Contains(line, ".dotfiles") {
+		t.Errorf("agent row retained icon or path metadata: %q", line)
+	}
+}
+
+func TestAgentPreviewShowsSelectedWorktreePathAboveScreen(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	path := filepath.Join(home, "workspace", "worktree", "loveholidays", "webmono", "fix-setup", "projects", "frontier")
+	m := model{
+		filter: filterAgents, cursor: 0, preview: "working",
+		entries: []entry{{tabs: []tabItem{{windows: []windowItem{{agent: "pi", cwd: path}}}}}},
+	}
+	m.rebuildRows()
+	preview := ansi.Strip(m.previewView(100, 20))
+	for _, expected := range []string{"Path", "~/workspace/worktree/loveholidays/webmono/fix-setup/projects/frontier", "Agent screen", "working"} {
+		if !strings.Contains(preview, expected) {
+			t.Errorf("agent preview did not contain %q:\n%s", expected, preview)
+		}
 	}
 }
 
@@ -1951,6 +2070,88 @@ func TestCloneFormShowsAndUpdatesBothFields(t *testing.T) {
 	m = updated.(model)
 	if m.cloneDestination != "~/code/custom" || !m.cloneDestinationEdited {
 		t.Fatalf("edited clone destination = %q, edited = %t", m.cloneDestination, m.cloneDestinationEdited)
+	}
+}
+
+func TestPRCheckoutRootPathIsEditableAndValidatedBeforeCheckout(t *testing.T) {
+	directory := t.TempDir()
+	m := model{
+		modeState: modeState{
+			mode: modeCheckoutPR,
+			checkoutForm: &checkoutForm{
+				prCheckoutValue: "https://github.com/owner/repo/pull/123",
+				prCheckoutPath:  "/existing/default",
+			},
+		},
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlU})
+	m = updated.(model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(filepath.Join(directory, "missing"))})
+	m = updated.(model)
+	if !m.prCheckoutPathFocus || !m.prCheckoutPathEdited {
+		t.Fatalf("root path field was not edited: focus=%t edited=%t", m.prCheckoutPathFocus, m.prCheckoutPathEdited)
+	}
+	popup := ansi.Strip(m.popupView(100))
+	if !strings.Contains(popup, "Root repo path:") || !strings.Contains(popup, "missing█") || !strings.Contains(popup, "Tab switch field") {
+		t.Fatalf("checkout popup missing editable root path:\n%s", popup)
+	}
+
+	updated, validation := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(model)
+	if validation == nil || !m.prCheckoutBusy {
+		t.Fatalf("Enter did not start path validation: command=%v busy=%t", validation, m.prCheckoutBusy)
+	}
+	message := validation().(prCheckoutValidationMsg)
+	if message.err == nil || !strings.Contains(message.err.Error(), "invalid root repo path") {
+		t.Fatalf("invalid path validation = %#v", message)
+	}
+	updated, checkout := m.Update(message)
+	m = updated.(model)
+	if checkout != nil || m.prCheckoutBusy || m.mode != modeCheckoutPR || m.err == nil {
+		t.Fatalf("invalid path escaped form: checkout=%v busy=%t mode=%d err=%v", checkout, m.prCheckoutBusy, m.mode, m.err)
+	}
+}
+
+func TestPRCheckoutValidationNormalizesMonorepoProjectToRoot(t *testing.T) {
+	repository := t.TempDir()
+	if err := run("git", "-C", repository, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(repository, "projects", "frontier")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedRoot, err := filepath.EvalSymlinks(repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := validatePRCheckout("owner", "repo", 123, false, "", project, true, false)().(prCheckoutValidationMsg)
+	if message.err != nil || message.repoPath != expectedRoot {
+		t.Fatalf("validated monorepo root = (%q, %v), want %q", message.repoPath, message.err, expectedRoot)
+	}
+}
+
+func TestPRPreviewDoesNotOverwriteEditedRootPath(t *testing.T) {
+	m := model{
+		modeState: modeState{
+			mode: modeCheckoutPR,
+			checkoutForm: &checkoutForm{
+				prCheckoutValue:      "https://github.com/owner/repo/pull/123",
+				prCheckoutPath:       "~/custom/repo",
+				prCheckoutPathEdited: true,
+			},
+		},
+	}
+	updated, _ := m.Update(prPreviewMsg{
+		value: m.prCheckoutValue, branch: "fix/path", repoPath: "/automatic/repo", newClone: true,
+	})
+	m = updated.(model)
+	if m.prCheckoutPath != "~/custom/repo" || m.prCheckoutClone || m.prCheckoutBranch != "fix/path" {
+		t.Fatalf("preview overwrote edited path: path=%q clone=%t branch=%q", m.prCheckoutPath, m.prCheckoutClone, m.prCheckoutBranch)
 	}
 }
 

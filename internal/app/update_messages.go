@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -170,6 +171,20 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.previewRequest++
 		return m, fetchPreviewRequest(m.kitty, msg.windowID, m.previewRequest)
+	case agentStatusTickMsg:
+		return m, fetchAgentStatuses(m.agentStatusDir)
+	case agentStatusMsg:
+		if msg.err == nil {
+			m.applyAgentStatuses(msg.statuses)
+		}
+		return m, tea.Batch(queueAgentStatusRefresh(), m.queueAgentSpinner())
+	case agentSpinnerTickMsg:
+		m.agentSpinnerPending = false
+		if !m.hasWorkingAgent() {
+			return m, nil
+		}
+		m.agentSpinnerFrame = (m.agentSpinnerFrame + 1) % len(agentSpinnerFrames)
+		return m, m.queueAgentSpinner()
 	case renameMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -207,6 +222,16 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m, tea.Quit
+	case prCheckoutValidationMsg:
+		if m.mode != modeCheckoutPR || !m.prCheckoutBusy {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.prCheckoutBusy = false
+			m.err = msg.err
+			return m, nil
+		}
+		return m, runCheckoutPR(m.kitty, m.zoxide, msg.owner, msg.repo, msg.number, msg.repoPath, m.checkoutRoot, m.checkoutCloneRoot)
 	case prCheckoutMsg:
 		m.prCheckoutBusy = false
 		if msg.err != nil {
@@ -218,8 +243,10 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A lookup may finish after the input changed; never show its stale path.
 		if m.mode == modeCheckoutPR && msg.value == m.prCheckoutValue {
 			m.prCheckoutBranch = msg.branch
-			m.prCheckoutPath = msg.repoPath
-			m.prCheckoutClone = msg.newClone
+			if !m.prCheckoutPathEdited {
+				m.prCheckoutPath = displayPath(msg.repoPath, os.Getenv("HOME"))
+				m.prCheckoutClone = msg.newClone
+			}
 		}
 		return m, nil
 	case worktreeMsg:

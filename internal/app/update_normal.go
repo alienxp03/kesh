@@ -123,6 +123,13 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activateMode(modeCheckoutPR)
 		m.prCheckoutValue = ""
 		m.prCheckoutBranch = ""
+		m.prCheckoutPath = ""
+		m.prCheckoutPathFocus = false
+		m.prCheckoutPathEdited = false
+		m.prCheckoutClone = false
+		if len(m.rows) > 0 && m.cursor >= 0 && m.cursor < len(m.rows) {
+			m.prCheckoutPath = displayPath(m.entries[m.rows[m.cursor].entryIndex].path, os.Getenv("HOME"))
+		}
 		m.checkoutCloneRoot = m.cloneBaseRoot
 		m.checkoutRoot = m.cloneBaseRoot
 		m.err = nil
@@ -350,7 +357,15 @@ func (m model) openSelected() (tea.Model, tea.Cmd) {
 	if unopenedProject {
 		return m, m.beginLaunchLayoutForEntry(entry)
 	}
-	return m, runAction(m.kitty, m.zoxide, entry, selected)
+	action := runAction(m.kitty, m.zoxide, entry, selected)
+	if selected.windowIndex >= 0 {
+		window := entry.tabs[selected.tabIndex].windows[selected.windowIndex]
+		if window.agentStatus == "finished" || window.agentStatus == "errored" {
+			m.acknowledgeAgentStatus(window.id)
+			action = acknowledgeThen(m.agentStatusDir, window.id, action)
+		}
+	}
+	return m, action
 }
 
 func findWorktreeWindow(kitty, entryKey, path string) tea.Cmd {

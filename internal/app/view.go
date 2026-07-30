@@ -24,7 +24,7 @@ func (m model) View() string {
 	listHeight, detailHeight := bodyHeight, bodyHeight
 	if showAgentPreview && m.filter == filterAgents {
 		// Agent browsing benefits from a compact chooser and a wide live screen.
-		listWidth = max(38, min(48, workspaceWidth*35/100))
+		listWidth = max(42, min(60, workspaceWidth*42/100))
 		detailWidth = workspaceWidth - listWidth - 2
 		showSideDetail = true
 	} else if showAgentPreview {
@@ -274,9 +274,19 @@ func (m model) previewView(width, height int) string {
 	case content == "":
 		content = dimStyle.Render("No terminal content")
 	}
+	path := displayPath(m.selectedAgentPath(), os.Getenv("HOME"))
+	pathLine := dimStyle.Render("Path  ") + mutedStyle.Render(middleTruncate(path, max(1, width-6)))
 	header := accentStyle.Render("Agent screen")
-	body := lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(height - 2).Render(content)
-	return lipgloss.NewStyle().Width(width).Height(height).Render(header + "\n" + strings.Repeat("─", width) + "\n" + body)
+	body := lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(max(1, height-3)).Render(content)
+	return lipgloss.NewStyle().Width(width).Height(height).Render(pathLine + "\n" + header + "\n" + strings.Repeat("─", width) + "\n" + body)
+}
+
+func (m model) selectedAgentPath() string {
+	if !m.hasSelectedAgentWindow() {
+		return ""
+	}
+	selected := m.rows[m.cursor]
+	return m.entries[selected.entryIndex].tabs[selected.tabIndex].windows[selected.windowIndex].cwd
 }
 
 func middleTruncate(value string, width int) string {
@@ -545,13 +555,24 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 		}
 		if m.filter == filterAgents {
 			fields = []detailField{
+				{label: "Name", value: window.title},
 				{label: "Agent", value: window.agent},
-				{label: "Project", value: entry.name},
-				{label: "Last active", value: relativeLastActive(window.lastFocused, m.lastFocusedReference())},
-				{label: "Path", value: displayPath(window.cwd, os.Getenv("HOME")), middle: true},
 			}
+			if status := agentStatusLabel(window.agentStatus); status != "" {
+				fields = append(fields, detailField{label: "Status", value: status})
+			}
+			fields = append(fields,
+				detailField{label: "Project", value: entry.name},
+				detailField{label: "Last active", value: relativeLastActive(window.lastFocused, m.lastFocusedReference())},
+				detailField{label: "Path", value: displayPath(window.cwd, os.Getenv("HOME")), middle: true},
+			)
 			if window.pathPR.PullRequest.Number > 0 {
-				fields[2] = detailField{label: "PR", value: pathPRSummary(window.pathPR)}
+				for index := range fields {
+					if fields[index].label == "Last active" {
+						fields[index] = detailField{label: "PR", value: pathPRSummary(window.pathPR)}
+						break
+					}
+				}
 			}
 		} else {
 			if window.command != "" {
@@ -903,6 +924,38 @@ func (m model) renderRow(r row, width int, focused bool) string {
 	return ansi.Truncate(left, width, "…")
 }
 
+func agentStatusLabel(status string) string {
+	switch status {
+	case "working":
+		return "Working"
+	case "finished":
+		return "Finished"
+	case "errored":
+		return "Error"
+	case "idle":
+		return "Idle"
+	default:
+		return ""
+	}
+}
+
+var agentSpinnerFrames = []string{"◐", "◓", "◑", "◒"}
+
+func (m model) agentStatusBadge(status string) string {
+	switch status {
+	case "working":
+		return accentStyle.Render(agentSpinnerFrames[m.agentSpinnerFrame%len(agentSpinnerFrames)])
+	case "finished":
+		return openStyle.Render("✓")
+	case "errored":
+		return errorStyle.Render("!")
+	case "idle":
+		return dimStyle.Render("○")
+	default:
+		return ""
+	}
+}
+
 func prStatusIcon(status string) string {
 	switch status {
 	case "open":
@@ -917,33 +970,25 @@ func prStatusIcon(status string) string {
 }
 
 func (m model) renderAgentRow(e entry, tab tabItem, window windowItem, width int) string {
-	agent := agentLabel(window.agent)
-	prefix := windowIcon(window) + " " + agent + "  "
-	lastActive := relativeLastActive(window.lastFocused, m.lastFocusedReference())
-	nameWidth := max(8, width*45/100-lipgloss.Width(prefix))
-	if m.showPreview {
-		nameWidth = max(8, width-lipgloss.Width(prefix)-lipgloss.Width(lastActive)-2)
+	prefix := agentLabel(window.agent)
+	if status := m.agentStatusBadge(window.agentStatus); status != "" {
+		prefix += " " + status
 	}
+	prefix += "  "
 
-	// A project name identifies the agent more reliably than its tab title.
-	// Only show the latter when it fits in full; a dangling " / foo…" hides
-	// useful information while still failing to identify the tab.
-	context := e.name
-	if tab.title != "" && tab.title != e.name {
-		candidate := context + " / " + tab.title
-		if lipgloss.Width(candidate) <= nameWidth {
-			context = candidate
-		}
+	title := window.title
+	if title == "" {
+		title = e.name
 	}
-	left := prefix + middleTruncate(context, nameWidth)
-	if m.showPreview {
-		return ansi.Truncate(left+"  "+dimStyle.Render(lastActive), width, "…")
+	if title == "" {
+		title = tab.title
 	}
-	detail := window.detail
-	if width >= 52 {
-		return padColumns(left, dimStyle.Render(detail+" · "+lastActive), width)
-	}
-	return ansi.Truncate(left, width, "…")
+	right := dimStyle.Render(compactLastActive(window.lastFocused, m.lastFocusedReference()))
+
+	nameWidth := max(8, width-lipgloss.Width(prefix)-lipgloss.Width(right)-2)
+	left := prefix + middleTruncate(title, nameWidth)
+	gap := max(2, width-lipgloss.Width(left)-lipgloss.Width(right))
+	return ansi.Truncate(left+strings.Repeat(" ", gap)+right, width, "…")
 }
 
 // Kitty reports last_focused_at as seconds since Kitty started, not a Unix
@@ -959,6 +1004,23 @@ func (m model) lastFocusedReference() float64 {
 		}
 	}
 	return latest
+}
+
+func compactLastActive(lastFocused, reference float64) string {
+	if lastFocused <= 0 || reference <= 0 {
+		return "?"
+	}
+	elapsed := time.Duration(max(0, reference-lastFocused) * float64(time.Second))
+	if elapsed < time.Minute {
+		return "now"
+	}
+	if elapsed < time.Hour {
+		return fmt.Sprintf("%dm", int(elapsed/time.Minute))
+	}
+	if elapsed < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(elapsed/time.Hour))
+	}
+	return fmt.Sprintf("%dd", int(elapsed/(24*time.Hour)))
 }
 
 func relativeLastActive(lastFocused, reference float64) string {

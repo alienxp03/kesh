@@ -11,29 +11,15 @@ import (
 	"github.com/alienxp03/kesh/internal/workspace"
 )
 
-func prCheckoutPreview(value, branch, selectedRepoPath, repoPath string, newClone bool, cloneRoot, worktreeRoot string, fieldWidth int) string {
+func prCheckoutPreview(value, branch string, newClone bool, cloneRoot, worktreeRoot string, fieldWidth int) string {
 	owner, repo, _, useSelected, err := parsePullRequestInput(value)
-	if err != nil {
+	if err != nil || useSelected || owner == "" {
 		return ""
-	}
-	var lines []string
-	if useSelected || owner == "" {
-		if selectedRepoPath == "" {
-			lines = append(lines, "Root repo path: select a project")
-		} else {
-			lines = append(lines, "Root repo path: "+displayPath(selectedRepoPath, os.Getenv("HOME")))
-		}
-		return renderPreviewLines(lines, fieldWidth)
-	}
-	if repoPath == "" {
-		lines = append(lines, "Root repo path: resolving…")
-		return renderPreviewLines(lines, fieldWidth)
 	}
 	rootNote := ""
 	if newClone {
 		rootNote = " (new clone)"
 	}
-	lines = append(lines, "Root repo path: "+displayPath(repoPath, os.Getenv("HOME"))+rootNote)
 	// Worktrees land under <worktreeRoot>/<owner>/<repo>/<branch>; fall back to
 	// the clone root when the worktree root is unconfigured so the path is still
 	// informative.
@@ -42,12 +28,10 @@ func prCheckoutPreview(value, branch, selectedRepoPath, repoPath string, newClon
 		root = cloneRoot
 	}
 	if branch == "" {
-		lines = append(lines, "Worktree path: resolving PRbranch…")
-		return renderPreviewLines(lines, fieldWidth)
+		return renderPreviewLines([]string{"Worktree path: resolving PR branch…"}, fieldWidth)
 	}
 	worktreePath := displayPath(filepath.Join(root, owner, repo, worktreeDirectoryName(branch)), os.Getenv("HOME"))
-	lines = append(lines, "Worktree path: "+worktreePath+rootNote)
-	return renderPreviewLines(lines, fieldWidth)
+	return renderPreviewLines([]string{"Worktree path: " + worktreePath + rootNote}, fieldWidth)
 }
 
 func paneLabel(pane workspace.PaneCommand) string {

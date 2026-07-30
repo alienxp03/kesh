@@ -23,6 +23,7 @@ type windowItem struct {
 	command     string
 	fullCommand string
 	agent       string
+	agentStatus string
 	lastFocused float64
 	pathPR      pathPRInfo
 }
@@ -183,10 +184,20 @@ type previewRefreshMsg struct {
 	request  uint64
 }
 
+type agentStatusTickMsg struct{}
+type agentSpinnerTickMsg struct{}
+
+type agentStatusMsg struct {
+	statuses map[int]string
+	err      error
+}
+
 const (
 	currentPinVersion          = state.CurrentPinVersion
 	currentSavedSessionVersion = state.CurrentSavedSessionVersion
 	previewRefreshInterval     = time.Second
+	agentStatusRefreshInterval = time.Second
+	agentSpinnerInterval       = 120 * time.Millisecond
 )
 
 type pinTarget = state.PinTarget
@@ -214,6 +225,14 @@ type createMsg struct{ err error }
 type cloneMsg struct{ err error }
 
 type prCheckoutMsg struct{ err error }
+
+type prCheckoutValidationMsg struct {
+	owner    string
+	repo     string
+	number   int
+	repoPath string
+	err      error
+}
 
 type prPreviewMsg struct {
 	value    string
@@ -372,13 +391,15 @@ type cloneForm struct {
 }
 
 type checkoutForm struct {
-	prCheckoutBusy    bool
-	prCheckoutValue   string
-	prCheckoutBranch  string
-	prCheckoutPath    string
-	prCheckoutClone   bool
-	checkoutRoot      string
-	checkoutCloneRoot string
+	prCheckoutBusy       bool
+	prCheckoutValue      string
+	prCheckoutBranch     string
+	prCheckoutPath       string
+	prCheckoutPathFocus  bool
+	prCheckoutPathEdited bool
+	prCheckoutClone      bool
+	checkoutRoot         string
+	checkoutCloneRoot    string
 }
 
 type helpMode struct {
@@ -514,6 +535,9 @@ type model struct {
 	previewRequest           uint64
 	previewBusy              bool
 	showPreview              bool
+	agentStatusDir           string
+	agentSpinnerFrame        int
+	agentSpinnerPending      bool
 	cloneBaseRoot            string
 	worktreeRoot             string
 	mergedWorktreeBusy       bool

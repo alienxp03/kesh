@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/alienxp03/kesh/internal/agentstatus"
 	"github.com/alienxp03/kesh/internal/config"
 	"github.com/alienxp03/kesh/internal/domain"
 	gitx "github.com/alienxp03/kesh/internal/git"
@@ -37,6 +38,36 @@ func Run(args []string) error {
 		return clearAllPins(kitty, true)
 	case "end-run":
 		return endKittyRun(kitty)
+	case "agents-setup-pi":
+		path, err := agentstatus.InstallPi()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("installed Pi agent status integration at %s\n", path)
+		fmt.Println("run /reload in existing Pi sessions, or restart Pi")
+		return nil
+	case "agents-remove-pi":
+		path, err := agentstatus.RemovePi()
+		if err != nil {
+			return err
+		}
+		if err := agentstatus.RemovePiStatuses(config.FromEnvironment().AgentStatuses()); err != nil {
+			return err
+		}
+		fmt.Printf("removed Pi agent status integration from %s\n", path)
+		fmt.Println("run /reload in existing Pi sessions, or restart Pi")
+		return nil
+	case "agents-status":
+		installed, path, err := agentstatus.PiInstalled()
+		if err != nil {
+			return err
+		}
+		state := "not installed"
+		if installed {
+			state = "installed"
+		}
+		fmt.Printf("pi: %s (%s)\n", state, path)
+		return nil
 	}
 	if switchSlot != "" {
 		return switchPin(kitty, zoxide, switchSlot)
@@ -76,15 +107,23 @@ func Run(args []string) error {
 			loadErr = configErr
 		}
 	}
+	agentStatusDir := config.FromEnvironment().AgentStatuses()
 	m := model{
 		entries: entries, err: loadErr, kitty: kitty, zoxide: zoxide, pins: pins, names: names,
-		filter: filter, showPreview: true, selected: map[string]bool{},
+		filter: filter, showPreview: true, selected: map[string]bool{}, agentStatusDir: agentStatusDir,
 		cloneBaseRoot: cloneRoot, worktreeRoot: worktreeRoot,
 		worktreeFilterEntryIndex: -1,
 		zoxideCtx:                zoxideCtx, zoxidePending: zoxide != "",
 	}
+	if records, statusErr := agentstatus.ReadDirectory(agentStatusDir); statusErr == nil {
+		statuses := make(map[int]string, len(records))
+		for windowID, record := range records {
+			statuses[windowID] = record.Status
+		}
+		m.applyAgentStatuses(statuses)
+	}
 	m.rebuildRows()
-	m.startupCmd = m.queuePreview()
+	m.startupCmd = tea.Batch(m.queuePreview(), queueAgentStatusRefresh(), m.queueAgentSpinner())
 	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
@@ -104,6 +143,12 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 		return filterAll, "", "start", nil
 	case len(args) == 1 && args[0] == "agents":
 		return filterAgents, "", "", nil
+	case len(args) == 3 && args[0] == "agents" && args[1] == "setup" && args[2] == "pi":
+		return filterAll, "", "agents-setup-pi", nil
+	case len(args) == 3 && args[0] == "agents" && args[1] == "remove" && args[2] == "pi":
+		return filterAll, "", "agents-remove-pi", nil
+	case len(args) == 2 && args[0] == "agents" && args[1] == "status":
+		return filterAll, "", "agents-status", nil
 	case len(args) == 1 && args[0] == "ssh":
 		return filterSSH, "", "", nil
 	case len(args) == 1 && args[0] == "saved":
@@ -117,7 +162,7 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	case len(args) == 2 && args[0] == "switch" && validSlot(args[1]):
 		return filterAll, args[1], "", nil
 	default:
-		return 0, "", "", &UsageError{message: "usage: kesh [init | start | agents | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
+		return 0, "", "", &UsageError{message: "usage: kesh [init | start | agents [setup pi | remove pi | status] | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
 	}
 }
 

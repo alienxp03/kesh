@@ -222,6 +222,10 @@ func (m model) updateCheckoutKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelMode()
 		m.err = nil
 		return m, nil
+	case "tab", "shift+tab":
+		m.prCheckoutPathFocus = !m.prCheckoutPathFocus
+		m.err = nil
+		return m, nil
 	case "enter":
 		owner, repo, number, useSelected, err := parsePullRequestInput(m.prCheckoutValue)
 		if err != nil {
@@ -229,32 +233,42 @@ func (m model) updateCheckoutKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		selectedRepoPath := ""
-		if useSelected {
-			if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
-				m.err = fmt.Errorf("select a project or paste a full PR URL")
-				return m, nil
-			}
+		if useSelected && len(m.rows) > 0 && m.cursor >= 0 && m.cursor < len(m.rows) {
 			selectedRepoPath = m.entries[m.rows[m.cursor].entryIndex].path
-			if selectedRepoPath == "" {
-				m.err = fmt.Errorf("select a project or paste a full PR URL")
-				return m, nil
-			}
 		}
 		m.prCheckoutBusy = true
 		m.err = nil
-		return m, runCheckoutPR(m.kitty, m.zoxide, owner, repo, number, selectedRepoPath, m.checkoutRoot, m.checkoutCloneRoot)
+		return m, validatePRCheckout(owner, repo, number, useSelected, selectedRepoPath, m.prCheckoutPath, m.prCheckoutPathEdited, m.prCheckoutClone)
 	case "backspace":
-		runes := []rune(m.prCheckoutValue)
+		value := &m.prCheckoutValue
+		if m.prCheckoutPathFocus {
+			value = &m.prCheckoutPath
+			m.prCheckoutPathEdited = true
+			m.prCheckoutClone = false
+		}
+		runes := []rune(*value)
 		if len(runes) > 0 {
-			m.prCheckoutValue = string(runes[:len(runes)-1])
+			*value = string(runes[:len(runes)-1])
 			m.err = nil
 		}
 	case "ctrl+u":
-		m.prCheckoutValue = ""
+		if m.prCheckoutPathFocus {
+			m.prCheckoutPath = ""
+			m.prCheckoutPathEdited = true
+			m.prCheckoutClone = false
+		} else {
+			m.prCheckoutValue = ""
+		}
 		m.err = nil
 	default:
 		if len(msg.Runes) > 0 && !msg.Alt {
-			m.prCheckoutValue += string(msg.Runes)
+			if m.prCheckoutPathFocus {
+				m.prCheckoutPath += string(msg.Runes)
+				m.prCheckoutPathEdited = true
+				m.prCheckoutClone = false
+			} else {
+				m.prCheckoutValue += string(msg.Runes)
+			}
 			m.err = nil
 		}
 	}
@@ -262,10 +276,16 @@ func (m model) updateCheckoutKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.prCheckoutBranch = ""
-	m.prCheckoutPath = ""
-	m.prCheckoutClone = false
+	if !m.prCheckoutPathEdited {
+		m.prCheckoutPath = ""
+		m.prCheckoutClone = false
+	}
 	if owner, repo, number, selected, err := parsePullRequestInput(m.prCheckoutValue); err == nil && !selected {
-		return m, resolvePRPreview(m.prCheckoutValue, owner, repo, number, m.checkoutRoot, m.checkoutCloneRoot)
+		selectedRepoPath := ""
+		if len(m.rows) > 0 && m.cursor >= 0 && m.cursor < len(m.rows) {
+			selectedRepoPath = m.entries[m.rows[m.cursor].entryIndex].path
+		}
+		return m, resolvePRPreview(m.prCheckoutValue, owner, repo, number, selectedRepoPath, m.checkoutRoot, m.checkoutCloneRoot)
 	}
 	return m, nil
 }
