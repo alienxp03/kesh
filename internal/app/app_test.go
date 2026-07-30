@@ -23,11 +23,8 @@ import (
 	"github.com/alienxp03/kesh/internal/workspace"
 )
 
-func run(name string, args ...string) error {
-	if name == "" {
-		return fmt.Errorf("required command was not found")
-	}
-	output, err := system.Command(name, args...).CombinedOutput()
+func runGit(args ...string) error {
+	output, err := system.Command("git", args...).CombinedOutput()
 	if err != nil && len(output) > 0 {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 	}
@@ -2018,7 +2015,7 @@ func TestViewHeightStaysStableForWorktreeRows(t *testing.T) {
 
 func TestLoadRecipe(t *testing.T) {
 	repo := t.TempDir()
-	if err := run("git", "-C", repo, "init"); err != nil {
+	if err := runGit("-C", repo, "init"); err != nil {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(repo, ".kesh.yaml")
@@ -2117,7 +2114,7 @@ func TestPRCheckoutRootPathIsEditableAndValidatedBeforeCheckout(t *testing.T) {
 
 func TestPRCheckoutValidationNormalizesMonorepoProjectToRoot(t *testing.T) {
 	repository := t.TempDir()
-	if err := run("git", "-C", repository, "init", "-q"); err != nil {
+	if err := runGit("-C", repository, "init", "-q"); err != nil {
 		t.Fatal(err)
 	}
 	project := filepath.Join(repository, "projects", "frontier")
@@ -2155,16 +2152,79 @@ func TestPRPreviewDoesNotOverwriteEditedRootPath(t *testing.T) {
 	}
 }
 
+func TestPRCheckoutResolutionUsesFlatCloneRootThenCatalog(t *testing.T) {
+	home := t.TempDir()
+	checkoutRoot := filepath.Join(home, "workspace")
+	flatRoot := filepath.Join(checkoutRoot, "webmono")
+	catalogRoot := filepath.Join(home, "elsewhere", "webmono")
+	selectedRoot := filepath.Join(home, "selected")
+	for path, remote := range map[string]string{
+		flatRoot:     "git@github.com:loveholidays/webmono.git",
+		catalogRoot:  "https://github.com/loveholidays/webmono.git",
+		selectedRoot: "git@github.com:someone/other.git",
+	} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := runGit("-C", path, "init", "-q"); err != nil {
+			t.Fatal(err)
+		}
+		if err := runGit("-C", path, "remote", "add", "origin", remote); err != nil {
+			t.Fatal(err)
+		}
+	}
+	catalogProject := filepath.Join(catalogRoot, "projects", "frontier")
+	if err := os.MkdirAll(catalogProject, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedFlatRoot, err := filepath.EvalSymlinks(flatRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedCatalogRoot, err := filepath.EvalSymlinks(catalogRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, newClone := resolvePRCheckoutPath(
+		"loveholidays", "webmono", selectedRoot, []string{catalogProject}, checkoutRoot, checkoutRoot,
+	)
+	if path != expectedFlatRoot || newClone {
+		t.Fatalf("flat checkout resolution = (%q, %t), want (%q, false)", path, newClone, expectedFlatRoot)
+	}
+
+	if err := os.RemoveAll(flatRoot); err != nil {
+		t.Fatal(err)
+	}
+	path, newClone = resolvePRCheckoutPath(
+		"loveholidays", "webmono", selectedRoot, []string{catalogProject}, checkoutRoot, checkoutRoot,
+	)
+	if path != expectedCatalogRoot || newClone {
+		t.Fatalf("catalog checkout resolution = (%q, %t), want (%q, false)", path, newClone, expectedCatalogRoot)
+	}
+
+	path, newClone = resolvePRCheckoutPath("other", "new-repo", "", nil, checkoutRoot, checkoutRoot)
+	if want := filepath.Join(checkoutRoot, "new-repo"); path != want || !newClone {
+		t.Fatalf("new clone resolution = (%q, %t), want (%q, true)", path, newClone, want)
+	}
+}
+
+func TestCheckoutCandidatePathsIncludeWindowDirectories(t *testing.T) {
+	m := model{entries: []entry{{
+		path: "/catalog/project",
+		tabs: []tabItem{{windows: []windowItem{{cwd: "/worktree/project"}}}},
+	}}}
+	if got := m.checkoutCandidatePaths(); !reflect.DeepEqual(got, []string{"/catalog/project", "/worktree/project"}) {
+		t.Fatalf("checkout candidate paths = %#v", got)
+	}
+}
+
 func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	checkoutRoot := filepath.Join(home, "workspace")
 	cloneRoot := filepath.Join(home, "workspace")
 	worktreeRoot := filepath.Join(home, "worktree")
-	// Existing clone under the checkout root → preview shows the full worktree path.
-	if err := os.MkdirAll(filepath.Join(checkoutRoot, "owner", "repo"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 	m := model{
 		modeState: modeState{
 			mode:         modeCheckoutPR,
@@ -2180,11 +2240,11 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	}
 	updated, _ = m.Update(prPreviewMsg{
 		value: m.prCheckoutValue, branch: "feature/checkout",
-		repoPath: filepath.Join(checkoutRoot, "owner", "repo"),
+		repoPath: filepath.Join(checkoutRoot, "repo"),
 	})
 	m = updated.(model)
 	popup := ansi.Strip(m.popupView(100))
-	if !strings.Contains(popup, "Checkout pull request") || !strings.Contains(popup, "Root repo path: ~/workspace/owner/repo") {
+	if !strings.Contains(popup, "Checkout pull request") || !strings.Contains(popup, "Root repo path: ~/workspace/repo") {
 		t.Fatalf("PR popup missing title/summary:\n%s", popup)
 	}
 	if !strings.Contains(popup, "Worktree path: ~/worktree/owner/repo/feature-checkout") {
@@ -2199,12 +2259,12 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	updated, _ = m.Update(prPreviewMsg{
 		value:    m.prCheckoutValue,
 		branch:   "fix/widget",
-		repoPath: filepath.Join(checkoutRoot, "other", "widget"),
+		repoPath: filepath.Join(checkoutRoot, "widget"),
 		newClone: true,
 	})
 	m = updated.(model)
 	popup = ansi.Strip(m.popupView(100))
-	if !strings.Contains(popup, "Root repo path: ~/workspace/other/widget (new clone)") || !strings.Contains(popup, "Worktree path: ~/worktree/other/widget/fix-widget (new clone)") {
+	if !strings.Contains(popup, "Root repo path: ~/workspace/widget (new clone)") || !strings.Contains(popup, "Worktree path: ~/worktree/other/widget/fix-widget (new clone)") {
 		t.Fatalf("PR popup does not show clone target:\n%s", popup)
 	}
 }

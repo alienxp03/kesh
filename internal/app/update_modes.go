@@ -212,6 +212,23 @@ func (m model) updateCloneKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m model) checkoutCandidatePaths() []string {
+	paths := make([]string, 0, len(m.entries))
+	for _, entry := range m.entries {
+		if entry.path != "" {
+			paths = append(paths, entry.path)
+		}
+		for _, tab := range entry.tabs {
+			for _, window := range tab.windows {
+				if window.cwd != "" {
+					paths = append(paths, window.cwd)
+				}
+			}
+		}
+	}
+	return paths
+}
+
 func (m model) updateCheckoutKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.prCheckoutBusy {
 		return m, nil
@@ -285,7 +302,7 @@ func (m model) updateCheckoutKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.rows) > 0 && m.cursor >= 0 && m.cursor < len(m.rows) {
 			selectedRepoPath = m.entries[m.rows[m.cursor].entryIndex].path
 		}
-		return m, resolvePRPreview(m.prCheckoutValue, owner, repo, number, selectedRepoPath, m.checkoutRoot, m.checkoutCloneRoot)
+		return m, resolvePRPreview(m.prCheckoutValue, owner, repo, number, selectedRepoPath, m.checkoutCandidatePaths(), m.checkoutRoot, m.checkoutCloneRoot)
 	}
 	return m, nil
 }
