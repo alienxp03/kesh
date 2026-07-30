@@ -3,7 +3,9 @@ package agentstatus
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -76,7 +78,7 @@ func TestReadDirectoryAndAcknowledge(t *testing.T) {
 	if err != nil || len(records) != 1 || records[42].Status != "finished" {
 		t.Fatalf("ReadDirectory = %#v, %v", records, err)
 	}
-	if err := Acknowledge(directory, 42); err != nil {
+	if err := Acknowledge(directory, "pi", 42); err != nil {
 		t.Fatal(err)
 	}
 	records, err = ReadDirectory(directory)
@@ -85,14 +87,14 @@ func TestReadDirectoryAndAcknowledge(t *testing.T) {
 	}
 }
 
-func TestRemovePiStatusesKeepsOtherIntegrations(t *testing.T) {
+func TestRemoveStatusesKeepsOtherIntegrations(t *testing.T) {
 	directory := t.TempDir()
 	for _, name := range []string{"pi-1.json", "pi-2.json", "codex-1.json", "pi-not-status.txt"} {
 		if err := os.WriteFile(filepath.Join(directory, name), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := RemovePiStatuses(directory); err != nil {
+	if err := RemoveStatuses(directory, "pi"); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"pi-1.json", "pi-2.json"} {
@@ -107,11 +109,105 @@ func TestRemovePiStatusesKeepsOtherIntegrations(t *testing.T) {
 	}
 }
 
+func TestHookIntegrationsPreserveExistingConfiguration(t *testing.T) {
+	for _, tool := range []string{"codex", "claude"} {
+		t.Run(tool, func(t *testing.T) {
+			directory := t.TempDir()
+			if tool == "codex" {
+				t.Setenv("CODEX_HOME", directory)
+			} else {
+				t.Setenv("CLAUDE_CONFIG_DIR", directory)
+			}
+			integration, err := integration(tool)
+			if err != nil {
+				t.Fatal(err)
+			}
+			existing := `{"model":"custom","hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"echo existing"}]}]}}`
+			if err := os.WriteFile(integration.configPath, []byte(existing), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			path, err := InstallHooks(tool)
+			if err != nil || path != integration.configPath {
+				t.Fatalf("InstallHooks = %q, %v", path, err)
+			}
+			if _, err := InstallHooks(tool); err != nil {
+				t.Fatalf("idempotent install: %v", err)
+			}
+			installed, _, err := HooksInstalled(tool)
+			if err != nil || !installed {
+				t.Fatalf("HooksInstalled = %t, %v", installed, err)
+			}
+			document, err := readJSONObject(integration.configPath)
+			if err != nil || document["model"] != "custom" {
+				t.Fatalf("preserved config = %#v, %v", document, err)
+			}
+			preToolGroups, _ := hookGroups(document["hooks"].(map[string]any)["PreToolUse"])
+			if !containsCommand(preToolGroups, "echo existing") {
+				t.Fatalf("existing hook was removed: %#v", preToolGroups)
+			}
+
+			if _, err := RemoveHooks(tool); err != nil {
+				t.Fatal(err)
+			}
+			installed, _, err = HooksInstalled(tool)
+			if err != nil || installed {
+				t.Fatalf("HooksInstalled after remove = %t, %v", installed, err)
+			}
+			document, err = readJSONObject(integration.configPath)
+			if err != nil || document["model"] != "custom" {
+				t.Fatalf("config after remove = %#v, %v", document, err)
+			}
+			preToolGroups, _ = hookGroups(document["hooks"].(map[string]any)["PreToolUse"])
+			if !containsCommand(preToolGroups, "echo existing") {
+				t.Fatalf("existing hook was removed on uninstall: %#v", preToolGroups)
+			}
+		})
+	}
+}
+
+func TestAgentHookWritesAndRemovesLifecycleStatus(t *testing.T) {
+	directory := t.TempDir()
+	stateHome := t.TempDir()
+	t.Setenv("CODEX_HOME", directory)
+	if _, err := InstallHooks("codex"); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(directory, "hooks", AgentHookName)
+	runHook := func(status string) {
+		command := exec.Command(script, "codex", status)
+		command.Env = append(os.Environ(), "KITTY_WINDOW_ID=42", "XDG_STATE_HOME="+stateHome)
+		command.Stdin = strings.NewReader(`{"session_id":"session-1"}`)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("hook %s: %v: %s", status, err, output)
+		}
+	}
+
+	runHook("working")
+	records, err := ReadDirectory(filepath.Join(stateHome, "kesh", "agent-status"))
+	if err != nil || records[42].Tool != "codex" || records[42].Status != "working" {
+		t.Fatalf("working status = %#v, %v", records, err)
+	}
+	runHook("finished")
+	if err := Acknowledge(filepath.Join(stateHome, "kesh", "agent-status"), "codex", 42); err != nil {
+		t.Fatal(err)
+	}
+	records, err = ReadDirectory(filepath.Join(stateHome, "kesh", "agent-status"))
+	if err != nil || records[42].Status != "idle" {
+		t.Fatalf("acknowledged status = %#v, %v", records, err)
+	}
+	runHook("remove")
+	records, err = ReadDirectory(filepath.Join(stateHome, "kesh", "agent-status"))
+	if err != nil || len(records) != 0 {
+		t.Fatalf("removed status = %#v, %v", records, err)
+	}
+}
+
 func TestReadDirectoryRejectsUnknownAndMismatchedRecords(t *testing.T) {
 	directory := t.TempDir()
 	for name, record := range map[string]Record{
 		"version.json": {Version: 99, Tool: "pi", WindowID: 1, PID: 1, Status: "idle"},
-		"tool.json":    {Version: 1, Tool: "codex", WindowID: 2, PID: 1, Status: "idle"},
+		"tool.json":    {Version: 1, Tool: "unknown", WindowID: 2, PID: 1, Status: "idle"},
 		"status.json":  {Version: 1, Tool: "pi", WindowID: 3, PID: 1, Status: "mystery"},
 	} {
 		content, _ := json.Marshal(record)

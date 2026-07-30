@@ -67,7 +67,10 @@ func RemovePi() (string, error) {
 	return path, nil
 }
 
-func RemovePiStatuses(directory string) error {
+func RemoveStatuses(directory, tool string) error {
+	if !validTool(tool) {
+		return fmt.Errorf("unsupported agent integration %q", tool)
+	}
 	entries, err := os.ReadDir(directory)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -75,12 +78,13 @@ func RemovePiStatuses(directory string) error {
 	if err != nil {
 		return fmt.Errorf("read agent statuses: %w", err)
 	}
+	prefix := tool + "-"
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "pi-") || !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), prefix) || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		if err := os.Remove(filepath.Join(directory, entry.Name())); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("remove Pi agent status: %w", err)
+			return fmt.Errorf("remove %s agent status: %w", tool, err)
 		}
 	}
 	return nil
@@ -119,13 +123,18 @@ func ReadDirectory(directory string) (map[int]Record, error) {
 		if json.Unmarshal(content, &record) != nil || !validRecord(record) {
 			continue
 		}
-		records[record.WindowID] = record
+		if current, exists := records[record.WindowID]; !exists || record.UpdatedAt.After(current.UpdatedAt) {
+			records[record.WindowID] = record
+		}
 	}
 	return records, nil
 }
 
-func Acknowledge(directory string, windowID int) error {
-	path := filepath.Join(directory, fmt.Sprintf("pi-%d.json", windowID))
+func Acknowledge(directory, tool string, windowID int) error {
+	if !validTool(tool) {
+		return nil
+	}
+	path := filepath.Join(directory, fmt.Sprintf("%s-%d.json", tool, windowID))
 	content, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil
@@ -150,11 +159,20 @@ func Acknowledge(directory string, windowID int) error {
 }
 
 func validRecord(record Record) bool {
-	if record.Version != CurrentVersion || record.Tool != "pi" || record.WindowID <= 0 || record.PID <= 0 {
+	if record.Version != CurrentVersion || !validTool(record.Tool) || record.WindowID <= 0 || record.PID <= 0 {
 		return false
 	}
 	switch record.Status {
 	case "idle", "working", "finished", "errored":
+		return true
+	default:
+		return false
+	}
+}
+
+func validTool(tool string) bool {
+	switch tool {
+	case "pi", "codex", "claude":
 		return true
 	default:
 		return false

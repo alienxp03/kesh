@@ -970,11 +970,11 @@ func prStatusIcon(status string) string {
 }
 
 func (m model) renderAgentRow(e entry, tab tabItem, window windowItem, width int) string {
-	prefix := agentLabel(window.agent)
-	if status := m.agentStatusBadge(window.agentStatus); status != "" {
-		prefix += " " + status
+	status := m.agentStatusBadge(window.agentStatus)
+	if status == "" {
+		status = " "
 	}
-	prefix += "  "
+	prefix := status + "  "
 
 	title := window.title
 	if title == "" {
@@ -983,7 +983,8 @@ func (m model) renderAgentRow(e entry, tab tabItem, window windowItem, width int
 	if title == "" {
 		title = tab.title
 	}
-	right := dimStyle.Render(compactLastActive(window.lastFocused, m.lastFocusedReference()))
+	metadata := agentLabel(window.agent) + " · " + compactLastActive(window.lastFocused, m.lastFocusedReference())
+	right := dimStyle.Render(metadata)
 
 	nameWidth := max(8, width-lipgloss.Width(prefix)-lipgloss.Width(right)-2)
 	left := prefix + middleTruncate(title, nameWidth)

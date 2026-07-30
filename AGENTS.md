@@ -143,7 +143,8 @@ merged status before offering removal.
 ### Agents preview and status
 
 The `Agents` filter previews the selected window's visible terminal screen,
-refreshing once per second. Pi lifecycle status comes from the managed global
-extension installed by `kesh agents setup pi`; it writes per-Kitty-window state
-under the Agent statuses path. Kesh polls those small files once per second and
-acknowledges finished or errored state when the window is focused.
+refreshing once per second. Exact lifecycle status comes from explicitly
+installed Pi, Codex, and Claude Code integrations (`kesh agents setup TOOL`).
+They write per-Kitty-window state under the Agent statuses path. Kesh polls
+those small files once per second and acknowledges finished or errored state
+when the window is focused.

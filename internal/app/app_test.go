@@ -173,9 +173,13 @@ func TestParseArgs(t *testing.T) {
 		{args: []string{"start"}, wantFilter: filterAll, wantPinCommand: "start"},
 		{args: []string{"agents"}, wantFilter: filterAgents},
 		{args: []string{"agents", "setup", "pi"}, wantFilter: filterAll, wantPinCommand: "agents-setup-pi"},
+		{args: []string{"agents", "setup", "codex"}, wantFilter: filterAll, wantPinCommand: "agents-setup-codex"},
+		{args: []string{"agents", "setup", "claude"}, wantFilter: filterAll, wantPinCommand: "agents-setup-claude"},
 		{args: []string{"agents", "remove", "pi"}, wantFilter: filterAll, wantPinCommand: "agents-remove-pi"},
+		{args: []string{"agents", "remove", "codex"}, wantFilter: filterAll, wantPinCommand: "agents-remove-codex"},
+		{args: []string{"agents", "remove", "claude"}, wantFilter: filterAll, wantPinCommand: "agents-remove-claude"},
 		{args: []string{"agents", "status"}, wantFilter: filterAll, wantPinCommand: "agents-status"},
-		{args: []string{"agents", "setup", "codex"}, wantError: true},
+		{args: []string{"agents", "setup", "unknown"}, wantError: true},
 		{args: []string{"ssh"}, wantFilter: filterSSH},
 		{args: []string{"saved"}, wantFilter: filterSaved},
 		{args: []string{"begin-run"}, wantFilter: filterAll, wantPinCommand: "begin-run"},
@@ -1635,16 +1639,28 @@ func TestAgentStatusUpdatesVisiblePiRow(t *testing.T) {
 		}},
 	}
 	m.rebuildRows()
-	m.applyAgentStatuses(map[int]string{42: "working"})
+	m.applyAgentStatuses(map[int]agentLifecycleStatus{42: {tool: "pi", status: "working"}})
 
 	line := ansi.Strip(m.renderRow(m.rows[0], 80, false))
 	if !strings.Contains(line, agentSpinnerFrames[0]) || !strings.Contains(line, "device setup") {
 		t.Fatalf("working Pi row = %q", line)
 	}
-	updated, command := m.Update(agentStatusMsg{statuses: map[int]string{42: "finished"}})
+	updated, command := m.Update(agentStatusMsg{statuses: map[int]agentLifecycleStatus{42: {tool: "pi", status: "finished"}}})
 	m = updated.(model)
 	if command == nil || m.entries[0].tabs[0].windows[0].agentStatus != "finished" {
 		t.Fatalf("finished status was not applied: command=%v model=%#v", command, m.entries)
+	}
+}
+
+func TestAgentStatusOnlyAppliesToMatchingTool(t *testing.T) {
+	m := model{entries: []entry{{tabs: []tabItem{{windows: []windowItem{{id: 42, agent: "codex"}}}}}}}
+	m.applyAgentStatuses(map[int]agentLifecycleStatus{42: {tool: "claude", status: "finished"}})
+	if got := m.entries[0].tabs[0].windows[0].agentStatus; got != "" {
+		t.Fatalf("mismatched agent status = %q", got)
+	}
+	m.applyAgentStatuses(map[int]agentLifecycleStatus{42: {tool: "codex", status: "working"}})
+	if got := m.entries[0].tabs[0].windows[0].agentStatus; got != "working" {
+		t.Fatalf("matching agent status = %q", got)
 	}
 }
 
@@ -1828,6 +1844,26 @@ func TestAgentRowPrioritizesCustomTitleWithoutPath(t *testing.T) {
 	}
 	if strings.Contains(line, "π") || strings.Contains(line, ".dotfiles") {
 		t.Errorf("agent row retained icon or path metadata: %q", line)
+	}
+}
+
+func TestAgentRowsAlignTitlesAcrossToolNamesAndStatuses(t *testing.T) {
+	m := model{}
+	positions := make([]int, 0, 3)
+	for _, window := range []windowItem{
+		{agent: "codex", agentStatus: "idle", title: "codex task"},
+		{agent: "pi", agentStatus: "finished", title: "pi task"},
+		{agent: "claude", title: "claude task"},
+	} {
+		line := ansi.Strip(m.renderAgentRow(entry{}, tabItem{}, window, 60))
+		position := strings.Index(line, window.title)
+		if position < 0 {
+			t.Fatalf("agent row missing title %q: %q", window.title, line)
+		}
+		positions = append(positions, lipgloss.Width(line[:position]))
+	}
+	if positions[0] != positions[1] || positions[1] != positions[2] {
+		t.Fatalf("agent title columns are not aligned: %v", positions)
 	}
 }
 

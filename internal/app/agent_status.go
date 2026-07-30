@@ -12,9 +12,9 @@ import (
 func fetchAgentStatuses(directory string) tea.Cmd {
 	return func() tea.Msg {
 		records, err := agentstatus.ReadDirectory(directory)
-		statuses := make(map[int]string, len(records))
+		statuses := make(map[int]agentLifecycleStatus, len(records))
 		for windowID, record := range records {
-			statuses[windowID] = record.Status
+			statuses[windowID] = agentLifecycleStatus{tool: record.Tool, status: record.Status}
 		}
 		return agentStatusMsg{statuses: statuses, err: err}
 	}
@@ -49,14 +49,15 @@ func (m model) hasWorkingAgent() bool {
 	return false
 }
 
-func (m *model) applyAgentStatuses(statuses map[int]string) {
+func (m *model) applyAgentStatuses(statuses map[int]agentLifecycleStatus) {
 	for entryIndex := range m.entries {
 		for tabIndex := range m.entries[entryIndex].tabs {
 			for windowIndex := range m.entries[entryIndex].tabs[tabIndex].windows {
 				window := &m.entries[entryIndex].tabs[tabIndex].windows[windowIndex]
 				window.agentStatus = ""
-				if strings.Contains(window.agent, "pi") {
-					window.agentStatus = statuses[window.id]
+				status := statuses[window.id]
+				if agentStatusTool(window.agent) == status.tool {
+					window.agentStatus = status.status
 				}
 			}
 		}
@@ -76,12 +77,22 @@ func (m *model) acknowledgeAgentStatus(windowID int) {
 	}
 }
 
-func acknowledgeThen(directory string, windowID int, action tea.Cmd) tea.Cmd {
+func agentStatusTool(agent string) string {
+	agent = strings.ToLower(agent)
+	for _, tool := range []string{"pi", "codex", "claude"} {
+		if strings.Contains(agent, tool) {
+			return tool
+		}
+	}
+	return ""
+}
+
+func acknowledgeThen(directory, tool string, windowID int, action tea.Cmd) tea.Cmd {
 	if action == nil {
 		return nil
 	}
 	return func() tea.Msg {
-		_ = agentstatus.Acknowledge(directory, windowID)
+		_ = agentstatus.Acknowledge(directory, tool, windowID)
 		return action()
 	}
 }

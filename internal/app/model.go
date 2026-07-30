@@ -187,8 +187,13 @@ type previewRefreshMsg struct {
 type agentStatusTickMsg struct{}
 type agentSpinnerTickMsg struct{}
 
+type agentLifecycleStatus struct {
+	tool   string
+	status string
+}
+
 type agentStatusMsg struct {
-	statuses map[int]string
+	statuses map[int]agentLifecycleStatus
 	err      error
 }
 

@@ -362,7 +362,7 @@ func (m model) openSelected() (tea.Model, tea.Cmd) {
 		window := entry.tabs[selected.tabIndex].windows[selected.windowIndex]
 		if window.agentStatus == "finished" || window.agentStatus == "errored" {
 			m.acknowledgeAgentStatus(window.id)
-			action = acknowledgeThen(m.agentStatusDir, window.id, action)
+			action = acknowledgeThen(m.agentStatusDir, agentStatusTool(window.agent), window.id, action)
 		}
 	}
 	return m, action

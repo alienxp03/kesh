@@ -38,36 +38,12 @@ func Run(args []string) error {
 		return clearAllPins(kitty, true)
 	case "end-run":
 		return endKittyRun(kitty)
-	case "agents-setup-pi":
-		path, err := agentstatus.InstallPi()
-		if err != nil {
-			return err
-		}
-		fmt.Printf("installed Pi agent status integration at %s\n", path)
-		fmt.Println("run /reload in existing Pi sessions, or restart Pi")
-		return nil
-	case "agents-remove-pi":
-		path, err := agentstatus.RemovePi()
-		if err != nil {
-			return err
-		}
-		if err := agentstatus.RemovePiStatuses(config.FromEnvironment().AgentStatuses()); err != nil {
-			return err
-		}
-		fmt.Printf("removed Pi agent status integration from %s\n", path)
-		fmt.Println("run /reload in existing Pi sessions, or restart Pi")
-		return nil
+	case "agents-setup-pi", "agents-setup-codex", "agents-setup-claude":
+		return setupAgentIntegration(strings.TrimPrefix(pinCommand, "agents-setup-"))
+	case "agents-remove-pi", "agents-remove-codex", "agents-remove-claude":
+		return removeAgentIntegration(strings.TrimPrefix(pinCommand, "agents-remove-"))
 	case "agents-status":
-		installed, path, err := agentstatus.PiInstalled()
-		if err != nil {
-			return err
-		}
-		state := "not installed"
-		if installed {
-			state = "installed"
-		}
-		fmt.Printf("pi: %s (%s)\n", state, path)
-		return nil
+		return printAgentIntegrationStatus()
 	}
 	if switchSlot != "" {
 		return switchPin(kitty, zoxide, switchSlot)
@@ -116,9 +92,9 @@ func Run(args []string) error {
 		zoxideCtx:                zoxideCtx, zoxidePending: zoxide != "",
 	}
 	if records, statusErr := agentstatus.ReadDirectory(agentStatusDir); statusErr == nil {
-		statuses := make(map[int]string, len(records))
+		statuses := make(map[int]agentLifecycleStatus, len(records))
 		for windowID, record := range records {
-			statuses[windowID] = record.Status
+			statuses[windowID] = agentLifecycleStatus{tool: record.Tool, status: record.Status}
 		}
 		m.applyAgentStatuses(statuses)
 	}
@@ -143,10 +119,10 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 		return filterAll, "", "start", nil
 	case len(args) == 1 && args[0] == "agents":
 		return filterAgents, "", "", nil
-	case len(args) == 3 && args[0] == "agents" && args[1] == "setup" && args[2] == "pi":
-		return filterAll, "", "agents-setup-pi", nil
-	case len(args) == 3 && args[0] == "agents" && args[1] == "remove" && args[2] == "pi":
-		return filterAll, "", "agents-remove-pi", nil
+	case len(args) == 3 && args[0] == "agents" && args[1] == "setup" && validAgentIntegration(args[2]):
+		return filterAll, "", "agents-setup-" + args[2], nil
+	case len(args) == 3 && args[0] == "agents" && args[1] == "remove" && validAgentIntegration(args[2]):
+		return filterAll, "", "agents-remove-" + args[2], nil
 	case len(args) == 2 && args[0] == "agents" && args[1] == "status":
 		return filterAll, "", "agents-status", nil
 	case len(args) == 1 && args[0] == "ssh":
@@ -162,8 +138,75 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	case len(args) == 2 && args[0] == "switch" && validSlot(args[1]):
 		return filterAll, args[1], "", nil
 	default:
-		return 0, "", "", &UsageError{message: "usage: kesh [init | start | agents [setup pi | remove pi | status] | ssh | saved | clear-pins | switch SLOT] (SLOT must be 0-9)"}
+		return 0, "", "", &UsageError{message: "usage: kesh [init | start | agents [setup TOOL | remove TOOL | status] | ssh | saved | clear-pins | switch SLOT] (TOOL must be pi, codex, or claude; SLOT must be 0-9)"}
 	}
+}
+
+func validAgentIntegration(tool string) bool {
+	return tool == "pi" || tool == "codex" || tool == "claude"
+}
+
+func setupAgentIntegration(tool string) error {
+	var path string
+	var err error
+	if tool == "pi" {
+		path, err = agentstatus.InstallPi()
+	} else {
+		path, err = agentstatus.InstallHooks(tool)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("installed %s agent status integration at %s\n", tool, path)
+	switch tool {
+	case "pi":
+		fmt.Println("run /reload in existing Pi sessions, or restart Pi")
+	case "codex":
+		fmt.Println("restart Codex, then run /hooks to review and trust the Kesh hooks")
+	case "claude":
+		fmt.Println("restart Claude Code or run /hooks to verify the Kesh hooks")
+	}
+	return nil
+}
+
+func removeAgentIntegration(tool string) error {
+	var path string
+	var err error
+	if tool == "pi" {
+		path, err = agentstatus.RemovePi()
+	} else {
+		path, err = agentstatus.RemoveHooks(tool)
+	}
+	if err != nil {
+		return err
+	}
+	if err := agentstatus.RemoveStatuses(config.FromEnvironment().AgentStatuses(), tool); err != nil {
+		return err
+	}
+	fmt.Printf("removed %s agent status integration from %s\n", tool, path)
+	return nil
+}
+
+func printAgentIntegrationStatus() error {
+	for _, tool := range []string{"pi", "codex", "claude"} {
+		var installed bool
+		var path string
+		var err error
+		if tool == "pi" {
+			installed, path, err = agentstatus.PiInstalled()
+		} else {
+			installed, path, err = agentstatus.HooksInstalled(tool)
+		}
+		if err != nil {
+			return err
+		}
+		state := "not installed"
+		if installed {
+			state = "installed"
+		}
+		fmt.Printf("%s: %s (%s)\n", tool, state, path)
+	}
+	return nil
 }
 
 func initProject() error {

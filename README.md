@@ -119,11 +119,14 @@ before fetching or creating the worktree.
 Run `kesh agents` to list active Claude, Codex, and pi windows. Press `enter`
 to focus one and `p` to show its live terminal preview.
 
-For exact Pi lifecycle status, install the Kesh integration once with
-`kesh agents setup pi`, then restart Pi or run `/reload` in existing sessions.
-Kesh shows working, finished, errored, and idle state and acknowledges a
-finished session when you focus it. Use `kesh agents status` to inspect the
-integration or `kesh agents remove pi` to uninstall it.
+For exact lifecycle status, install the Kesh integration once for each agent
+you use: `kesh agents setup pi`, `kesh agents setup codex`, or
+`kesh agents setup claude`. Pi loads its extension after `/reload` or restart;
+Codex requires reviewing the new command hooks through `/hooks`; Claude Code
+loads its user hooks from `~/.claude/settings.json`. Kesh shows working,
+finished, errored, and idle state and acknowledges a finished session when you
+focus it. Use `kesh agents status` to inspect all integrations or
+`kesh agents remove TOOL` to uninstall one.
 
 ## Project configuration
 
@@ -278,9 +281,9 @@ kesh                         Open the workspace picker
 kesh start                   Launch configured default sessions
 kesh init                    Create .kesh.yaml in the current directory
 kesh agents                 Show active agent windows
-kesh agents setup pi        Install/update Pi status integration
-kesh agents remove pi       Remove Pi status integration
-kesh agents status          Show agent integration status
+kesh agents setup TOOL      Install/update pi, codex, or claude status integration
+kesh agents remove TOOL     Remove an agent status integration
+kesh agents status          Show all agent integration statuses
 kesh ssh                    Show configured SSH hosts
 kesh saved                  Show saved sessions
 kesh switch SLOT             Focus pin 0–9
