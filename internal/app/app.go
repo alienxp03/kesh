@@ -218,7 +218,7 @@ func initProject() error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("created %s\n", path)
+	fmt.Printf("created %s\n", filepath.Base(path))
 	return nil
 }
 
