@@ -22,3 +22,6 @@ coverage.html
 *.swp
 .idea/
 .vscode/
+
+# kesh
+.kesh.env
