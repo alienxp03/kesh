@@ -382,8 +382,8 @@ func TestDestroyPromptListsApplicableLayers(t *testing.T) {
 }
 
 func TestDestroyPopupFitsTypicalWorktreePaths(t *testing.T) {
-	t.Setenv("HOME", "/Users/azuan")
-	path := "/Users/azuan/Workspace/worktree/alienxp03/dotfiles/testing-3"
+	t.Setenv("HOME", "/Users/morgan")
+	path := "/Users/morgan/Workspace/worktree/alienxp03/dotfiles/testing-3"
 	plan := destroyPlan{
 		entryName:    "testing-3",
 		worktrees:    []domain.LinkedWorktree{{Path: path, Branch: "testing-3"}},
@@ -575,10 +575,10 @@ func TestCleanAgentTitleOmitsAgentPrefixes(t *testing.T) {
 
 func TestPiWindowTitleOmitsPiPrefixInKesh(t *testing.T) {
 	window := kittyWindow{
-		ID: 1, Title: "⠋ π - .dotfiles", CWD: "/Users/azuan/.dotfiles",
+		ID: 1, Title: "⠋ π - .dotfiles", CWD: "/Users/morgan/.dotfiles",
 		ForegroundProcesses: []kittyx.ForegroundProcess{{
 			Cmdline: []string{"pi"},
-			CWD:     "/Users/azuan/.dotfiles",
+			CWD:     "/Users/morgan/.dotfiles",
 		}},
 	}
 	if got := windowItemFromKitty(window).title; got != ".dotfiles" {
