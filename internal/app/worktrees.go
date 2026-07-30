@@ -299,7 +299,7 @@ func (m *model) calculateWorktreePaths() []string {
 		// filepath.Join drops a trailing empty segment, so with no branch typed
 		// yet the preview resolves to the repo directory and fills in as the
 		// branch is entered — keeping the popup layout stable from the start.
-		worktreePath := filepath.Join(m.worktreeRoot, identity.owner, identity.repo, m.worktreeBranch)
+		worktreePath := filepath.Join(m.worktreeRoot, identity.owner, identity.repo, worktreeDirectoryName(m.worktreeBranch))
 		paths = append(paths, displayPath(worktreePath, os.Getenv("HOME")))
 	}
 	return paths
@@ -326,7 +326,7 @@ func (m *model) validateWorktreeBranch() tea.Cmd {
 			// HEAD at worktree-add time. Only a path collision is rejected, so
 			// validation stays local and network-free.
 			owner, repo := getRepoOwner(entry.path)
-			worktreePath := filepath.Join(worktreeRoot, owner, repo, branch)
+			worktreePath := filepath.Join(worktreeRoot, owner, repo, worktreeDirectoryName(branch))
 			if _, err := os.Stat(worktreePath); err == nil {
 				return worktreeMsg{err: fmt.Errorf("worktree already exists at %s", displayPath(worktreePath, home)), validation: true}
 			}
@@ -349,14 +349,22 @@ func (m *model) createWorktree() tea.Cmd {
 				continue
 			}
 			owner, repo := getRepoOwner(entry.path)
-			worktreePath := filepath.Join(worktreeRoot, owner, repo, branch)
+			worktreePath := filepath.Join(worktreeRoot, owner, repo, worktreeDirectoryName(branch))
 
 			repository := gitx.Repository{Path: entry.path}
+			repositoryRoot, err := repository.Root()
+			if err != nil {
+				return worktreeMsg{err: fmt.Errorf("find repository root for %s: %w", entry.name, err)}
+			}
+			projectPath, err := projectPathInWorktree(repositoryRoot, entry.path, worktreePath)
+			if err != nil {
+				return worktreeMsg{err: fmt.Errorf("resolve project path for %s: %w", entry.name, err)}
+			}
 			if err := addWorktreeForBranch(repository, worktreePath, branch); err != nil {
 				return worktreeMsg{err: fmt.Errorf("failed to create worktree for %s: %w", entry.name, err)}
 			}
 
-			created = append(created, worktreePath)
+			created = append(created, projectPath)
 		}
 		if len(created) == 0 {
 			return worktreeMsg{err: fmt.Errorf("no project selected for worktree creation")}
@@ -369,6 +377,22 @@ func (m *model) createWorktree() tea.Cmd {
 		}
 		return worktreeMsg{}
 	}
+}
+
+// projectPathInWorktree preserves the selected project's location inside a
+// monorepo when the Git worktree itself is rooted at the repository root.
+func projectPathInWorktree(repositoryRoot, projectPath, worktreePath string) (string, error) {
+	relative, err := filepath.Rel(filepath.Clean(repositoryRoot), filepath.Clean(projectPath))
+	if err != nil {
+		return "", err
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", fmt.Errorf("project is outside repository root: %s", projectPath)
+	}
+	if relative == "." {
+		return worktreePath, nil
+	}
+	return filepath.Join(worktreePath, relative), nil
 }
 
 // addWorktreeForBranch checks out an existing remote branch when origin has it;

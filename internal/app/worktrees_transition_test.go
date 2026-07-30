@@ -104,8 +104,8 @@ func TestWorktreeCreateRunsRecipeAndClosesPickerAfterHandoff(t *testing.T) {
 	}
 }
 
-func TestPlainWorktreeCreateOpensNewKittySession(t *testing.T) {
-	recorder := &appGitRunner{}
+func TestPlainWorktreeCreateOpensSelectedMonorepoProject(t *testing.T) {
+	recorder := &appGitRunner{out: []byte("/repo\n")}
 	restore := system.SetRunner(recorder)
 	t.Cleanup(restore)
 
@@ -116,11 +116,11 @@ func TestPlainWorktreeCreateOpensNewKittySession(t *testing.T) {
 		kitty:                    "kitty",
 		zoxide:                   "zoxide",
 		entries: []entry{{
-			key: "/repo", name: "repo", path: "/repo", kind: "project",
+			key: "/repo/projects/frontier", name: "frontier", path: "/repo/projects/frontier", kind: "project",
 		}},
 	}
 	m.activateMode(modeWorktreeCreate)
-	m.worktreeBranch = "setup-run-dev"
+	m.worktreeBranch = "fix/setup-device-dev"
 
 	updated, validation := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(model)
@@ -148,14 +148,24 @@ func TestPlainWorktreeCreateOpensNewKittySession(t *testing.T) {
 		t.Fatalf("plain create completion should quit, got %T", post())
 	}
 
-	var added, opened bool
+	added := false
+	var sessionFile string
 	for _, spec := range recorder.specs {
 		arguments := strings.Join(spec.Args, " ")
-		added = added || (spec.Name == "git" && strings.Contains(arguments, "worktree add"))
-		opened = opened || (spec.Name == "kitty" && strings.Contains(arguments, "goto_session"))
+		added = added || (spec.Name == "git" && strings.Contains(arguments, "worktree add") && strings.Contains(arguments, "/trees/user/frontier/fix-setup-device-dev"))
+		if spec.Name == "kitty" && strings.Contains(arguments, "goto_session") {
+			sessionFile = spec.Args[len(spec.Args)-1]
+		}
 	}
-	if !added || !opened {
+	if !added || sessionFile == "" {
 		t.Fatalf("plain creation did not add and open worktree: specs=%#v", recorder.specs)
+	}
+	session, err := os.ReadFile(sessionFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(session), "cd /trees/user/frontier/fix-setup-device-dev/projects/frontier") {
+		t.Fatalf("session opened wrong monorepo path:\n%s", session)
 	}
 }
 
