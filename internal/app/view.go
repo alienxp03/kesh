@@ -950,7 +950,7 @@ func (m model) agentStatusBadge(status string) string {
 	case "errored":
 		return errorStyle.Render("!")
 	case "idle":
-		return dimStyle.Render("○")
+		return mutedStyle.Render("•")
 	default:
 		return ""
 	}

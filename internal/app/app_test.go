@@ -1652,6 +1652,13 @@ func TestAgentStatusUpdatesVisiblePiRow(t *testing.T) {
 	}
 }
 
+func TestIdleAgentUsesVisibleBulletBadge(t *testing.T) {
+	badge := ansi.Strip((model{}).agentStatusBadge("idle"))
+	if badge != "•" {
+		t.Fatalf("idle badge = %q, want visible bullet", badge)
+	}
+}
+
 func TestAgentStatusOnlyAppliesToMatchingTool(t *testing.T) {
 	m := model{entries: []entry{{tabs: []tabItem{{windows: []windowItem{{id: 42, agent: "codex"}}}}}}}
 	m.applyAgentStatuses(map[int]agentLifecycleStatus{42: {tool: "claude", status: "finished"}})
