@@ -518,7 +518,7 @@ func pinTargetForEntry(e entry) (pinTarget, error) {
 	name := e.session
 	if name == "" {
 		if e.kind == "ssh" {
-			name = "ssh-" + safeName(strings.TrimPrefix(e.key, "ssh://"))
+			name = sshSessionName(strings.TrimPrefix(e.key, "ssh://"))
 		} else {
 			name = safeName(filepath.Base(e.key))
 			if e.nameTaken {
@@ -527,10 +527,10 @@ func pinTargetForEntry(e entry) (pinTarget, error) {
 		}
 	}
 	path := filepath.Join(directory, safeName(name)+".kitty-session")
-	sessionEntry := domain.SessionEntry{Name: filepath.Base(e.key), Directory: e.key}
+	sessionEntry := domain.SessionEntry{Name: filepath.Base(e.key), Directory: e.key, SessionName: name}
 	if e.kind == "ssh" {
 		host := strings.TrimPrefix(e.key, "ssh://")
-		sessionEntry = domain.SessionEntry{Name: e.name, SSHHost: host}
+		sessionEntry = domain.SessionEntry{Name: e.name, SSHHost: host, SessionName: name}
 	} else {
 		directory := e.key
 		if e.path != "" {

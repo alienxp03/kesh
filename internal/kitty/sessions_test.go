@@ -13,10 +13,20 @@ func TestComposedSessionContent(t *testing.T) {
 		{Name: "API", Directory: "/projects/api"},
 		{Name: "production", SSHHost: "production"},
 	})
-	want := "os_window_title release\nlayout splits\n" +
-		"new_tab API\ncd /projects/api\nlaunch --title \"API\"\n" +
-		"new_tab production\ncd /Users/stan\nlaunch --title \"ssh: production\" ssh \"production\"\n" +
+	want := "os_window_title release\nenabled_layouts splits,stack\nlayout splits\n" +
+		"new_tab API\ncd /projects/api\nlaunch --env \"KESH_KITTY_SESSION=release\" --title \"API\"\n" +
+		"new_tab production\ncd /Users/stan\nlaunch --env \"KESH_KITTY_SESSION=release\" --title \"ssh: production\" ssh \"production\"\n" +
 		"focus\nfocus_os_window\n"
+	if content != want {
+		t.Fatalf("content = %q, want %q", content, want)
+	}
+}
+
+func TestSingleSessionContentMarksSSHSession(t *testing.T) {
+	content := SingleSessionContent("/Users/stan", domain.SessionEntry{
+		Name: "hermes", SSHHost: "hermes", SessionName: "ssh-hermes",
+	})
+	want := "enabled_layouts splits,stack\nlayout splits\ncd /Users/stan\nlaunch --env \"KESH_KITTY_SESSION=ssh-hermes\" --title \"ssh: hermes\" ssh \"hermes\"\nfocus\nfocus_os_window\n"
 	if content != want {
 		t.Fatalf("content = %q, want %q", content, want)
 	}

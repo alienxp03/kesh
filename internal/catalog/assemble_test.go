@@ -51,6 +51,24 @@ func TestAssembleMergesKittySavedAndSSHEntries(t *testing.T) {
 	}
 }
 
+func TestAssembleAttachesOpenUnscopedSSHTabs(t *testing.T) {
+	kittyState := kitty.State{{Tabs: []kitty.Tab{{
+		ID:    4,
+		Title: "hermes",
+		Windows: []kitty.Window{{
+			ID: 41, CWD: "/Users/stan", LastFocusedAt: 9,
+			ForegroundProcesses: []kitty.ForegroundProcess{{Cmdline: []string{"ssh", "hermes"}}},
+		}},
+	}}}}
+	entries, _ := Assemble(kittyState, state.SavedSessions{}, []SSHHost{{Name: "hermes", Target: "hermes"}}, 999, "/Users/stan")
+	if len(entries) != 1 || !entries[0].Open || entries[0].Session != "ssh-hermes" {
+		t.Fatalf("open SSH entry = %#v", entries)
+	}
+	if len(entries[0].Tabs) != 1 || entries[0].Tabs[0].ID != 4 {
+		t.Fatalf("open SSH tabs = %#v", entries[0].Tabs)
+	}
+}
+
 func TestAssembleUsesKeshLayoutSessionName(t *testing.T) {
 	entries, _ := Assemble(kitty.State{{Tabs: []kitty.Tab{{
 		ID: 1, Title: "dotfiles",

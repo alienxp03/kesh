@@ -208,15 +208,9 @@ func (m *model) rebuildRows() {
 		})
 		entryIndexes = ranked
 	}
-	// Pins are shortcuts first, so give them a stable, visible home at the
-	// top of every picker view. Non-pinned entries retain their normal order.
-	sort.SliceStable(entryIndexes, func(i, j int) bool {
-		left, right := m.entries[entryIndexes[i]], m.entries[entryIndexes[j]]
-		if left.pin == "" || right.pin == "" {
-			return left.pin != ""
-		}
-		return left.pin < right.pin
-	})
+	// Keep the catalog's activity order intact. Pins are direct Kitty
+	// shortcuts and remain marked in the list, but should not move a recent
+	// project below an older pinned entry.
 
 	var rows []row
 	for _, entryIndex := range entryIndexes {

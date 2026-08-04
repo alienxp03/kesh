@@ -141,6 +141,28 @@ func composedSessionName(session string) (string, bool) {
 	return domain.ComposedSessionName(session)
 }
 
+func sshSessionName(host string) string {
+	return "ssh-" + safeName(host)
+}
+
+func sshSessionFilePath(host string) string {
+	return filepath.Join(savedSessionDirectory(), sshSessionName(host)+".kitty-session")
+}
+
+func writeSSHSessionFile(name, host string) (string, error) {
+	path := sshSessionFilePath(host)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
+	}
+	content := kittyx.SingleSessionContent(os.Getenv("HOME"), domain.SessionEntry{
+		Name: name, SSHHost: host, SessionName: sshSessionName(host),
+	})
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
 func composedSessionContent(name string, entries []entry) string {
 	sessionEntries := make([]domain.SessionEntry, 0, len(entries))
 	for _, entry := range entries {

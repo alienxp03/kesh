@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -104,11 +105,11 @@ func (m model) View() string {
 	listLines := []string{listTitle}
 	if m.filter == filterWorktrees && len(m.rows) > 0 {
 		// Label the columns so the branch reads as a first-class table column
-		// rather than an unlabeled leading field. padColumns mirrors the row
-		// layout (branch left, path right) and the 2-space indent matches the
-		// non-focused row prefix so the labels land under their columns.
+		// rather than an unlabeled leading field. Keep Branch and Path evenly
+		// split so long branch names cannot crowd the directory column. The
+		// 2-space indent matches the non-focused row prefix.
 		rowWidth := max(8, listWidth-4)
-		header := padColumns(dimStyle.Render("Branch"), dimStyle.Render("Path"), rowWidth)
+		header := padColumnsAt(dimStyle.Render("Branch"), dimStyle.Render("Path"), rowWidth, 50)
 		listLines = append(listLines, "  "+header)
 	}
 	for i := start; i < end; i++ {
@@ -373,6 +374,42 @@ func pathPRSummary(info pathPRInfo) string {
 		summary += " · local HEAD differs"
 	}
 	return summary
+}
+
+func pullRequestRepository(prURL string) string {
+	parsed, err := url.Parse(prURL)
+	if err != nil {
+		return ""
+	}
+	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	if len(parts) < 4 || parts[2] != "pull" || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+	return parts[0] + "/" + parts[1]
+}
+
+func entryPRSummary(info pathPRInfo) string {
+	if info.PullRequest.Number == 0 {
+		return ""
+	}
+	if repository := pullRequestRepository(info.PullRequest.URL); repository != "" {
+		return repository + " #" + strconv.Itoa(info.PullRequest.Number)
+	}
+	return "#" + strconv.Itoa(info.PullRequest.Number)
+}
+
+func entryPRColumn(entry entry) string {
+	if summary := entryPRSummary(entry.pathPR); summary != "" {
+		return summary
+	}
+	for _, tab := range entry.tabs {
+		for _, window := range tab.windows {
+			if summary := entryPRSummary(window.pathPR); summary != "" {
+				return summary
+			}
+		}
+	}
+	return ""
 }
 
 func renderDetailPanel(title string, fields []detailField, action string, extra []string, width, height int, compact bool) string {
@@ -802,9 +839,6 @@ func (m model) renderRow(r row, width int, focused bool) string {
 		}
 		sync := worktreeSyncBadge(wt)
 
-		branchWidth := max(12, width*46/100)
-		branchPart := selected + current + " " + truncate(wt.branch, branchWidth-lipgloss.Width(selected)-lipgloss.Width(current)-1)
-
 		statusWidth := max(8, width*20/100)
 		statusPart := ""
 		if prStatus != "" {
@@ -821,6 +855,12 @@ func (m model) renderRow(r row, width int, focused bool) string {
 			}
 			statusPart += " " + segment
 		}
+		statusPart = ansi.Truncate(statusPart, min(statusWidth, max(1, width/2-1)), "…")
+
+		leftWidth := max(1, width/2)
+		branchPrefix := selected + current + " "
+		branchWidth := max(1, leftWidth-lipgloss.Width(statusPart)-1-lipgloss.Width(branchPrefix))
+		branchPart := branchPrefix + truncate(wt.branch, branchWidth)
 
 		pathPart := mutedStyle.Render(displayPath(wt.path, os.Getenv("HOME")))
 		if wt.current {
@@ -831,10 +871,7 @@ func (m model) renderRow(r row, width int, focused bool) string {
 		}
 		left := branchPart + statusPart
 		right := pathPart
-		if width >= 64 {
-			return padColumns(left, right, width)
-		}
-		return ansi.Truncate(left+"  "+right, width, "…")
+		return padColumnsAt(left, right, width, 50)
 	}
 	if r.windowIndex >= 0 {
 		window := e.tabs[r.tabIndex].windows[r.windowIndex]
@@ -909,8 +946,16 @@ func (m model) renderRow(r row, width int, focused bool) string {
 	// A live session (tabs present) can span multiple tabs and windows across
 	// different directories, so a single folder path on the row misrepresents
 	// it. Saved snapshots can contain multiple folders too, so keep their rows
-	// focused on the name; the Saved filter already identifies them.
+	// focused on the name; the Saved filter already identifies them. A PR is
+	// useful session metadata, though, and fills the otherwise empty column.
 	if e.saved || (len(e.tabs) > 0 && e.kind != "ssh") {
+		if summary := entryPRColumn(e); summary != "" && width >= 52 {
+			detail := dimStyle.Render(summary)
+			if focused && e.open {
+				detail = focusStyle.Render(ansi.Strip(detail))
+			}
+			return padColumns(left, detail, width)
+		}
 		return ansi.Truncate(left, width, "…")
 	}
 	detailValue := e.detail
@@ -1097,6 +1142,21 @@ func padColumns(left, right string, width int) string {
 		space = 2
 	}
 	return ansi.Truncate(left+strings.Repeat(" ", space)+right, width, "…")
+}
+
+func padColumnsAt(left, right string, width, splitPercent int) string {
+	if width <= 0 {
+		return ""
+	}
+	gap := 2
+	leftWidth := max(1, min(width-gap, width*splitPercent/100))
+	rightWidth := width - leftWidth - gap
+	left = ansi.Truncate(left, leftWidth, "…")
+	if rightWidth <= 0 {
+		return left
+	}
+	right = ansi.Truncate(right, rightWidth, "…")
+	return left + strings.Repeat(" ", max(0, leftWidth-lipgloss.Width(left))+gap) + right
 }
 
 func truncate(value string, width int) string {

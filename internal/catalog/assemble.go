@@ -36,6 +36,7 @@ func Assemble(
 	unscopedTabs := map[string][]domain.Tab{}
 	unscopedFocus := map[string]float64{}
 	openSSH := map[string]float64{}
+	openSSHTabs := map[string][]domain.Tab{}
 
 	for _, osWindow := range kittyState {
 		for _, tab := range osWindow.Tabs {
@@ -106,13 +107,18 @@ func Assemble(
 					session.focused = max(session.focused, focused)
 					session.tabs = append(session.tabs, item)
 				}
-			}
-			for _, window := range tab.Windows {
-				if window.ID == selfID {
-					continue
+				sshHostsInTab := map[string]bool{}
+				for _, window := range tab.Windows {
+					if window.ID == selfID {
+						continue
+					}
+					if host := SSHHostFromWindow(window); host != "" {
+						openSSH[host] = max(openSSH[host], window.LastFocusedAt)
+						sshHostsInTab[host] = true
+					}
 				}
-				if host := SSHHostFromWindow(window); host != "" {
-					openSSH[host] = max(openSSH[host], window.LastFocusedAt)
+				for host := range sshHostsInTab {
+					openSSHTabs[host] = append(openSSHTabs[host], item)
 				}
 			}
 		}
@@ -220,6 +226,8 @@ func Assemble(
 			sessionName = "ssh-" + SafeName(host.Name)
 			if session := sessions[sessionName]; session != nil {
 				tabs = session.tabs
+			} else {
+				tabs = openSSHTabs[host.Name]
 			}
 		}
 		entries = append(entries, domain.Entry{

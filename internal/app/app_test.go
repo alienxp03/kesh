@@ -262,14 +262,13 @@ func TestRelativeLastActive(t *testing.T) {
 	}
 }
 
-func TestRebuildRowsPrioritizesPinnedEntriesBySlot(t *testing.T) {
+func TestRebuildRowsKeepsRecentEntriesAheadOfPins(t *testing.T) {
 	m := model{entries: []entry{
-		{name: "unpinned-first"},
-		{name: "slot-three", pin: "3"},
-		{name: "slot-zero", pin: "0"},
-		{name: "unpinned-last"},
-		{name: "slot-one", pin: "1"},
+		{name: "older-pinned", pin: "0", open: true, lastFocused: 10, order: 0},
+		{name: "recent-unpinned", open: true, lastFocused: 20, order: 1},
+		{name: "closed-pinned", pin: "1", order: 2},
 	}}
+	sortEntries(m.entries)
 	m.rebuildRows()
 	var got []string
 	for _, row := range m.rows {
@@ -277,7 +276,7 @@ func TestRebuildRowsPrioritizesPinnedEntriesBySlot(t *testing.T) {
 			got = append(got, m.entries[row.entryIndex].name)
 		}
 	}
-	want := []string{"slot-zero", "slot-one", "slot-three", "unpinned-first", "unpinned-last"}
+	want := []string{"recent-unpinned", "older-pinned", "closed-pinned"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("row order = %#v, want %#v", got, want)
 	}
@@ -557,6 +556,28 @@ func TestRowsShowSecondDetailColumnOnlyWhenSpaceAllows(t *testing.T) {
 	}
 	if rendered := ansi.Strip(m.renderRow(closedRow, 40, false)); strings.Contains(rendered, "/workspace/other") {
 		t.Fatalf("narrow closed row retained detail column: %q", rendered)
+	}
+}
+
+func TestLiveWorktreeSessionShowsPRInSecondColumn(t *testing.T) {
+	pr := pathPRInfo{
+		Branch: "feat/feature", Exact: true,
+		PullRequest: prInfo{Status: "open", Number: 42, URL: "https://github.com/example/repo/pull/42"},
+	}
+	m := model{entries: []entry{{
+		name: "repo", kind: "project", open: true,
+		tabs: []tabItem{{windows: []windowItem{{cwd: "/workspace/worktrees/repo/feature", pathPR: pr}}}},
+	}}}
+
+	rendered := ansi.Strip(m.renderRow(row{entryIndex: 0, tabIndex: -1, windowIndex: -1}, 100, true))
+	if !strings.Contains(rendered, "example/repo #42") {
+		t.Fatalf("live PR worktree row is missing repository metadata: %q", rendered)
+	}
+	if strings.Contains(rendered, "local HEAD differs") {
+		t.Fatalf("live PR worktree row should omit HEAD mismatch details: %q", rendered)
+	}
+	if strings.Contains(rendered, "/workspace/worktrees/repo/feature") {
+		t.Fatalf("live PR worktree row should not show a directory path: %q", rendered)
 	}
 }
 
@@ -2445,6 +2466,31 @@ printf 'layout splits\ncd /projects/ksm\nlaunch\n' > "$last"
 	}
 }
 
+func TestRunActionFocusesOpenSSHTabInsteadOfLaunchingDuplicate(t *testing.T) {
+	directory := t.TempDir()
+	logPath := filepath.Join(directory, "kitty.log")
+	kitty := filepath.Join(directory, "kitty")
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" > %q\n", logPath)
+	if err := os.WriteFile(kitty, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	e := entry{
+		key: "ssh://hermes", name: "hermes", kind: "ssh", session: "ssh-hermes",
+		tabs: []tabItem{{id: 42}},
+	}
+	msg := runAction(kitty, "", e, row{tabIndex: -1, windowIndex: -1})().(actionMsg)
+	if msg.err != nil {
+		t.Fatal(msg.err)
+	}
+	commands, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(commands), "@ focus-tab --match id:42\n"; got != want {
+		t.Fatalf("Kitty commands = %q, want %q", got, want)
+	}
+}
+
 func TestRunActionUsesSavedSessionFileForOpenAndClosedWorkspace(t *testing.T) {
 	directory := t.TempDir()
 	logPath := filepath.Join(directory, "kitty.log")
@@ -2519,6 +2565,27 @@ func TestRunCloneOpensProjectAndAddsItToZoxide(t *testing.T) {
 		if !strings.Contains(log, expected) {
 			t.Errorf("command log does not contain %q:\n%s", expected, log)
 		}
+	}
+}
+
+func TestPinTargetForSSHUsesCanonicalTaggedSessionFile(t *testing.T) {
+	stateHome := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("HOME", stateHome)
+	target, err := pinTargetForEntry(entry{key: "ssh://hermes", name: "hermes", kind: "ssh"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantPath := filepath.Join(stateHome, "kesh", "sessions", "ssh-hermes.kitty-session")
+	if target.SessionFile != wantPath {
+		t.Fatalf("session file = %q, want %q", target.SessionFile, wantPath)
+	}
+	content, err := os.ReadFile(target.SessionFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), `--env "KESH_KITTY_SESSION=ssh-hermes"`) {
+		t.Fatalf("SSH pin session is not tagged: %s", content)
 	}
 }
 
@@ -3069,9 +3136,9 @@ func TestComposedSessionContentCreatesOneTabPerEntry(t *testing.T) {
 		{key: "/projects/api", name: "API", kind: "project"},
 		{key: "ssh://production", name: "production", kind: "ssh"},
 	})
-	want := "os_window_title release\nlayout splits\n" +
-		"new_tab API\ncd /projects/api\nlaunch --title \"API\"\n" +
-		"new_tab production\ncd /Users/stan\nlaunch --title \"ssh: production\" ssh \"production\"\n" +
+	want := "os_window_title release\nenabled_layouts splits,stack\nlayout splits\n" +
+		"new_tab API\ncd /projects/api\nlaunch --env \"KESH_KITTY_SESSION=release\" --title \"API\"\n" +
+		"new_tab production\ncd /Users/stan\nlaunch --env \"KESH_KITTY_SESSION=release\" --title \"ssh: production\" ssh \"production\"\n" +
 		"focus\nfocus_os_window\n"
 	if content != want {
 		t.Fatalf("composedSessionContent() = %q, want %q", content, want)

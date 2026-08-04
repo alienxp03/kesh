@@ -9,9 +9,10 @@ var composedSessionID = regexp.MustCompile(`^(.+)--[0-9a-f]{12}$`)
 
 // SessionEntry is the platform-neutral input for a generated terminal session.
 type SessionEntry struct {
-	Name      string
-	Directory string
-	SSHHost   string
+	Name        string
+	Directory   string
+	SSHHost     string
+	SessionName string
 }
 
 // ComposedSessionName extracts a user-facing name from Kesh's session prefix.

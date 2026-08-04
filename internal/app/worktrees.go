@@ -153,6 +153,11 @@ func runAction(kitty, zoxide string, e entry, selected row) tea.Cmd {
 		if selected.tabIndex >= 0 {
 			return actionMsg{err: (kittyx.Client{Executable: kitty}).FocusTab(e.tabs[selected.tabIndex].id)}
 		}
+		if e.kind == "ssh" && len(e.tabs) > 0 {
+			// SSH tabs without a Kesh session marker are still live sessions;
+			// focus the existing tab instead of launching another connection.
+			return actionMsg{err: (kittyx.Client{Executable: kitty}).FocusTab(e.tabs[0].id)}
+		}
 		if e.sessionFile != "" {
 			return actionMsg{err: (kittyx.Client{Executable: kitty}).GotoSession(e.sessionFile)}
 		}
@@ -163,14 +168,9 @@ func runAction(kitty, zoxide string, e entry, selected row) tea.Cmd {
 			return actionMsg{err: (kittyx.Client{Executable: kitty}).FocusTab(e.tabs[0].id)}
 		}
 		if e.kind == "ssh" {
-			sessionDir := filepath.Join(os.TempDir(), "kitty-zoxide-sessions")
-			if err := os.MkdirAll(sessionDir, 0o755); err != nil {
-				return actionMsg{err: err}
-			}
 			host := strings.TrimPrefix(e.key, "ssh://")
-			file := filepath.Join(sessionDir, "ssh-"+safeName(host)+".kitty-session")
-			content := fmt.Sprintf("layout splits\ncd %s\nlaunch --title \"ssh: %s\" ssh \"%s\"\nfocus\nfocus_os_window\n", os.Getenv("HOME"), host, host)
-			if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			file, err := writeSSHSessionFile(e.name, host)
+			if err != nil {
 				return actionMsg{err: err}
 			}
 			return actionMsg{err: (kittyx.Client{Executable: kitty}).GotoSession(file)}

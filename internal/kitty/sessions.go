@@ -13,7 +13,7 @@ func ComposedSessionContent(name, home string, entries []domain.SessionEntry) st
 	var content strings.Builder
 	content.WriteString("os_window_title ")
 	content.WriteString(name)
-	content.WriteString("\nlayout splits\n")
+	content.WriteString("\nenabled_layouts splits,stack\nlayout splits\n")
 	for _, entry := range entries {
 		content.WriteString("new_tab ")
 		content.WriteString(entry.Name)
@@ -21,7 +21,9 @@ func ComposedSessionContent(name, home string, entries []domain.SessionEntry) st
 		if entry.SSHHost != "" {
 			content.WriteString("cd ")
 			content.WriteString(home)
-			content.WriteString("\nlaunch --title ")
+			content.WriteString("\nlaunch")
+			content.WriteString(sessionEnvArg(name))
+			content.WriteString(" --title ")
 			content.WriteString(strconv.Quote("ssh: " + entry.SSHHost))
 			content.WriteString(" ssh ")
 			content.WriteString(strconv.Quote(entry.SSHHost))
@@ -30,7 +32,9 @@ func ComposedSessionContent(name, home string, entries []domain.SessionEntry) st
 		}
 		content.WriteString("cd ")
 		content.WriteString(entry.Directory)
-		content.WriteString("\nlaunch --title ")
+		content.WriteString("\nlaunch")
+		content.WriteString(sessionEnvArg(name))
+		content.WriteString(" --title ")
 		content.WriteString(strconv.Quote(entry.Name))
 		content.WriteByte('\n')
 	}
@@ -43,12 +47,19 @@ func ComposedSessionContent(name, home string, entries []domain.SessionEntry) st
 func SingleSessionContent(home string, entry domain.SessionEntry) string {
 	if entry.SSHHost != "" {
 		return fmt.Sprintf(
-			"layout splits\ncd %s\nlaunch --title \"ssh: %s\" ssh \"%s\"\nfocus\nfocus_os_window\n",
-			home, entry.SSHHost, entry.SSHHost,
+			"enabled_layouts splits,stack\nlayout splits\ncd %s\nlaunch%s --title \"ssh: %s\" ssh \"%s\"\nfocus\nfocus_os_window\n",
+			home, sessionEnvArg(entry.SessionName), entry.SSHHost, entry.SSHHost,
 		)
 	}
 	return fmt.Sprintf(
-		"layout splits\ncd %s\nlaunch --title \"%s\"\nfocus\nfocus_os_window\n",
-		entry.Directory, entry.Name,
+		"enabled_layouts splits,stack\nlayout splits\ncd %s\nlaunch%s --title \"%s\"\nfocus\nfocus_os_window\n",
+		entry.Directory, sessionEnvArg(entry.SessionName), entry.Name,
 	)
+}
+
+func sessionEnvArg(sessionName string) string {
+	if sessionName == "" {
+		return ""
+	}
+	return " --env " + strconv.Quote("KESH_KITTY_SESSION="+sessionName)
 }
