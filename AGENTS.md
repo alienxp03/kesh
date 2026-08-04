@@ -33,6 +33,10 @@ make ci   # golangci-lint run ./... + go test -race ./... + go build ./cmd/kesh
 make fmt  # apply gofmt + goimports (local imports grouped under third-party)
 ```
 
+After every local code change, run `make build` before testing or manually
+launching kesh so the development binary at `~/.local/bin/kesh` is rebuilt.
+Use `make build` rather than invoking `go build` directly for this workflow.
+
 The pre-push hook (`.pre-commit-config.yaml`) runs formatting, lint, and tests
 before every push. Activate once with `prek install --hook-type pre-push` (or
 `pre-commit install --hook-type pre-push`).
