@@ -109,15 +109,14 @@ Kitty reruns them when restoring. Saved entries remain after they are closed;
 `enter` restores a closed entry or focuses it when open. `x` `y` on a closed
 saved entry deletes its snapshot.
 
-### Detail panel and layout
+### List layout
 
-The list keeps a concise second column for paths, commands, counts, and other
-scan-friendly context when space allows. A detail panel follows every selected
-row — project, workspace, tab, window, agent, or worktree — and adapts its
-fields to that row type. Wide layouts keep the list on the left with details
-immediately beside it on the right inside a centered, width-capped workspace;
-narrow layouts stack details below the list. Long detail values wrap across
-lines with a hanging indent under their field label.
+The picker uses the full centered workspace for its list rather than reserving
+an always-on detail panel. Rows keep a concise second column for paths,
+commands, counts, and other scan-friendly context; when a project has a PR,
+that column shows its repository and number instead (for example,
+`loveholidays/crm #2838`). The Agents filter may split the list with its live
+terminal preview. Long row values truncate to preserve the table layout.
 
 Session details show each unique window directory instead of treating the
 first tab's directory as representative, deduplicating paths and summarizing

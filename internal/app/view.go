@@ -17,35 +17,19 @@ func (m model) View() string {
 	workspaceWidth := min(140, outerWidth)
 	selectedPRURL, _ := m.selectedPullRequest()
 	hasSelectedPR := selectedPRURL != ""
-	compactDetail := workspaceWidth < 64 || m.height < 18
-	showSideDetail := workspaceWidth >= 84 || m.height < 14
 	bodyHeight := max(5, m.height-6)
 	showAgentPreview := m.showPreview && m.hasSelectedAgentWindow() && bodyHeight >= 14
 	listWidth, detailWidth := workspaceWidth, workspaceWidth
 	listHeight, detailHeight := bodyHeight, bodyHeight
-	if showAgentPreview && m.filter == filterAgents {
+	showAgentPreviewSideBySide := showAgentPreview && m.filter == filterAgents
+	if showAgentPreviewSideBySide {
 		// Agent browsing benefits from a compact chooser and a wide live screen.
 		listWidth = max(42, min(60, workspaceWidth*42/100))
 		detailWidth = workspaceWidth - listWidth - 2
-		showSideDetail = true
 	} else if showAgentPreview {
 		// The hierarchy stays readable above a full-width terminal preview.
 		listHeight = max(5, bodyHeight*40/100)
 		detailHeight = max(6, bodyHeight-listHeight-1)
-		showSideDetail = false
-	} else if showSideDetail {
-		detailWidth = max(20, min(42, workspaceWidth*28/100))
-		listWidth = workspaceWidth - detailWidth - 2
-		if listWidth < 18 {
-			listWidth = 18
-			detailWidth = max(12, workspaceWidth-listWidth-2)
-		}
-	} else {
-		detailHeight = 8
-		if compactDetail {
-			detailHeight = 5
-		}
-		listHeight = max(5, bodyHeight-detailHeight-1)
 	}
 
 	tabs := []string{"All", "Agents", "SSH", "Saved"}
@@ -140,13 +124,14 @@ func (m model) View() string {
 		listLines = append(listLines, dimStyle.Render(empty))
 	}
 	listPanel := renderListPanel(listLines, listWidth, listHeight)
-	detailPanel := m.detailPanelView(detailWidth, detailHeight, compactDetail)
+	body := listPanel
 	if showAgentPreview {
-		detailPanel = m.previewView(detailWidth, detailHeight)
-	}
-	body := listPanel + "\n" + detailPanel
-	if showSideDetail {
-		body = lipgloss.JoinHorizontal(lipgloss.Top, listPanel, "  ", detailPanel)
+		previewPanel := m.previewView(detailWidth, detailHeight)
+		if showAgentPreviewSideBySide {
+			body = lipgloss.JoinHorizontal(lipgloss.Top, listPanel, "  ", previewPanel)
+		} else {
+			body = listPanel + "\n" + previewPanel
+		}
 	}
 
 	footer := m.footerView(workspaceWidth, hasSelectedPR)
@@ -947,15 +932,15 @@ func (m model) renderRow(r row, width int, focused bool) string {
 	// different directories, so a single folder path on the row misrepresents
 	// it. Saved snapshots can contain multiple folders too, so keep their rows
 	// focused on the name; the Saved filter already identifies them. A PR is
-	// useful session metadata, though, and fills the otherwise empty column.
-	if e.saved || (len(e.tabs) > 0 && e.kind != "ssh") {
-		if summary := entryPRColumn(e); summary != "" && width >= 52 {
-			detail := dimStyle.Render(summary)
-			if focused && e.open {
-				detail = focusStyle.Render(ansi.Strip(detail))
-			}
-			return padColumns(left, detail, width)
+	// useful metadata, though, and fills the otherwise empty column.
+	if summary := entryPRColumn(e); summary != "" && width >= 52 {
+		detail := dimStyle.Render(summary)
+		if focused && e.open {
+			detail = focusStyle.Render(ansi.Strip(detail))
 		}
+		return padColumns(left, detail, width)
+	}
+	if e.saved || (len(e.tabs) > 0 && e.kind != "ssh") {
 		return ansi.Truncate(left, width, "…")
 	}
 	detailValue := e.detail

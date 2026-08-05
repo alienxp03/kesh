@@ -789,32 +789,27 @@ func TestDetailPanelSupportsEveryRowType(t *testing.T) {
 	}
 }
 
-func TestWideLayoutRendersAdjacentListAndDetailPanels(t *testing.T) {
+func TestWideLayoutUsesFullWidthListWithoutDetailPanel(t *testing.T) {
 	m := model{
 		width: 120, height: 24,
-		entries: []entry{{name: "repo", kind: "project", path: "/workspace/repo", session: "kesh-repo", saved: true}},
+		entries: []entry{{name: "repo", kind: "project", path: "/workspace/repo", detail: "/workspace/repo"}},
 	}
 	m.rebuildRows()
 	view := ansi.Strip(m.View())
-	for _, expected := range []string{"Project", "Name", "repo", "Path", "/workspace/repo"} {
+	for _, expected := range []string{"List (1)", "repo", "/workspace/repo"} {
 		if !strings.Contains(view, expected) {
-			t.Fatalf("fixed detail panel missing %q:\n%s", expected, view)
+			t.Fatalf("full-width list is missing %q:\n%s", expected, view)
 		}
 	}
-	for _, omitted := range []string{"Session", "kesh-repo", "State"} {
+	for _, omitted := range []string{"Project", "Name", "State", "kesh-repo"} {
 		if strings.Contains(view, omitted) {
-			t.Fatalf("detail panel contains redundant field %q:\n%s", omitted, view)
+			t.Fatalf("view contains removed detail-panel field %q:\n%s", omitted, view)
 		}
 	}
-	adjacentPanels := false
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Count(line, "╭") == 2 {
-			adjacentPanels = true
-			break
+		if strings.Count(line, "╭") > 1 {
+			t.Fatalf("view still renders adjacent panels:\n%s", view)
 		}
-	}
-	if !adjacentPanels {
-		t.Fatalf("wide layout does not place list and details side by side:\n%s", view)
 	}
 }
 
