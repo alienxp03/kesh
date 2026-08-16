@@ -11,7 +11,7 @@ import (
 // ComposedSessionContent renders one Kitty tab per domain session entry.
 func ComposedSessionContent(name, home string, entries []domain.SessionEntry) string {
 	var content strings.Builder
-	content.WriteString("os_window_title ")
+	content.WriteString("os_window_title Kesh · ")
 	content.WriteString(name)
 	content.WriteString("\nenabled_layouts splits,stack\nlayout splits\n")
 	for _, entry := range entries {
