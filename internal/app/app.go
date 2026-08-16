@@ -22,6 +22,9 @@ import (
 // Run starts Kesh with the supplied command-line arguments. The command package
 // owns process exit codes; the application returns errors so it remains testable.
 func Run(args []string) error {
+	if len(args) > 0 && args[0] == "tree" {
+		return runTreeCommand(args[1:])
+	}
 	kitty, zoxide := commands()
 	filter, switchSlot, pinCommand, err := parseArgs(args)
 	if err != nil {
@@ -138,7 +141,7 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	case len(args) == 2 && args[0] == "switch" && validSlot(args[1]):
 		return filterAll, args[1], "", nil
 	default:
-		return 0, "", "", &UsageError{message: "usage: kesh [init | start | agents [setup TOOL | remove TOOL | status] | ssh | saved | clear-pins | switch SLOT] (TOOL must be pi, codex, or claude; SLOT must be 0-9)"}
+		return 0, "", "", &UsageError{message: "usage: kesh [init | start | tree <new|destroy|merge> ... | agents [setup TOOL | remove TOOL | status] | ssh | saved | clear-pins | switch SLOT] (TOOL must be pi, codex, or claude; SLOT must be 0-9)"}
 	}
 }
 

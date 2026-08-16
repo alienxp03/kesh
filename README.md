@@ -115,6 +115,24 @@ Press `C` to check out a GitHub pull request. Enter a full PR URL,
 repository path is editable with `Tab`; Kesh validates manually entered paths
 as Git repositories before fetching or creating the worktree.
 
+### Headless worktrees
+
+Use the first workspace in a required `.kesh.yaml` without opening Kitty:
+
+```sh
+kesh tree new feature/example
+kesh tree new feature/example --from main
+kesh tree destroy feature/example --force
+kesh tree merge feature/example -y
+```
+
+Headless commands run worktree setup (files, environment, ports, and
+`post_create` hooks) but ignore `panes`. Destructive commands perform safety
+checks first; `destroy --force` allows destroying dirty or unmerged worktrees,
+while `merge --force` permits forced cleanup after a successful merge. Use
+`--json` for strict machine-readable output. Destructive JSON commands also
+require `-y` or `--yes`.
+
 ### Agents
 
 Run `kesh agents` to list active Claude, Codex, and pi windows. Press `enter`

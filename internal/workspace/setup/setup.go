@@ -62,21 +62,46 @@ func (fn ShellRunnerFunc) RunShell(ctx context.Context, command string, cwd stri
 type DefaultShellRunner struct{}
 
 func (DefaultShellRunner) RunShell(ctx context.Context, command string, cwd string, inherit bool) run.Result {
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
-	cmd.Dir = cwd
 	if inherit {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Stdin = os.Stdin
-		err := cmd.Run()
-		return shellResult(err, "", "")
+		return StreamShellRunner{}.RunShell(ctx, command, cwd, true)
 	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.Dir = cwd
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	return shellResult(err, stdout.String(), stderr.String())
+}
+
+// StreamShellRunner runs post-create commands while allowing callers to choose
+// where inherited command output is written. It is used by headless commands
+// so machine-readable stdout is not polluted by setup hooks.
+type StreamShellRunner struct {
+	Stdout io.Writer
+	Stderr io.Writer
+	Stdin  io.Reader
+}
+
+func (runner StreamShellRunner) RunShell(ctx context.Context, command string, cwd string, inherit bool) run.Result {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd.Dir = cwd
+	if runner.Stdout == nil {
+		runner.Stdout = os.Stdout
+	}
+	if runner.Stderr == nil {
+		runner.Stderr = os.Stderr
+	}
+	cmd.Stdout = runner.Stdout
+	cmd.Stderr = runner.Stderr
+	if runner.Stdin != nil {
+		cmd.Stdin = runner.Stdin
+	} else if inherit {
+		cmd.Stdin = os.Stdin
+	}
+	err := cmd.Run()
+	return shellResult(err, "", "")
 }
 
 func NewPlan(repoRoot string, worktreePath string, workspaceName string, branch string, files config.Files, hooks config.Hooks, randomizePorts []config.RandomizePort, setEnv []config.SetEnv, preserveRandomPorts bool, context Context) Plan {

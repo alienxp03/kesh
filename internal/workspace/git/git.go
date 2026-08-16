@@ -119,6 +119,82 @@ func ListWorktrees(ctx context.Context, cwd string, runner run.Runner) (Worktree
 	return WorktreeList{CurrentPath: repoRoot, Worktrees: worktrees}, nil
 }
 
+// MainWorktreePath returns the primary checkout listed by Git. Git lists the
+// primary worktree first, including when cwd is itself a linked worktree.
+func MainWorktreePath(ctx context.Context, cwd string, runner run.Runner) (string, error) {
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	repoRoot, err := RepoRoot(ctx, cwd, runner)
+	if err != nil {
+		return "", err
+	}
+	worktrees, err := listWorktrees(ctx, repoRoot, runner)
+	if err != nil {
+		return "", err
+	}
+	if len(worktrees) == 0 || worktrees[0].Path == "" {
+		return "", fmt.Errorf("repository has no primary worktree: %s", repoRoot)
+	}
+	return worktrees[0].Path, nil
+}
+
+// CurrentBranch returns the branch checked out at cwd.
+func CurrentBranch(ctx context.Context, cwd string, runner run.Runner) (string, error) {
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	args := []string{"branch", "--show-current"}
+	result := runGit(ctx, runner, cwd, args, false)
+	if result.Err != nil || result.ExitCode != 0 {
+		return "", errors.New(run.FailureMessage("git", args, result))
+	}
+	branch := strings.TrimSpace(result.Stdout)
+	if branch == "" {
+		return "", fmt.Errorf("repository is in detached HEAD state: %s", cwd)
+	}
+	return branch, nil
+}
+
+// DefaultBranch resolves the repository's configured origin default branch,
+// falling back to a local main/master branch when origin/HEAD is unavailable.
+func DefaultBranch(ctx context.Context, repoRoot string, runner run.Runner) (string, error) {
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	args := []string{"symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"}
+	result := runGit(ctx, runner, repoRoot, args, true)
+	if result.ExitCode == 0 {
+		branch := strings.TrimPrefix(strings.TrimSpace(result.Stdout), "origin/")
+		if branch != "" {
+			return branch, nil
+		}
+	}
+	for _, branch := range []string{"main", "master"} {
+		exists, err := refExists(ctx, repoRoot, "refs/heads/"+branch, runner)
+		if err != nil {
+			return "", err
+		}
+		if exists {
+			return branch, nil
+		}
+	}
+	return "", fmt.Errorf("unable to determine default branch; expected origin/HEAD, main, or master")
+}
+
+// MergeBranch merges branch into the currently checked-out branch at repoRoot.
+func MergeBranch(ctx context.Context, repoRoot, branch string, runner run.Runner) error {
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	args := []string{"merge", "--", branch}
+	result := runGit(ctx, runner, repoRoot, args, false)
+	if result.Err != nil || result.ExitCode != 0 {
+		return errors.New(run.FailureMessage("git", args, result))
+	}
+	return nil
+}
+
 func CompleteSwitchBranches(ctx context.Context, cwd string, prefix string, runner run.Runner) ([]string, error) {
 	if runner == nil {
 		runner = run.DefaultRunner{}

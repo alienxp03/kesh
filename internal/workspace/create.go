@@ -55,6 +55,20 @@ type CreateOptions struct {
 	// Stdout and Stderr receive setup progress output; nil defaults to the
 	// process streams.
 	Stdout, Stderr io.Writer
+	// ShellRunner executes post-create hooks. Nil uses the default process
+	// runner; headless callers can provide a stream-aware runner.
+	ShellRunner setup.ShellRunner
+}
+
+// CreateResult describes a recipe-created worktree without coupling callers to
+// the Kitty layout implementation.
+type CreateResult struct {
+	Branch        string
+	WorkspaceName string
+	RepoRoot      string
+	WorktreePath  string
+	WorkspacePath string
+	ConfigPath    string
 }
 
 // Load finds and parses the .kesh.yaml between cwd and its Git root. It returns
@@ -90,29 +104,60 @@ func Load(cwd string, runner run.Runner) (*Config, string, error) {
 // add to zoxide, and open the assembled Kitty session. Mode is "single",
 // "all", or "selected"; selectedNames is honored only for "selected".
 func Create(ctx context.Context, opts CreateOptions) error {
+	opts, selection, worktrees, err := prepareCreate(ctx, opts, false)
+	if err != nil {
+		return err
+	}
+	return openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), "", kittyWindows(worktrees), opts.Env, opts.Runner)
+}
+
+// CreateHeadless creates and prepares the first workspace from .kesh.yaml
+// without opening Kitty or rendering panes. It is the agent-facing equivalent
+// of Create and intentionally shares the same worktree/setup pipeline.
+func CreateHeadless(ctx context.Context, opts CreateOptions) (CreateResult, error) {
+	opts.Mode = ModeSingle
+	opts.Selected = nil
+	opts, selection, worktrees, err := prepareCreate(ctx, opts, true)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	if len(worktrees) != 1 {
+		return CreateResult{}, fmt.Errorf("headless worktree creation requires exactly one workspace")
+	}
+	worktree := worktrees[0]
+	return CreateResult{
+		Branch:        worktree.Worktree.Branch,
+		WorkspaceName: worktree.Spec.Name,
+		RepoRoot:      worktree.Worktree.RepoRoot,
+		WorktreePath:  worktree.Worktree.WorktreePath,
+		WorkspacePath: workspacePath(worktree.Spec, worktree.Worktree.WorktreePath),
+		ConfigPath:    selection.ConfigPath,
+	}, nil
+}
+
+func prepareCreate(ctx context.Context, opts CreateOptions, requireConfig bool) (CreateOptions, selection, []worktreeWithSpec, error) {
 	if opts.Runner == nil {
 		opts.Runner = run.DefaultRunner{}
 	}
-	stdout, stderr, env := normalizeIO(opts.Stdout, opts.Stderr, opts.Env)
-	opts.Env = env
+	opts.Stdout, opts.Stderr, opts.Env = normalizeIO(opts.Stdout, opts.Stderr, opts.Env)
 
-	allWorkspaces := opts.Mode == "all"
+	allWorkspaces := opts.Mode == ModeAll
 	var selectedNames []string
-	if opts.Mode == "selected" {
+	if opts.Mode == ModeSelected {
 		selectedNames = opts.Selected
 	}
 
-	selection, err := resolveSelection(ctx, opts, allWorkspaces, selectedNames)
+	selection, err := resolveSelection(ctx, opts, allWorkspaces, selectedNames, requireConfig)
 	if err != nil {
-		return err
+		return opts, selection, nil, err
 	}
 
 	worktrees, err := createWorktrees(ctx, selection, opts)
 	if err != nil {
-		return err
+		return opts, selection, nil, err
 	}
-	if err := runSetup(ctx, selection, worktrees, stdout, stderr); err != nil {
-		return err
+	if err := runSetup(ctx, selection, worktrees, opts.Stdout, opts.Stderr, opts.ShellRunner); err != nil {
+		return opts, selection, nil, err
 	}
 
 	pathsToAdd := make([]string, 0, len(worktrees))
@@ -120,8 +165,7 @@ func Create(ctx context.Context, opts CreateOptions) error {
 		pathsToAdd = append(pathsToAdd, workspacePath(wt.Spec, wt.Worktree.WorktreePath))
 	}
 	addToZoxide(ctx, pathsToAdd, opts.Runner)
-
-	return openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), "", kittyWindows(worktrees), opts.Env, opts.Runner)
+	return opts, selection, worktrees, nil
 }
 
 // Mode values for CreateOptions.Mode.
@@ -157,7 +201,7 @@ type worktreeWithSpec struct {
 
 // resolveSelection mirrors wktree's resolveWorkspaceSelection: locate
 // .kesh.yaml, pick workspaces per mode, resolve each repo root, and dedupe.
-func resolveSelection(ctx context.Context, opts CreateOptions, allWorkspaces bool, selectedNames []string) (selection, error) {
+func resolveSelection(ctx context.Context, opts CreateOptions, allWorkspaces bool, selectedNames []string, requireConfig bool) (selection, error) {
 	runner := opts.Runner
 	configRepoRoot, err := git.RepoRoot(ctx, opts.Cwd, runner)
 	if err != nil {
@@ -171,9 +215,12 @@ func resolveSelection(ctx context.Context, opts CreateOptions, allWorkspaces boo
 	if err != nil {
 		return selection{}, err
 	}
-	configPath, _, err := config.FindProjectPath(opts.Cwd, configRepoRoot)
+	configPath, configFound, err := config.FindProjectPath(opts.Cwd, configRepoRoot)
 	if err != nil {
 		return selection{}, err
+	}
+	if requireConfig && !configFound {
+		return selection{}, fmt.Errorf("no .kesh.yaml found; run `kesh init` first")
 	}
 	projectConfig, err := config.LoadProjectFile(configPath, homeDir)
 	if err != nil {
@@ -181,6 +228,9 @@ func resolveSelection(ctx context.Context, opts CreateOptions, allWorkspaces boo
 	}
 	configDir := filepath.Dir(configPath)
 	if len(projectConfig.Workspaces) == 0 {
+		if requireConfig {
+			return selection{}, fmt.Errorf(".kesh.yaml has no workspaces")
+		}
 		projectConfig.Workspaces = []config.Workspace{{Name: defaultWorkspaceName(configRepoRoot, configRepoSlug, configDir)}}
 	}
 
@@ -274,7 +324,7 @@ func createWorktrees(ctx context.Context, sel selection, opts CreateOptions) ([]
 // runSetup executes the copy/symlink, port-randomization, set_env, context-env,
 // and post_create pipeline. Failures are surfaced as an error containing the
 // captured stderr so the caller can report what went wrong.
-func runSetup(ctx context.Context, sel selection, worktrees []worktreeWithSpec, stdout io.Writer, stderr io.Writer) error {
+func runSetup(ctx context.Context, sel selection, worktrees []worktreeWithSpec, stdout io.Writer, stderr io.Writer, shellRunner setup.ShellRunner) error {
 	contexts := workspaceContexts(worktrees)
 	baseLogger := setup.Logger{Stdout: stdout, Stderr: stderr}
 	var problems []string
@@ -301,7 +351,7 @@ func runSetup(ctx context.Context, sel selection, worktrees []worktreeWithSpec, 
 		if status := setup.WriteContextEnvLogged(plan, logger); status != 0 {
 			problems = append(problems, fmt.Sprintf("%s: context env failed", wt.Spec.Name))
 		}
-		if status := setup.RunPostCreate(ctx, plan, logger, nil); status != 0 {
+		if status := setup.RunPostCreate(ctx, plan, logger, shellRunner); status != 0 {
 			problems = append(problems, fmt.Sprintf("%s: post_create failed", wt.Spec.Name))
 		}
 	}

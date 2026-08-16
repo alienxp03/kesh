@@ -59,7 +59,7 @@ func Open(ctx context.Context, opts OpenOptions) error {
 		selectedNames = opts.Selected
 	}
 
-	sel, err := resolveSelection(ctx, openSelectionOpts(opts), allWorkspaces, selectedNames)
+	sel, err := resolveSelection(ctx, openSelectionOpts(opts), allWorkspaces, selectedNames, false)
 	if err != nil {
 		return err
 	}
