@@ -531,6 +531,7 @@ type model struct {
 	height                   int
 	helpScroll               int
 	pendingG                 bool
+	escapePending            bool
 	err                      error
 	kitty                    string
 	zoxide                   string

@@ -3285,6 +3285,19 @@ func TestSearchEnterOpensHighlightedResult(t *testing.T) {
 	}
 }
 
+func TestDoubleEscQuitsAfterLeavingSearch(t *testing.T) {
+	m := model{modeState: modeState{mode: modeSearch, searchMode: &searchMode{}}}
+	updated, command := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(model)
+	if m.mode != modeNormal || command != nil {
+		t.Fatalf("first Esc did not return to normal mode: mode=%d command=%v", m.mode, command != nil)
+	}
+	_, command = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if command == nil {
+		t.Fatal("second consecutive Esc did not quit")
+	}
+}
+
 func TestSlashSearchReturnsToCommandsForSelectionAndCreation(t *testing.T) {
 	m := model{entries: []entry{
 		{key: "/projects/java", name: "java", kind: "project"},
@@ -3316,10 +3329,12 @@ func TestSlashSearchReturnsToCommandsForSelectionAndCreation(t *testing.T) {
 	if m.mode == modeSearch || m.query != "j" {
 		t.Fatalf("esc did not retain the filter in command mode: searching=%v query=%q", m.mode == modeSearch, m.query)
 	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m = updated.(model)
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(model)
 	if cmd != nil {
-		t.Fatal("esc in command mode should not close Kesh")
+		t.Fatal("Esc after another command should not close Kesh")
 	}
 
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})

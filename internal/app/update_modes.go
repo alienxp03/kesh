@@ -552,6 +552,7 @@ func (m model) updateSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.cancelMode()
+		m.escapePending = true
 	case "enter":
 		m.cancelMode()
 		return m.openSelected()
