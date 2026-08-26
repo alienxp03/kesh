@@ -136,7 +136,7 @@ func (m model) View() string {
 
 	footer := m.footerView(workspaceWidth, hasSelectedPR)
 	if m.mode == modeSearch {
-		footer = dimStyle.Render("type to filter  ctrl+j/k move  backspace delete  ctrl+u clear  enter open  esc command mode  esc esc quit")
+		footer = dimStyle.Render("type to filter  ctrl+j/k move  backspace delete  ctrl+u clear  enter open  esc command mode")
 	}
 	if m.saving {
 		footer = dimStyle.Render("Saving workspace…")

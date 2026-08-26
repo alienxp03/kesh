@@ -9,9 +9,6 @@ import (
 
 func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	if key != "esc" {
-		m.escapePending = false
-	}
 	if m.pendingG {
 		m.pendingG = false
 		if key == "g" {
@@ -28,11 +25,8 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case "esc":
-		if m.escapePending {
-			return m, tea.Quit
-		}
-		// Escape returns to command mode from transient modes. A second,
-		// consecutive Escape quits after leaving search mode.
+		// Escape returns to command mode from transient modes; once there,
+		// it is intentionally a no-op so a repeated key cannot close Kesh.
 		if m.filter == filterWorktrees {
 			// Worktree rows are not selectable; discard any main-list selection
 			// before returning so it cannot affect subsequent bulk actions.
