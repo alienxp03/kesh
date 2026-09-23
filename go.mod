@@ -1,6 +1,8 @@
 module github.com/alienxp03/kesh
 
-go 1.26.5
+go 1.26.0
+
+toolchain go1.26.5
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
