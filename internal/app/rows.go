@@ -381,6 +381,9 @@ func (m *model) rebuildAgentRows() {
 		sort.SliceStable(rows, func(i, j int) bool {
 			a := m.entries[rows[i].entryIndex].tabs[rows[i].tabIndex].windows[rows[i].windowIndex]
 			b := m.entries[rows[j].entryIndex].tabs[rows[j].tabIndex].windows[rows[j].windowIndex]
+			if agentStatusPriority(a.agentStatus) != agentStatusPriority(b.agentStatus) {
+				return agentStatusPriority(a.agentStatus) > agentStatusPriority(b.agentStatus)
+			}
 			return a.lastFocused > b.lastFocused
 		})
 	}

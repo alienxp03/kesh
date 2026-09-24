@@ -45,6 +45,74 @@ func TestInstallPiIsIdempotentAndRemovable(t *testing.T) {
 	}
 }
 
+func TestPiExtensionIgnoresHeadlessSubagents(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	directory := t.TempDir()
+	extension := filepath.Join(directory, "kesh-status.ts")
+	if err := os.WriteFile(extension, piExtension, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	probe := filepath.Join(directory, "probe.mjs")
+	script := `
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const { default: install } = await import(pathToFileURL(process.argv[2]).href);
+const file = join(process.env.XDG_STATE_HOME, "kesh", "agent-status", "pi-42.json");
+function session(mode) {
+  const handlers = new Map();
+  const events = new Map();
+  install({
+    on(event, callback) { handlers.set(event, callback); },
+    events: { on(event, callback) { events.set(event, callback); } },
+  });
+  const ctx = { mode, sessionManager: { getSessionId: () => mode } };
+  return async (event, payload = {}) => event === "subagents"
+    ? events.get("kesh:subagents")?.(payload)
+    : handlers.get(event)?.(payload, ctx);
+}
+async function status() { try { return JSON.parse(await readFile(file, "utf8")); } catch { return null; } }
+async function waitStatus(expected) {
+  for (let i = 0; i < 100; i++) {
+    if ((await status())?.status === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal((await status())?.status, expected);
+}
+const child = session("print");
+await child("session_start");
+await child("agent_start");
+assert.equal(await status(), null);
+const parent = session("tui");
+await parent("session_start");
+await parent("agent_start");
+assert.equal((await status()).status, "working");
+await parent("subagents", { running: 1 });
+await child("agent_settled");
+await child("session_shutdown");
+assert.equal((await status()).status, "working");
+await parent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+await parent("agent_settled");
+assert.equal((await status()).status, "working", "child keeps status working after parent settles");
+await parent("subagents", { running: 0 });
+await waitStatus("finished");
+await parent("session_shutdown");
+assert.equal(await status(), null);
+`
+	if err := os.WriteFile(probe, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(node, "--no-warnings", probe, extension)
+	command.Env = append(os.Environ(), "KITTY_WINDOW_ID=42", "XDG_STATE_HOME="+directory)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("Pi extension status probe: %v\n%s", err, output)
+	}
+}
+
 func TestPiAgentDirectoryHonorsEnvironmentAndHome(t *testing.T) {
 	t.Setenv("HOME", "/home/stan")
 	t.Setenv("PI_CODING_AGENT_DIR", "~/custom-pi")

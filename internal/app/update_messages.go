@@ -175,7 +175,21 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, fetchAgentStatuses(m.agentStatusDir)
 	case agentStatusMsg:
 		if msg.err == nil {
+			selectedWindowID := 0
+			if m.filter == filterAgents && m.hasSelectedAgentWindow() {
+				selected := m.rows[m.cursor]
+				selectedWindowID = m.entries[selected.entryIndex].tabs[selected.tabIndex].windows[selected.windowIndex].id
+			}
 			m.applyAgentStatuses(msg.statuses)
+			if m.filter == filterAgents {
+				m.rebuildRows()
+				for index, row := range m.rows {
+					if m.entries[row.entryIndex].tabs[row.tabIndex].windows[row.windowIndex].id == selectedWindowID {
+						m.cursor = index
+						break
+					}
+				}
+			}
 		}
 		return m, tea.Batch(queueAgentStatusRefresh(), m.queueAgentSpinner())
 	case agentSpinnerTickMsg:

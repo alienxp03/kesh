@@ -94,8 +94,6 @@ func Run(args []string) error {
 		worktreeFilterEntryIndex: -1,
 		zoxideCtx:                zoxideCtx, zoxidePending: zoxide != "",
 	}
-	// Start with the search input focused so typing immediately filters the list.
-	m.activateMode(modeSearch)
 	if records, statusErr := agentstatus.ReadDirectory(agentStatusDir); statusErr == nil {
 		statuses := make(map[int]agentLifecycleStatus, len(records))
 		for windowID, record := range records {
