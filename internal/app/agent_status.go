@@ -14,7 +14,17 @@ func fetchAgentStatuses(directory string) tea.Cmd {
 		records, err := agentstatus.ReadDirectory(directory)
 		statuses := make(map[int]agentLifecycleStatus, len(records))
 		for windowID, record := range records {
-			statuses[windowID] = agentLifecycleStatus{tool: record.Tool, status: record.Status}
+			lastDoneAt := record.LastDoneAt
+			// Records written by older integrations can still represent a
+			// completed turn through their status and updatedAt fields.
+			if lastDoneAt == nil && (record.Status == "finished" || record.Status == "errored") && !record.UpdatedAt.IsZero() {
+				lastDoneAt = &record.UpdatedAt
+			}
+			statuses[windowID] = agentLifecycleStatus{
+				tool:       record.Tool,
+				status:     record.Status,
+				lastDoneAt: lastDoneAt,
+			}
 		}
 		return agentStatusMsg{statuses: statuses, err: err}
 	}
@@ -55,9 +65,11 @@ func (m *model) applyAgentStatuses(statuses map[int]agentLifecycleStatus) {
 			for windowIndex := range m.entries[entryIndex].tabs[tabIndex].windows {
 				window := &m.entries[entryIndex].tabs[tabIndex].windows[windowIndex]
 				window.agentStatus = ""
+				window.lastDoneAt = nil
 				status := statuses[window.id]
 				if agentStatusTool(window.agent) == status.tool {
 					window.agentStatus = status.status
+					window.lastDoneAt = status.lastDoneAt
 				}
 			}
 		}

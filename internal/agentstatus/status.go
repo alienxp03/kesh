@@ -23,13 +23,14 @@ const (
 var piExtension []byte
 
 type Record struct {
-	Version   int       `json:"version"`
-	Tool      string    `json:"tool"`
-	WindowID  int       `json:"windowId"`
-	PID       int       `json:"pid"`
-	SessionID string    `json:"sessionId"`
-	Status    string    `json:"status"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Version    int        `json:"version"`
+	Tool       string     `json:"tool"`
+	WindowID   int        `json:"windowId"`
+	PID        int        `json:"pid"`
+	SessionID  string     `json:"sessionId"`
+	Status     string     `json:"status"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+	LastDoneAt *time.Time `json:"lastDoneAt,omitempty"`
 }
 
 func PiAgentDirectory() string {
@@ -148,6 +149,10 @@ func Acknowledge(directory, tool string, windowID int) error {
 	}
 	if record.Status != "finished" && record.Status != "errored" {
 		return nil
+	}
+	if record.LastDoneAt == nil && !record.UpdatedAt.IsZero() {
+		doneAt := record.UpdatedAt
+		record.LastDoneAt = &doneAt
 	}
 	record.Status = "idle"
 	record.UpdatedAt = time.Now().UTC()

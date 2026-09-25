@@ -24,6 +24,7 @@ type windowItem struct {
 	fullCommand string
 	agent       string
 	agentStatus string
+	lastDoneAt  *time.Time
 	lastFocused float64
 	pathPR      pathPRInfo
 }
@@ -188,8 +189,9 @@ type agentStatusTickMsg struct{}
 type agentSpinnerTickMsg struct{}
 
 type agentLifecycleStatus struct {
-	tool   string
-	status string
+	tool       string
+	status     string
+	lastDoneAt *time.Time
 }
 
 type agentStatusMsg struct {

@@ -41,6 +41,17 @@ def main() -> None:
         return
 
     status_file.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    last_done_at = None
+    try:
+        current = json.loads(status_file.read_text(encoding="utf-8"))
+        last_done_at = current.get("lastDoneAt")
+        if not last_done_at and current.get("status") in {"finished", "errored"}:
+            last_done_at = current.get("updatedAt")
+    except (OSError, json.JSONDecodeError):
+        pass
+    updated_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    if status in {"finished", "errored"}:
+        last_done_at = updated_at
     record = {
         "version": VERSION,
         "tool": tool,
@@ -48,8 +59,10 @@ def main() -> None:
         "pid": os.getppid(),
         "sessionId": session_id,
         "status": status,
-        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "updatedAt": updated_at,
     }
+    if last_done_at:
+        record["lastDoneAt"] = last_done_at
     temporary = status_file.with_name(f".{status_file.name}.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(record, separators=(",", ":")) + "\n", encoding="utf-8")
     temporary.chmod(0o600)

@@ -350,6 +350,7 @@ func cleanPreview(content string) string {
 }
 
 func (m *model) rebuildAgentRows() {
+	selectedWindowID, selected := m.selectedAgentWindowID()
 	rows := make([]row, 0)
 	searchValues := make([]string, 0)
 	seen := map[int]bool{}
@@ -381,12 +382,52 @@ func (m *model) rebuildAgentRows() {
 		sort.SliceStable(rows, func(i, j int) bool {
 			a := m.entries[rows[i].entryIndex].tabs[rows[i].tabIndex].windows[rows[i].windowIndex]
 			b := m.entries[rows[j].entryIndex].tabs[rows[j].tabIndex].windows[rows[j].windowIndex]
+			aPriority := agentStatusPriority(a.agentStatus)
+			bPriority := agentStatusPriority(b.agentStatus)
+			if aPriority != bPriority {
+				return aPriority < bPriority
+			}
 			return a.lastFocused > b.lastFocused
 		})
 	}
 	m.rows = rows
+	if selected {
+		for index, item := range rows {
+			window := m.entries[item.entryIndex].tabs[item.tabIndex].windows[item.windowIndex]
+			if window.id == selectedWindowID {
+				m.cursor = index
+				return
+			}
+		}
+	}
 	if m.cursor >= len(rows) {
 		m.cursor = max(0, len(rows)-1)
+	}
+}
+
+func (m model) selectedAgentWindowID() (int, bool) {
+	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		return 0, false
+	}
+	item := m.rows[m.cursor]
+	if item.windowIndex < 0 || item.entryIndex < 0 || item.entryIndex >= len(m.entries) {
+		return 0, false
+	}
+	entry := m.entries[item.entryIndex]
+	if item.tabIndex < 0 || item.tabIndex >= len(entry.tabs) || item.windowIndex >= len(entry.tabs[item.tabIndex].windows) {
+		return 0, false
+	}
+	return entry.tabs[item.tabIndex].windows[item.windowIndex].id, true
+}
+
+func agentStatusPriority(status string) int {
+	switch status {
+	case "working":
+		return 0
+	case "finished", "errored":
+		return 1
+	default:
+		return 2
 	}
 }
 

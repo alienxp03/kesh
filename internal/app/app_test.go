@@ -241,22 +241,20 @@ func TestHasNamedKittySession(t *testing.T) {
 	}
 }
 
-func TestRelativeLastActive(t *testing.T) {
-	const reference = 1_000_000.0
+func TestRelativeAge(t *testing.T) {
 	for _, test := range []struct {
 		name    string
-		focused float64
+		elapsed time.Duration
 		want    string
 	}{
-		{name: "unknown", want: "unknown"},
-		{name: "just now", focused: reference - 30, want: "just now"},
-		{name: "minutes", focused: reference - 60, want: "1m ago"},
-		{name: "hours", focused: reference - 2*60*60, want: "2h ago"},
-		{name: "days", focused: reference - 3*24*60*60, want: "3d ago"},
+		{name: "just now", elapsed: 30 * time.Second, want: "just now"},
+		{name: "minutes", elapsed: time.Minute, want: "1m ago"},
+		{name: "hours", elapsed: 2 * time.Hour, want: "2h ago"},
+		{name: "days", elapsed: 3 * 24 * time.Hour, want: "3d ago"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := relativeLastActive(test.focused, reference); got != test.want {
-				t.Fatalf("relativeLastActive() = %q, want %q", got, test.want)
+			if got := relativeAge(test.elapsed); got != test.want {
+				t.Fatalf("relativeAge() = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -1643,6 +1641,72 @@ func TestAgentRowsAreFlatSearchableAndMostRecentFirst(t *testing.T) {
 	got := m.entries[m.rows[0].entryIndex].tabs[m.rows[0].tabIndex].windows[m.rows[0].windowIndex]
 	if got.id != 11 {
 		t.Errorf("project search selected window %d, want 11", got.id)
+	}
+}
+
+func TestAgentRowsPrioritizeWorkingAgents(t *testing.T) {
+	m := model{
+		filter: filterAgents,
+		entries: []entry{{
+			name: "agents",
+			tabs: []tabItem{{windows: []windowItem{
+				{id: 1, agent: "pi", agentStatus: "idle", lastFocused: 100},
+				{id: 2, agent: "pi", agentStatus: "working", lastFocused: 10},
+				{id: 3, agent: "pi", agentStatus: "finished", lastFocused: 300},
+			}}},
+		}},
+	}
+	m.rebuildRows()
+
+	got := make([]int, len(m.rows))
+	for index, item := range m.rows {
+		got[index] = m.entries[item.entryIndex].tabs[item.tabIndex].windows[item.windowIndex].id
+	}
+	want := []int{2, 3, 1}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("agent row order = %v, want %v", got, want)
+	}
+}
+
+func TestAgentStatusRefreshReordersAndPreservesSelection(t *testing.T) {
+	m := model{
+		filter: filterAgents,
+		entries: []entry{{
+			name: "agents",
+			tabs: []tabItem{{windows: []windowItem{
+				{id: 1, agent: "pi", agentStatus: "idle", lastFocused: 100},
+				{id: 2, agent: "pi", agentStatus: "idle", lastFocused: 10},
+			}}},
+		}},
+	}
+	m.rebuildRows()
+	if m.rows[0].windowIndex != 0 {
+		t.Fatalf("initial selected window = %d, want 0", m.rows[0].windowIndex)
+	}
+
+	updated, _ := m.Update(agentStatusMsg{statuses: map[int]agentLifecycleStatus{
+		1: {tool: "pi", status: "idle"},
+		2: {tool: "pi", status: "working"},
+	}})
+	m = updated.(model)
+	if got := m.entries[0].tabs[0].windows[1].agentStatus; got != "working" {
+		t.Fatalf("working status = %q, want working", got)
+	}
+	if got := m.entries[0].tabs[0].windows[m.rows[0].windowIndex].id; got != 2 {
+		t.Fatalf("first agent row = %d, want 2", got)
+	}
+	if got := m.entries[0].tabs[0].windows[m.rows[m.cursor].windowIndex].id; got != 1 {
+		t.Fatalf("selected agent = %d, want 1", got)
+	}
+}
+
+func TestAgentRowShowsLastDoneAge(t *testing.T) {
+	doneAt := time.Now().Add(-2 * time.Minute)
+	line := ansi.Strip((model{}).renderAgentRow(entry{}, tabItem{}, windowItem{
+		agent: "pi", title: "review", lastDoneAt: &doneAt,
+	}, 60))
+	if !strings.Contains(line, "pi · done 2m") {
+		t.Fatalf("agent row = %q, want last done age", line)
 	}
 }
 

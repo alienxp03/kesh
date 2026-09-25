@@ -176,6 +176,9 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentStatusMsg:
 		if msg.err == nil {
 			m.applyAgentStatuses(msg.statuses)
+			if m.filter == filterAgents {
+				m.rebuildRows()
+			}
 		}
 		return m, tea.Batch(queueAgentStatusRefresh(), m.queueAgentSpinner())
 	case agentSpinnerTickMsg:

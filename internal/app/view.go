@@ -585,12 +585,12 @@ func (m model) detailPanelView(width, height int, compact bool) string {
 			}
 			fields = append(fields,
 				detailField{label: "Project", value: entry.name},
-				detailField{label: "Last active", value: relativeLastActive(window.lastFocused, m.lastFocusedReference())},
+				detailField{label: "Last done", value: relativeLastDone(window.lastDoneAt)},
 				detailField{label: "Path", value: displayPath(window.cwd, os.Getenv("HOME")), middle: true},
 			)
 			if window.pathPR.PullRequest.Number > 0 {
 				for index := range fields {
-					if fields[index].label == "Last active" {
+					if fields[index].label == "Last done" {
 						fields[index] = detailField{label: "PR", value: pathPRSummary(window.pathPR)}
 						break
 					}
@@ -1013,7 +1013,7 @@ func (m model) renderAgentRow(e entry, tab tabItem, window windowItem, width int
 	if title == "" {
 		title = tab.title
 	}
-	metadata := agentLabel(window.agent) + " · " + compactLastActive(window.lastFocused, m.lastFocusedReference())
+	metadata := agentLabel(window.agent) + " · done " + compactDoneAge(window.lastDoneAt)
 	right := dimStyle.Render(metadata)
 
 	nameWidth := max(8, width-lipgloss.Width(prefix)-lipgloss.Width(right)-2)
@@ -1022,26 +1022,24 @@ func (m model) renderAgentRow(e entry, tab tabItem, window windowItem, width int
 	return ansi.Truncate(left+strings.Repeat(" ", gap)+right, width, "…")
 }
 
-// Kitty reports last_focused_at as seconds since Kitty started, not a Unix
-// timestamp. The most recently focused window is therefore our best available
-// reference point when the picker opens.
-func (m model) lastFocusedReference() float64 {
-	var latest float64
-	for _, entry := range m.entries {
-		for _, tab := range entry.tabs {
-			for _, window := range tab.windows {
-				latest = max(latest, window.lastFocused)
-			}
-		}
-	}
-	return latest
-}
-
-func compactLastActive(lastFocused, reference float64) string {
-	if lastFocused <= 0 || reference <= 0 {
+func compactDoneAge(lastDoneAt *time.Time) string {
+	if lastDoneAt == nil || lastDoneAt.IsZero() {
 		return "?"
 	}
-	elapsed := time.Duration(max(0, reference-lastFocused) * float64(time.Second))
+	return compactAge(time.Since(lastDoneAt.UTC()))
+}
+
+func relativeLastDone(lastDoneAt *time.Time) string {
+	if lastDoneAt == nil || lastDoneAt.IsZero() {
+		return "unknown"
+	}
+	return relativeAge(time.Since(lastDoneAt.UTC()))
+}
+
+func compactAge(elapsed time.Duration) string {
+	if elapsed < 0 {
+		elapsed = 0
+	}
 	if elapsed < time.Minute {
 		return "now"
 	}
@@ -1054,11 +1052,10 @@ func compactLastActive(lastFocused, reference float64) string {
 	return fmt.Sprintf("%dd", int(elapsed/(24*time.Hour)))
 }
 
-func relativeLastActive(lastFocused, reference float64) string {
-	if lastFocused <= 0 || reference <= 0 {
-		return "unknown"
+func relativeAge(elapsed time.Duration) string {
+	if elapsed < 0 {
+		elapsed = 0
 	}
-	elapsed := time.Duration(max(0, reference-lastFocused) * float64(time.Second))
 	if elapsed < time.Minute {
 		return "just now"
 	}

@@ -59,9 +59,10 @@ func TestPiAgentDirectoryHonorsEnvironmentAndHome(t *testing.T) {
 
 func TestReadDirectoryAndAcknowledge(t *testing.T) {
 	directory := t.TempDir()
+	finishedAt := time.Now().UTC()
 	record := Record{
 		Version: CurrentVersion, Tool: "pi", WindowID: 42, PID: 123,
-		SessionID: "session", Status: "finished", UpdatedAt: time.Now().UTC(),
+		SessionID: "session", Status: "finished", UpdatedAt: finishedAt,
 	}
 	content, err := json.Marshal(record)
 	if err != nil {
@@ -82,7 +83,7 @@ func TestReadDirectoryAndAcknowledge(t *testing.T) {
 		t.Fatal(err)
 	}
 	records, err = ReadDirectory(directory)
-	if err != nil || records[42].Status != "idle" {
+	if err != nil || records[42].Status != "idle" || records[42].LastDoneAt == nil || !records[42].LastDoneAt.Equal(finishedAt) {
 		t.Fatalf("acknowledged records = %#v, %v", records, err)
 	}
 }
@@ -189,12 +190,22 @@ func TestAgentHookWritesAndRemovesLifecycleStatus(t *testing.T) {
 		t.Fatalf("working status = %#v, %v", records, err)
 	}
 	runHook("finished")
+	records, err = ReadDirectory(filepath.Join(stateHome, "kesh", "agent-status"))
+	if err != nil || records[42].Status != "finished" || records[42].LastDoneAt == nil {
+		t.Fatalf("finished status = %#v, %v", records, err)
+	}
+	doneAt := *records[42].LastDoneAt
 	if err := Acknowledge(filepath.Join(stateHome, "kesh", "agent-status"), "codex", 42); err != nil {
 		t.Fatal(err)
 	}
 	records, err = ReadDirectory(filepath.Join(stateHome, "kesh", "agent-status"))
-	if err != nil || records[42].Status != "idle" {
+	if err != nil || records[42].Status != "idle" || records[42].LastDoneAt == nil || !records[42].LastDoneAt.Equal(doneAt) {
 		t.Fatalf("acknowledged status = %#v, %v", records, err)
+	}
+	runHook("working")
+	records, err = ReadDirectory(filepath.Join(stateHome, "kesh", "agent-status"))
+	if err != nil || records[42].Status != "working" || records[42].LastDoneAt == nil || !records[42].LastDoneAt.Equal(doneAt) {
+		t.Fatalf("working status after completion = %#v, %v", records, err)
 	}
 	runHook("remove")
 	records, err = ReadDirectory(filepath.Join(stateHome, "kesh", "agent-status"))
