@@ -55,6 +55,29 @@ func Check(ctx context.Context, env map[string]string, runner run.Runner) error 
 	return nil
 }
 
+// OpenWindow opens a new Kitty window in the tab containing the current
+// Kitty window, using path as its initial working directory.
+func OpenWindow(ctx context.Context, path string, env map[string]string, runner run.Runner) error {
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	if strings.TrimSpace(path) == "" {
+		return errors.New("kitty window path must not be empty")
+	}
+	if err := Available(ctx, runner); err != nil {
+		return err
+	}
+	args := remoteArgs(env, "launch", "--type=window", "--cwd", path)
+	if windowID := strings.TrimSpace(env["KITTY_WINDOW_ID"]); windowID != "" {
+		args = append(args, "--match", "id:"+windowID)
+	}
+	result := runner.Run(ctx, "kitty", args, remoteRunOptions(env))
+	if result.Err != nil || result.ExitCode != 0 {
+		return errors.New(run.FailureMessage("kitty", args, result))
+	}
+	return nil
+}
+
 func OpenLayout(ctx context.Context, options layout.OpenOptions) (int, error) {
 	runner := options.Runner
 	if runner == nil {

@@ -111,28 +111,65 @@ func Create(ctx context.Context, opts CreateOptions) error {
 	return openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), "", kittyWindows(worktrees), opts.Env, opts.Runner)
 }
 
+// CreateAndOpen creates the first workspace from .kesh.yaml and opens its
+// layout in Kitty. It is the CLI equivalent of the interactive worktree flow.
+func CreateAndOpen(ctx context.Context, opts CreateOptions) (CreateResult, error) {
+	result, selection, worktrees, err := prepareSingleCreate(ctx, opts)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	if err := openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), "", kittyWindows(worktrees), opts.Env, opts.Runner); err != nil {
+		return CreateResult{}, err
+	}
+	return result, nil
+}
+
+// CreateAndOpenWindow creates the first workspace from .kesh.yaml and opens a
+// new Kitty window in the current tab, without loading a Kitty session.
+func CreateAndOpenWindow(ctx context.Context, opts CreateOptions) (CreateResult, error) {
+	result, _, worktrees, err := prepareSingleCreate(ctx, opts)
+	if err != nil {
+		return CreateResult{}, err
+	}
+	_, _, env := normalizeIO(nil, nil, opts.Env)
+	runner := opts.Runner
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	if err := kitty.OpenWindow(ctx, workspacePath(worktrees[0].Spec, worktrees[0].Worktree.WorktreePath), env, runner); err != nil {
+		return CreateResult{}, err
+	}
+	return result, nil
+}
+
 // CreateHeadless creates and prepares the first workspace from .kesh.yaml
 // without opening Kitty or rendering panes. It is the agent-facing equivalent
 // of Create and intentionally shares the same worktree/setup pipeline.
 func CreateHeadless(ctx context.Context, opts CreateOptions) (CreateResult, error) {
+	result, _, _, err := prepareSingleCreate(ctx, opts)
+	return result, err
+}
+
+func prepareSingleCreate(ctx context.Context, opts CreateOptions) (CreateResult, selection, []worktreeWithSpec, error) {
 	opts.Mode = ModeSingle
 	opts.Selected = nil
 	opts, selection, worktrees, err := prepareCreate(ctx, opts, true)
 	if err != nil {
-		return CreateResult{}, err
+		return CreateResult{}, selection, nil, err
 	}
 	if len(worktrees) != 1 {
-		return CreateResult{}, fmt.Errorf("headless worktree creation requires exactly one workspace")
+		return CreateResult{}, selection, nil, fmt.Errorf("single-workspace creation requires exactly one workspace")
 	}
 	worktree := worktrees[0]
-	return CreateResult{
+	result := CreateResult{
 		Branch:        worktree.Worktree.Branch,
 		WorkspaceName: worktree.Spec.Name,
 		RepoRoot:      worktree.Worktree.RepoRoot,
 		WorktreePath:  worktree.Worktree.WorktreePath,
 		WorkspacePath: workspacePath(worktree.Spec, worktree.Worktree.WorktreePath),
 		ConfigPath:    selection.ConfigPath,
-	}, nil
+	}
+	return result, selection, worktrees, nil
 }
 
 func prepareCreate(ctx context.Context, opts CreateOptions, requireConfig bool) (CreateOptions, selection, []worktreeWithSpec, error) {

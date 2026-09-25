@@ -164,6 +164,21 @@ func TestWriteSessionFileAtUsesRequestedPath(t *testing.T) {
 	}
 }
 
+func TestOpenWindowUsesCurrentKittyWindow(t *testing.T) {
+	runner := &kittyRunner{}
+	err := OpenWindow(context.Background(), "/tmp/feature", map[string]string{
+		"KITTY_LISTEN_ON": "unix:/tmp/kitty.sock",
+		"KITTY_WINDOW_ID": "24",
+	}, run.RunnerFunc(runner.run))
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertKittyCommands(t, runner.calls, []string{
+		"--version",
+		"@ --to unix:/tmp/kitty.sock launch --type=window --cwd /tmp/feature --match id:24",
+	})
+}
+
 func TestOpenLayoutUsesGotoSessionAndListenSocket(t *testing.T) {
 	runner := &kittyRunner{lsOutputs: []string{
 		"[]",

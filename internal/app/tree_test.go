@@ -23,14 +23,21 @@ func TestParseTreeCommand(t *testing.T) {
 		from      string
 		force     bool
 		yes       bool
+		session   bool
+		window    bool
 		json      bool
 		wantError bool
 	}{
 		{name: "new", args: []string{"new", "feature/x"}, operation: "new", branch: "feature/x"},
 		{name: "new from", args: []string{"new", "--from", "main", "feature/x", "--json"}, operation: "new", branch: "feature/x", from: "main", json: true},
+		{name: "new session", args: []string{"new", "feature/x", "--session", "--json"}, operation: "new", branch: "feature/x", session: true, json: true},
+		{name: "new session shortcut", args: []string{"new", "feature/x", "-s", "--json"}, operation: "new", branch: "feature/x", session: true, json: true},
+		{name: "new window", args: []string{"new", "feature/x", "--window", "--json"}, operation: "new", branch: "feature/x", window: true, json: true},
+		{name: "new window shortcut", args: []string{"new", "feature/x", "-w", "--json"}, operation: "new", branch: "feature/x", window: true, json: true},
 		{name: "destroy force yes", args: []string{"destroy", "feature/x", "--force", "-y", "--json"}, operation: "destroy", branch: "feature/x", force: true, yes: true, json: true},
 		{name: "merge", args: []string{"merge", "feature/x", "--yes"}, operation: "merge", branch: "feature/x", yes: true},
 		{name: "new rejects force", args: []string{"new", "feature/x", "--force"}, wantError: true},
+		{name: "new rejects both open modes", args: []string{"new", "feature/x", "--session", "--window"}, wantError: true},
 		{name: "destroy requires branch", args: []string{"destroy", "--force"}, wantError: true},
 		{name: "unknown command", args: []string{"switch", "feature/x"}, wantError: true},
 	}
@@ -43,10 +50,48 @@ func TestParseTreeCommand(t *testing.T) {
 			if err != nil {
 				return
 			}
-			if got.Operation != test.operation || got.Branch != test.branch || got.From != test.from || got.Force != test.force || got.Yes != test.yes || got.JSON != test.json {
+			if got.Operation != test.operation || got.Branch != test.branch || got.From != test.from || got.Force != test.force || got.Yes != test.yes || got.Session != test.session || got.Window != test.window || got.JSON != test.json {
 				t.Fatalf("parseTreeCommand(%q) = %#v", test.args, got)
 			}
 		})
+	}
+}
+
+func TestTreeNewSession(t *testing.T) {
+	repo := initTreeTestRepo(t, false)
+	t.Setenv("HOME", t.TempDir())
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	kittyCalls := 0
+	options := treeCommandOptions{Cwd: repo, Stdout: stdout, Stderr: stderr, Runner: treeTestRunner{kittyCalls: &kittyCalls}}
+
+	if err := runTreeCommandWithOptions([]string{"new", "feature/session", "--session", "--json"}, options); err != nil {
+		t.Fatal(err)
+	}
+	opened := decodeTreeResponse(t, stdout.Bytes())
+	if !opened.OK || !opened.Opened || opened.Operation != "new" || opened.Branch != "feature/session" {
+		t.Fatalf("open response = %#v", opened)
+	}
+	if kittyCalls == 0 {
+		t.Fatal("--session did not invoke Kitty")
+	}
+}
+
+func TestTreeNewWindow(t *testing.T) {
+	repo := initTreeTestRepo(t, false)
+	t.Setenv("HOME", t.TempDir())
+	stdout, stderr := &bytes.Buffer{}, &bytes.Buffer{}
+	kittyCalls := 0
+	options := treeCommandOptions{Cwd: repo, Stdout: stdout, Stderr: stderr, Runner: treeTestRunner{kittyCalls: &kittyCalls}}
+
+	if err := runTreeCommandWithOptions([]string{"new", "feature/window", "--window", "--json"}, options); err != nil {
+		t.Fatal(err)
+	}
+	opened := decodeTreeResponse(t, stdout.Bytes())
+	if !opened.OK || !opened.Opened || opened.Operation != "new" || opened.Branch != "feature/window" {
+		t.Fatalf("window response = %#v", opened)
+	}
+	if kittyCalls == 0 {
+		t.Fatal("--window did not invoke Kitty")
 	}
 }
 
@@ -205,11 +250,27 @@ func mustTreeOutput(t *testing.T, cwd string, args ...string) string {
 	return string(output)
 }
 
-type treeTestRunner struct{}
+type treeTestRunner struct {
+	kittyCalls *int
+}
 
-func (treeTestRunner) Run(ctx context.Context, command string, args []string, options run.Options) run.Result {
+func (r treeTestRunner) Run(ctx context.Context, command string, args []string, options run.Options) run.Result {
 	if command == "zoxide" {
 		return run.Result{ExitCode: 0, Stdout: "zoxide 0.0.0-test"}
+	}
+	if command == "kitty" {
+		if len(args) > 0 && args[0] == "@" {
+			if r.kittyCalls != nil {
+				(*r.kittyCalls)++
+			}
+			for _, arg := range args[1:] {
+				if arg == "ls" {
+					return run.Result{ExitCode: 0, Stdout: "[]"}
+				}
+			}
+			return run.Result{ExitCode: 0}
+		}
+		return run.Result{ExitCode: 0, Stdout: "kitty 0.0.0-test"}
 	}
 	return run.DefaultRunner{}.Run(ctx, command, args, options)
 }

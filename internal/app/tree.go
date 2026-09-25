@@ -32,6 +32,8 @@ type treeCommand struct {
 	From      string
 	Force     bool
 	Yes       bool
+	Session   bool
+	Window    bool
 	JSON      bool
 }
 
@@ -46,6 +48,7 @@ type treeResponse struct {
 	Worktree      string           `json:"worktree,omitempty"`
 	WorkspacePath string           `json:"workspace_path,omitempty"`
 	Destroyed     bool             `json:"destroyed,omitempty"`
+	Opened        bool             `json:"opened,omitempty"`
 	Merged        bool             `json:"merged,omitempty"`
 	Cancelled     bool             `json:"cancelled,omitempty"`
 	Error         *treeResponseErr `json:"error,omitempty"`
@@ -58,12 +61,13 @@ type treeResponseErr struct {
 const treeUsage = `usage: kesh tree <new|destroy|merge> ...
 
 Commands:
-  kesh tree new <branch> [--from <ref>] [--json]
+  kesh tree new <branch> [--from <ref>] [--session|-s|--window|-w] [--json]
   kesh tree destroy <branch> [--force] [-y|--yes] [--json]
   kesh tree merge <branch> [--force] [-y|--yes] [--json]
 
 All commands require .kesh.yaml and operate on its first workspace.
-Headless commands never open Kitty layouts or execute panes.
+Tree commands are headless by default. tree new --session opens a session
+layout; tree new --window opens a new Kitty window in the current tab.
 `
 
 func runTreeCommand(args []string) error {
@@ -171,6 +175,22 @@ func parseTreeCommand(args []string) (treeCommand, error) {
 				return command, fmt.Errorf("unknown option: %s", arg)
 			}
 			command.Force = true
+		case arg == "--session" || arg == "-s":
+			if command.Operation != "new" {
+				return command, fmt.Errorf("unknown option: %s", arg)
+			}
+			if command.Window {
+				return command, fmt.Errorf("--session and --window are mutually exclusive")
+			}
+			command.Session = true
+		case arg == "--window" || arg == "-w":
+			if command.Operation != "new" {
+				return command, fmt.Errorf("unknown option: %s", arg)
+			}
+			if command.Session {
+				return command, fmt.Errorf("--session and --window are mutually exclusive")
+			}
+			command.Window = true
 		case arg == "-y" || arg == "--yes":
 			if command.Operation == "new" {
 				return command, fmt.Errorf("unknown option: %s", arg)
@@ -211,7 +231,7 @@ func parseTreeCommand(args []string) (treeCommand, error) {
 
 func runTreeNew(ctx context.Context, command treeCommand, options treeCommandOptions) (treeResponse, error) {
 	shellRunner := setup.StreamShellRunner{Stdout: options.Stderr, Stderr: options.Stderr, Stdin: options.Stdin}
-	result, err := workspace.CreateHeadless(ctx, workspace.CreateOptions{
+	createOptions := workspace.CreateOptions{
 		Cwd:         options.Cwd,
 		Branch:      command.Branch,
 		From:        command.From,
@@ -220,12 +240,26 @@ func runTreeNew(ctx context.Context, command treeCommand, options treeCommandOpt
 		Stdout:      options.Stderr,
 		Stderr:      options.Stderr,
 		ShellRunner: shellRunner,
-	})
+	}
+	var result workspace.CreateResult
+	var err error
+	switch {
+	case command.Session:
+		result, err = workspace.CreateAndOpen(ctx, createOptions)
+	case command.Window:
+		result, err = workspace.CreateAndOpenWindow(ctx, createOptions)
+	default:
+		result, err = workspace.CreateHeadless(ctx, createOptions)
+	}
 	if err != nil {
 		return treeResponse{}, err
 	}
 	if !command.JSON {
-		fmt.Fprintf(options.Stdout, "created worktree: %s\n", result.WorkspacePath)
+		verb := "created"
+		if command.Session || command.Window {
+			verb = "created and opened"
+		}
+		fmt.Fprintf(options.Stdout, "%s worktree: %s\n", verb, result.WorkspacePath)
 	}
 	return treeResponse{
 		OK:            true,
@@ -236,6 +270,7 @@ func runTreeNew(ctx context.Context, command treeCommand, options treeCommandOpt
 		ConfigPath:    result.ConfigPath,
 		Worktree:      result.WorktreePath,
 		WorkspacePath: result.WorkspacePath,
+		Opened:        command.Session || command.Window,
 	}, nil
 }
 

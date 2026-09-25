@@ -126,12 +126,21 @@ kesh tree destroy feature/example --force
 kesh tree merge feature/example -y
 ```
 
-Headless commands run worktree setup (files, environment, ports, and
-`post_create` hooks) but ignore `panes`. Destructive commands perform safety
-checks first; `destroy --force` allows destroying dirty or unmerged worktrees,
-while `merge --force` permits forced cleanup after a successful merge. Use
-`--json` for strict machine-readable output. Destructive JSON commands also
-require `-y` or `--yes`.
+Use `--session` (`-s`) to create the worktree and open its configured layout
+as a Kitty session. Use `--window` (`-w`) to open a new Kitty window in the
+current tab without loading a session:
+
+```sh
+kesh tree new feature/example --session
+kesh tree new feature/example --window
+```
+
+Tree creation runs worktree setup (files, environment, ports, and
+`post_create` hooks) and ignores `panes` unless `--session` is used. Destructive
+commands perform safety checks first; `destroy --force` allows destroying dirty
+or unmerged worktrees, while `merge --force` permits forced cleanup after a
+successful merge. Use `--json` for strict machine-readable output. Destructive
+JSON commands also require `-y` or `--yes`.
 
 ### Agents
 
