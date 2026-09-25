@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,74 @@ func TestInstallPiIsIdempotentAndRemovable(t *testing.T) {
 	installed, _, err = PiInstalled()
 	if err != nil || installed {
 		t.Fatalf("PiInstalled after remove = %t, %v", installed, err)
+	}
+}
+
+func TestPiExtensionIgnoresHeadlessSubagents(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is unavailable")
+	}
+	directory := t.TempDir()
+	extension := filepath.Join(directory, "kesh-status.ts")
+	if err := os.WriteFile(extension, piExtension, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	probe := filepath.Join(directory, "probe.mjs")
+	script := `
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const { default: install } = await import(pathToFileURL(process.argv[2]).href);
+const file = join(process.env.XDG_STATE_HOME, "kesh", "agent-status", "pi-42.json");
+function session(mode) {
+  const handlers = new Map();
+  const events = new Map();
+  install({
+    on(event, callback) { handlers.set(event, callback); },
+    events: { on(event, callback) { events.set(event, callback); } },
+  });
+  const ctx = { mode, sessionManager: { getSessionId: () => mode } };
+  return async (event, payload = {}) => event === "subagents"
+    ? events.get("kesh:subagents")?.(payload)
+    : handlers.get(event)?.(payload, ctx);
+}
+async function status() { try { return JSON.parse(await readFile(file, "utf8")); } catch { return null; } }
+async function waitStatus(expected) {
+  for (let i = 0; i < 100; i++) {
+    if ((await status())?.status === expected) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.equal((await status())?.status, expected);
+}
+const child = session("print");
+await child("session_start");
+await child("agent_start");
+assert.equal(await status(), null);
+const parent = session("tui");
+await parent("session_start");
+await parent("agent_start");
+assert.equal((await status()).status, "working");
+await parent("subagents", { running: 1 });
+await child("agent_settled");
+await child("session_shutdown");
+assert.equal((await status()).status, "working");
+await parent("agent_end", { messages: [{ role: "assistant", stopReason: "stop" }] });
+await parent("agent_settled");
+assert.equal((await status()).status, "working", "child keeps status working after parent settles");
+await parent("subagents", { running: 0 });
+await waitStatus("finished");
+await parent("session_shutdown");
+assert.equal(await status(), null);
+`
+	if err := os.WriteFile(probe, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command(node, "--no-warnings", probe, extension)
+	command.Env = append(os.Environ(), "KITTY_WINDOW_ID=42", "XDG_STATE_HOME="+directory)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("Pi extension status probe: %v\n%s", err, output)
 	}
 }
 
@@ -85,6 +154,36 @@ func TestReadDirectoryAndAcknowledge(t *testing.T) {
 	records, err = ReadDirectory(directory)
 	if err != nil || records[42].Status != "idle" || records[42].LastDoneAt == nil || !records[42].LastDoneAt.Equal(finishedAt) {
 		t.Fatalf("acknowledged records = %#v, %v", records, err)
+	}
+}
+
+func TestReadDirectoryAgesDoneAndErroredToIdleAfterTimeout(t *testing.T) {
+	directory := t.TempDir()
+	now := time.Now().UTC()
+	records := []Record{
+		{Version: CurrentVersion, Tool: "pi", WindowID: 1, PID: 10, Status: "finished", UpdatedAt: now.Add(-DoneIdleTimeout - time.Second)},
+		{Version: CurrentVersion, Tool: "claude", WindowID: 2, PID: 20, Status: "errored", UpdatedAt: now.Add(-DoneIdleTimeout)},
+		{Version: CurrentVersion, Tool: "codex", WindowID: 3, PID: 30, Status: "finished", UpdatedAt: now.Add(-DoneIdleTimeout + time.Second)},
+		{Version: CurrentVersion, Tool: "pi", WindowID: 4, PID: 40, Status: "working", UpdatedAt: now.Add(-DoneIdleTimeout * 2)},
+	}
+	for _, record := range records {
+		content, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(directory, record.Tool+"-"+strconv.Itoa(record.WindowID)+".json")
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := ReadDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for windowID, want := range map[int]string{1: "idle", 2: "idle", 3: "finished", 4: "working"} {
+		if got[windowID].Status != want {
+			t.Errorf("window %d status = %q, want %q", windowID, got[windowID].Status, want)
+		}
 	}
 }
 

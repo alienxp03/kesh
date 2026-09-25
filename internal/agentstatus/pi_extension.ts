@@ -11,10 +11,19 @@ const statusFile = join(stateHome, "kesh", "agent-status", `pi-${windowID}.json`
 type Status = "idle" | "working" | "finished" | "errored";
 type StatusRecord = { lastDoneAt?: string; status?: Status; updatedAt?: string };
 
+function isTerminalStatus(status: Status | undefined): boolean {
+	return status === "finished" || status === "errored";
+}
+
 export default function (pi: ExtensionAPI) {
 	if (!Number.isInteger(windowID) || windowID <= 0) return;
 
-	let settledStatus: Status = "finished";
+	let settledStatus: Status = "idle";
+	let ownsStatus = false;
+	let parentWorking = false;
+	let runningSubagents = 0;
+	let statusContext: ExtensionContext | undefined;
+	let pendingWrite: Promise<void> = Promise.resolve();
 
 	async function writeStatus(status: Status, ctx: ExtensionContext) {
 		await mkdir(dirname(statusFile), { recursive: true, mode: 0o700 });
@@ -22,16 +31,12 @@ export default function (pi: ExtensionAPI) {
 		try {
 			const current = JSON.parse(await readFile(statusFile, "utf8")) as StatusRecord;
 			lastDoneAt = current.lastDoneAt;
-			if (!lastDoneAt && (current.status === "finished" || current.status === "errored")) {
-				lastDoneAt = current.updatedAt;
-			}
+			if (!lastDoneAt && isTerminalStatus(current.status)) lastDoneAt = current.updatedAt;
 		} catch {
 			// A missing or malformed previous record has no completion timestamp.
 		}
 		const updatedAt = new Date().toISOString();
-		if (status === "finished" || status === "errored") {
-			lastDoneAt = updatedAt;
-		}
+		if (isTerminalStatus(status)) lastDoneAt = updatedAt;
 		const temporary = `${statusFile}.${process.pid}.tmp`;
 		const record = {
 			version: VERSION,
@@ -47,17 +52,44 @@ export default function (pi: ExtensionAPI) {
 		await rename(temporary, statusFile);
 	}
 
+	function writeCurrentStatus(ctx: ExtensionContext): Promise<void> {
+		const status = parentWorking || runningSubagents > 0 ? "working" : settledStatus;
+		// Lifecycle hooks and subagent events may overlap. Serialize writes so
+		// an older status cannot overwrite a newer one (or reuse the temp file).
+		pendingWrite = pendingWrite.catch(() => {}).then(() => writeStatus(status, ctx));
+		return pendingWrite;
+	}
+
+	pi.events.on("kesh:subagents", (data) => {
+		if (!ownsStatus || !statusContext) return;
+		const count = (data as { running?: number })?.running;
+		if (typeof count !== "number" || !Number.isInteger(count) || count < 0 || count === runningSubagents) return;
+		runningSubagents = count;
+		void writeCurrentStatus(statusContext).catch(() => {});
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
-		settledStatus = "finished";
-		await writeStatus("idle", ctx);
+		// Headless Pi subagents inherit KITTY_WINDOW_ID, and SDK children can
+		// even share the parent's PID. Only the visible TUI owns this window's
+		// status file; otherwise children overwrite or delete the parent state.
+		ownsStatus = ctx.mode === "tui";
+		if (!ownsStatus) return;
+		statusContext = ctx;
+		parentWorking = false;
+		runningSubagents = 0;
+		settledStatus = "idle";
+		await writeCurrentStatus(ctx);
 	});
 
 	pi.on("agent_start", async (_event, ctx) => {
+		if (!ownsStatus || ctx.mode !== "tui") return;
+		parentWorking = true;
 		settledStatus = "finished";
-		await writeStatus("working", ctx);
+		await writeCurrentStatus(ctx);
 	});
 
 	pi.on("agent_end", async (event) => {
+		if (!ownsStatus) return;
 		const lastAssistant = [...event.messages]
 			.reverse()
 			.find((message) => message.role === "assistant") as { stopReason?: string } | undefined;
@@ -65,10 +97,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_settled", async (_event, ctx) => {
-		await writeStatus(settledStatus, ctx);
+		if (!ownsStatus || ctx.mode !== "tui") return;
+		parentWorking = false;
+		await writeCurrentStatus(ctx);
 	});
 
 	pi.on("session_shutdown", async () => {
+		if (!ownsStatus) return;
+		ownsStatus = false;
+		statusContext = undefined;
+		await pendingWrite.catch(() => {});
 		// Read first so a stale shutdown from a replaced process cannot remove a
 		// newer Pi process's status for the same Kitty window.
 		try {

@@ -115,6 +115,24 @@ func TestMergeZoxideAttachesOpenStateToKnownProject(t *testing.T) {
 	}
 }
 
+func TestAssembleIncludesUnscopedPiWithoutZoxide(t *testing.T) {
+	path := "/Users/stan/new-project"
+	kittyState := kitty.State{{Tabs: []kitty.Tab{{
+		ID: 1, Title: "pi",
+		Windows: []kitty.Window{{
+			ID: 42, CWD: path, Env: map[string]string{"PWD": path},
+			Cmdline: []string{"pi"}, LastFocusedAt: 5,
+		}},
+	}}}}
+	entries, context := Assemble(kittyState, state.SavedSessions{}, nil, 999, "/Users/stan")
+	if len(entries) != 1 || !entries[0].Open || entries[0].Tabs[0].Windows[0].Agent != "pi" {
+		t.Fatalf("unscoped Pi entry = %#v", entries)
+	}
+	if !context.MergedPaths[path] || len(MergeZoxide([]byte(path), context)) != 0 {
+		t.Fatalf("zoxide duplicates Pi entry: %#v", context)
+	}
+}
+
 func TestAssembleHidesUnscopedWindowsThatAreNotSessions(t *testing.T) {
 	// A live window at $HOME with no session_name is not a session and must not
 	// become a catalog entry. It only surfaces if zoxide knows the path.

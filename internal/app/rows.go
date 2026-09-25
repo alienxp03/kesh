@@ -385,7 +385,7 @@ func (m *model) rebuildAgentRows() {
 			aPriority := agentStatusPriority(a.agentStatus)
 			bPriority := agentStatusPriority(b.agentStatus)
 			if aPriority != bPriority {
-				return aPriority < bPriority
+				return aPriority > bPriority
 			}
 			return a.lastFocused > b.lastFocused
 		})
@@ -418,17 +418,6 @@ func (m model) selectedAgentWindowID() (int, bool) {
 		return 0, false
 	}
 	return entry.tabs[item.tabIndex].windows[item.windowIndex].id, true
-}
-
-func agentStatusPriority(status string) int {
-	switch status {
-	case "working":
-		return 0
-	case "finished", "errored":
-		return 1
-	default:
-		return 2
-	}
 }
 
 func (m *model) rebuildWorktreeRows() {

@@ -1705,8 +1705,30 @@ func TestAgentRowShowsLastDoneAge(t *testing.T) {
 	line := ansi.Strip((model{}).renderAgentRow(entry{}, tabItem{}, windowItem{
 		agent: "pi", title: "review", lastDoneAt: &doneAt,
 	}, 60))
-	if !strings.Contains(line, "pi · done 2m") {
+	if !strings.Contains(line, "pi · Detected · done 2m") {
 		t.Fatalf("agent row = %q, want last done age", line)
+	}
+}
+
+func TestAgentStatusSortsWorkingFirstAndKeepsSelection(t *testing.T) {
+	m := model{filter: filterAgents, entries: []entry{{tabs: []tabItem{{windows: []windowItem{
+		{id: 10, title: "idle", agent: "pi", lastFocused: 30},
+		{id: 11, title: "running", agent: "pi", lastFocused: 20},
+	}}}}}}
+	m.rebuildRows()
+	m.cursor = 0 // Keep the selected idle agent selected after the reorder.
+	updated, _ := m.Update(agentStatusMsg{statuses: map[int]agentLifecycleStatus{
+		10: {tool: "pi", status: "idle"},
+		11: {tool: "pi", status: "working"},
+	}})
+	m = updated.(model)
+	first := m.entries[m.rows[0].entryIndex].tabs[m.rows[0].tabIndex].windows[m.rows[0].windowIndex]
+	if first.id != 11 || m.cursor != 1 {
+		t.Fatalf("working agent not first or selection lost: first=%d cursor=%d", first.id, m.cursor)
+	}
+	line := ansi.Strip(m.renderRow(m.rows[0], 60, false))
+	if !strings.Contains(line, "pi · Working") || strings.Contains(line, "now") {
+		t.Fatalf("working agent row implies focus time instead of status: %q", line)
 	}
 }
 
@@ -1729,6 +1751,94 @@ func TestAgentStatusUpdatesVisiblePiRow(t *testing.T) {
 	m = updated.(model)
 	if command == nil || m.entries[0].tabs[0].windows[0].agentStatus != "finished" {
 		t.Fatalf("finished status was not applied: command=%v model=%#v", command, m.entries)
+	}
+	line = ansi.Strip(m.renderRow(m.rows[0], 80, false))
+	if !strings.Contains(line, "pi · Done") || strings.Contains(line, "Finished") {
+		t.Fatalf("completed Pi row label = %q", line)
+	}
+}
+
+func TestDefaultListSeparatesOpenAndUnopenedProjects(t *testing.T) {
+	m := model{filter: filterAll, width: 100, height: 20, entries: []entry{
+		{key: "open", name: "open-project", open: true},
+		{key: "closed", name: "closed-project"},
+	}}
+	m.rebuildRows()
+	if gap := m.openProjectGap(); gap != 1 {
+		t.Fatalf("gap position = %d, want 1", gap)
+	}
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	openLine, closedLine := -1, -1
+	for i, line := range lines {
+		if strings.Contains(line, "open-project") {
+			openLine = i
+		}
+		if strings.Contains(line, "closed-project") {
+			closedLine = i
+		}
+	}
+	if openLine < 0 || closedLine != openLine+2 {
+		t.Fatalf("open/closed separator missing: open=%d closed=%d", openLine, closedLine)
+	}
+	separator := lines[openLine+1]
+	if got, want := strings.Count(separator, "─"), (min(140, m.width-4)-2)/2; got != want {
+		t.Fatalf("separator width = %d, want %d: %q", got, want, separator)
+	}
+	panel := strings.Split(separator, "│")
+	if len(panel) < 3 {
+		t.Fatalf("separator panel missing borders: %q", separator)
+	}
+	leading := len(panel[1]) - len(strings.TrimLeft(panel[1], " "))
+	trailing := len(panel[1]) - len(strings.TrimRight(panel[1], " "))
+	if max(leading, trailing)-min(leading, trailing) > 1 {
+		t.Fatalf("separator not centered: %q", separator)
+	}
+
+	// The spacer must not hide the focused unopened project in a short list.
+	m.height, m.cursor = 11, 1
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "closed-project") {
+		t.Fatalf("focused project scrolled behind gap: %q", view)
+	}
+	m.query = "closed"
+	m.rebuildRows()
+	if gap := m.openProjectGap(); gap != -1 {
+		t.Fatalf("search results should not have a gap: %d", gap)
+	}
+}
+
+func TestMainPageShowsPiStatusOnProjectAndWindow(t *testing.T) {
+	m := model{filter: filterAll, entries: []entry{{
+		name: "frontier", open: true, tabs: []tabItem{{windows: []windowItem{
+			{id: 42, title: "pi task", agent: "pi", agentStatus: "working"},
+		}}},
+	}}}
+	m.rebuildRows()
+	working := "pi " + agentSpinnerFrames[0] + " Working"
+	for _, focused := range []bool{false, true} {
+		project := m.renderRow(m.rows[0], 100, focused)
+		if !strings.Contains(project, accentStyle.Render(working)) {
+			t.Fatalf("project running status should match Agents tab color (focused=%t): %q", focused, project)
+		}
+	}
+	m.entries[0].expanded = true
+	m.entries[0].tabs[0].expanded = true
+	m.rebuildRows()
+	window := m.renderRow(m.rows[2], 100, false)
+	if !strings.Contains(window, accentStyle.Render(working)) {
+		t.Fatalf("window running status should match Agents tab color: %q", window)
+	}
+	m.width, m.height, m.cursor = 120, 30, 0
+	if view := m.View(); !strings.Contains(view, accentStyle.Render(working)) {
+		t.Fatalf("focused project lost running status color: %q", view)
+	}
+	m.cursor = 2
+	if view := m.View(); !strings.Contains(view, accentStyle.Render(working)) {
+		t.Fatalf("focused window lost running status color: %q", view)
+	}
+	m.filter, m.cursor = filterAgents, 0
+	m.rebuildRows()
+	if view := m.View(); !strings.Contains(view, accentStyle.Render("pi task")) {
+		t.Fatalf("focused Agents row lost running agent color: %q", view)
 	}
 }
 

@@ -85,10 +85,9 @@ func Assemble(
 					unscopedTabs[canonicalPath] = append(unscopedTabs[canonicalPath], item)
 					unscopedFocus[canonicalPath] = max(unscopedFocus[canonicalPath], focused)
 				} else if sessionName != "" {
-					// Only windows that belong to a named session contribute live
-					// paths. Unscoped windows are not sessions and must not surface
-					// as catalog entries; their open state is merged onto the
-					// matching zoxide project via OpenTabs instead.
+					// Named sessions contribute live paths. Ordinary unscoped
+					// windows are merged onto zoxide projects via OpenTabs;
+					// agent windows are surfaced separately below.
 					for _, p := range paths {
 						livePaths[p] = true
 					}
@@ -179,9 +178,28 @@ func Assemble(
 		order++
 	}
 
-	// Unscoped tabs (windows with no session_name) are not sessions and do not
-	// become entries here. They are carried as OpenTabs so the asynchronous
-	// zoxide merge can attach their live state to a matching known project.
+	// Keep live agent windows discoverable even when zoxide has never seen their
+	// directory (or is unavailable). Ordinary unscoped shells remain hidden.
+	// Mark these paths merged so the later zoxide load does not duplicate them.
+	for path, tabs := range unscopedTabs {
+		if path == "" || MergedTabAgents(tabs) == "" {
+			continue
+		}
+		name := filepath.Base(path)
+		key, kind := path, "project"
+		if mergedProjects[path] {
+			// A named session already owns the project row; keep these distinct
+			// windows visible without treating them as part of that session.
+			key, kind = "agents:"+path, "workspace"
+		}
+		entries = append(entries, domain.Entry{
+			Key: key, Name: name, OriginalName: name, Detail: DisplayPath(path, home),
+			Kind: kind, Path: path, Open: true, LastFocused: unscopedFocus[path],
+			Agent: MergedTabAgents(tabs), Tabs: tabs, Order: order,
+		})
+		mergedProjects[path] = true
+		order++
+	}
 
 	savedFiles := make([]string, 0, len(saved.Sessions))
 	for file := range saved.Sessions {
@@ -284,8 +302,8 @@ func MergeZoxide(output []byte, context domain.CatalogContext) []domain.Entry {
 			Key: path, Name: name, OriginalName: name, Detail: DisplayPath(path, context.Home),
 			Kind: "project", Path: path, NameTaken: context.SessionNames[SafeName(name)], Order: order,
 		}
-		// A zoxide project that is open in an unscoped Kitty window inherits
-		// that window's live state — without it, the window itself is not shown.
+		// A zoxide project open in an ordinary unscoped Kitty window
+		// inherits that window's live state.
 		if open, ok := context.OpenTabs[path]; ok {
 			entry.Open = true
 			entry.LastFocused = open.LastFocused
@@ -369,8 +387,12 @@ func CleanAgentTitle(title, agent string) string {
 
 func AgentFromWindow(window kitty.Window) string {
 	pi, codex, claude := false, false, false
-	for _, process := range window.ForegroundProcesses {
-		command := " " + strings.ToLower(strings.Join(process.Cmdline, " ")) + " "
+	commands := foregroundCmdlines(window)
+	if len(commands) == 0 {
+		commands = [][]string{window.Cmdline}
+	}
+	for _, cmdline := range commands {
+		command := " " + strings.ToLower(strings.Join(cmdline, " ")) + " "
 		pi = pi || strings.Contains(command, " pi ") || strings.Contains(command, "/pi ")
 		codex = codex || strings.Contains(command, " codex ") || strings.Contains(command, "/codex ")
 		claude = claude || strings.Contains(command, " claude ") || strings.Contains(command, "/claude ") || strings.Contains(command, "/claude.exe ")

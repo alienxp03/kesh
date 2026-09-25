@@ -89,6 +89,21 @@ func (m *model) acknowledgeAgentStatus(windowID int) {
 	}
 }
 
+func agentStatusPriority(status string) int {
+	switch status {
+	case "working":
+		return 4
+	case "errored":
+		return 3
+	case "finished":
+		return 2
+	case "idle":
+		return 1
+	default:
+		return 0
+	}
+}
+
 func agentStatusTool(agent string) string {
 	agent = strings.ToLower(agent)
 	for _, tool := range []string{"pi", "codex", "claude"} {

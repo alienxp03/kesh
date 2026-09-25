@@ -73,11 +73,17 @@ func (m model) View() string {
 	}
 
 	available := max(1, listHeight-3)
-	start := 0
-	if m.cursor >= available {
-		start = m.cursor - available + 1
+	gap := m.openProjectGap()
+	focusedPosition := m.cursor
+	totalRows := len(m.rows)
+	if gap >= 0 {
+		totalRows++
+		if m.cursor >= gap {
+			focusedPosition++
+		}
 	}
-	end := min(len(m.rows), start+available)
+	start := max(0, focusedPosition-available+1)
+	end := min(totalRows, start+available)
 	// On the Worktrees surface the list is one project's worktrees, so title it
 	// with that folder and its count rather than the generic "List".
 	listTitle := accentStyle.Render(fmt.Sprintf("List (%d)", len(m.rows)))
@@ -96,12 +102,23 @@ func (m model) View() string {
 		header := padColumnsAt(dimStyle.Render("Branch"), dimStyle.Render("Path"), rowWidth, 50)
 		listLines = append(listLines, "  "+header)
 	}
-	for i := start; i < end; i++ {
+	for position := start; position < end; position++ {
+		if position == gap {
+			panelWidth := max(12, listWidth-2)
+			ruleWidth := panelWidth / 2
+			listLines = append(listLines, dimStyle.Render(strings.Repeat(" ", (panelWidth-ruleWidth)/2)+strings.Repeat("─", ruleWidth)))
+			continue
+		}
+		i := position
+		if gap >= 0 && position > gap {
+			i--
+		}
 		row := m.rows[i]
 		focused := i == m.cursor
 		line := m.renderRow(row, max(8, listWidth-4), focused)
 		if focused {
-			if row.tabIndex < 0 && m.entries[row.entryIndex].open {
+			if (row.tabIndex < 0 && m.entries[row.entryIndex].open) ||
+				(row.windowIndex >= 0 && m.entries[row.entryIndex].tabs[row.tabIndex].windows[row.windowIndex].agentStatus == "working") {
 				line = accentStyle.Render("▌") + " " + line
 			} else {
 				line = accentStyle.Render("▌") + " " + focusStyle.Render(ansi.Strip(line))
@@ -175,6 +192,26 @@ func (m model) View() string {
 		content = strings.Join(lines, "\n")
 	}
 	return lipgloss.NewStyle().Padding(1, 2).Render(content)
+}
+
+// Insert a non-selectable separator between live sessions and the remaining
+// projects, only in the unfiltered default list.
+func (m model) openProjectGap() int {
+	if m.filter != filterAll || m.query != "" {
+		return -1
+	}
+	seenOpen := false
+	for i, row := range m.rows {
+		if row.tabIndex >= 0 || row.windowIndex >= 0 {
+			continue
+		}
+		if m.entries[row.entryIndex].open {
+			seenOpen = true
+		} else if seenOpen {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m model) footerView(width int, hasSelectedPR bool) string {
@@ -869,9 +906,12 @@ func (m model) renderRow(r row, width int, focused bool) string {
 		}
 		nameWidth := max(8, width*45/100-17)
 		left := "           " + branch + " " + windowIcon(window) + " " + truncate(window.title, nameWidth)
-		detail := window.detail
+		detail := dimStyle.Render(window.detail)
+		if status := m.agentStatusSummary(window.agent, window.agentStatus); status != "" {
+			detail = status
+		}
 		if width >= 52 {
-			return padColumns(left, dimStyle.Render(detail), width)
+			return padColumns(left, detail, width)
 		}
 		return ansi.Truncate(left, width, "…")
 	}
@@ -933,12 +973,28 @@ func (m model) renderRow(r row, width int, focused bool) string {
 	// it. Saved snapshots can contain multiple folders too, so keep their rows
 	// focused on the name; the Saved filter already identifies them. A PR is
 	// useful metadata, though, and fills the otherwise empty column.
-	if summary := entryPRColumn(e); summary != "" && width >= 52 {
-		detail := dimStyle.Render(summary)
-		if focused && e.open {
-			detail = focusStyle.Render(ansi.Strip(detail))
+	if width >= 52 {
+		parts := []string{}
+		status := m.entryAgentStatusSummary(e)
+		if status != "" {
+			parts = append(parts, status)
 		}
-		return padColumns(left, detail, width)
+		if summary := entryPRColumn(e); summary != "" {
+			parts = append(parts, dimStyle.Render(summary))
+		}
+		if len(parts) > 0 {
+			detail := strings.Join(parts, "  ")
+			if focused && e.open {
+				if strings.Contains(status, " Working") {
+					if summary := entryPRColumn(e); summary != "" {
+						detail = status + "  " + focusStyle.Render(summary)
+					}
+				} else {
+					detail = focusStyle.Render(ansi.Strip(detail))
+				}
+			}
+			return padColumns(left, detail, width)
+		}
 	}
 	if e.saved || (len(e.tabs) > 0 && e.kind != "ssh") {
 		return ansi.Truncate(left, width, "…")
@@ -954,12 +1010,35 @@ func (m model) renderRow(r row, width int, focused bool) string {
 	return ansi.Truncate(left, width, "…")
 }
 
+// Show the most actionable state when a project contains multiple agents.
+func (m model) entryAgentStatusSummary(e entry) string {
+	var agent, status string
+	for _, tab := range e.tabs {
+		for _, window := range tab.windows {
+			if agentStatusPriority(window.agentStatus) > agentStatusPriority(status) {
+				agent, status = window.agent, window.agentStatus
+			}
+		}
+	}
+	return m.agentStatusSummary(agent, status)
+}
+
+func (m model) agentStatusSummary(agent, status string) string {
+	if status == "" {
+		return ""
+	}
+	if status == "working" {
+		return accentStyle.Render(agentLabel(agent) + " " + agentSpinnerFrames[m.agentSpinnerFrame%len(agentSpinnerFrames)] + " " + agentStatusLabel(status))
+	}
+	return agentLabel(agent) + " " + m.agentStatusBadge(status) + " " + agentStatusLabel(status)
+}
+
 func agentStatusLabel(status string) string {
 	switch status {
 	case "working":
 		return "Working"
 	case "finished":
-		return "Finished"
+		return "Done"
 	case "errored":
 		return "Error"
 	case "idle":
@@ -1013,11 +1092,18 @@ func (m model) renderAgentRow(e entry, tab tabItem, window windowItem, width int
 	if title == "" {
 		title = tab.title
 	}
-	metadata := agentLabel(window.agent) + " · done " + compactDoneAge(window.lastDoneAt)
-	right := dimStyle.Render(metadata)
+	state := agentStatusLabel(window.agentStatus)
+	if state == "" {
+		state = "Detected"
+	}
+	right := dimStyle.Render(agentLabel(window.agent) + " · " + state + " · done " + compactDoneAge(window.lastDoneAt))
 
 	nameWidth := max(8, width-lipgloss.Width(prefix)-lipgloss.Width(right)-2)
-	left := prefix + middleTruncate(title, nameWidth)
+	title = middleTruncate(title, nameWidth)
+	if window.agentStatus == "working" {
+		title = accentStyle.Render(title)
+	}
+	left := prefix + title
 	gap := max(2, width-lipgloss.Width(left)-lipgloss.Width(right))
 	return ansi.Truncate(left+strings.Repeat(" ", gap)+right, width, "…")
 }
