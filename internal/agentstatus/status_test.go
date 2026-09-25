@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -152,6 +153,36 @@ func TestReadDirectoryAndAcknowledge(t *testing.T) {
 	records, err = ReadDirectory(directory)
 	if err != nil || records[42].Status != "idle" {
 		t.Fatalf("acknowledged records = %#v, %v", records, err)
+	}
+}
+
+func TestReadDirectoryAgesDoneAndErroredToIdleAfterTimeout(t *testing.T) {
+	directory := t.TempDir()
+	now := time.Now().UTC()
+	records := []Record{
+		{Version: CurrentVersion, Tool: "pi", WindowID: 1, PID: 10, Status: "finished", UpdatedAt: now.Add(-DoneIdleTimeout - time.Second)},
+		{Version: CurrentVersion, Tool: "claude", WindowID: 2, PID: 20, Status: "errored", UpdatedAt: now.Add(-DoneIdleTimeout)},
+		{Version: CurrentVersion, Tool: "codex", WindowID: 3, PID: 30, Status: "finished", UpdatedAt: now.Add(-DoneIdleTimeout + time.Second)},
+		{Version: CurrentVersion, Tool: "pi", WindowID: 4, PID: 40, Status: "working", UpdatedAt: now.Add(-DoneIdleTimeout * 2)},
+	}
+	for _, record := range records {
+		content, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(directory, record.Tool+"-"+strconv.Itoa(record.WindowID)+".json")
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := ReadDirectory(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for windowID, want := range map[int]string{1: "idle", 2: "idle", 3: "finished", 4: "working"} {
+		if got[windowID].Status != want {
+			t.Errorf("window %d status = %q, want %q", windowID, got[windowID].Status, want)
+		}
 	}
 }
 

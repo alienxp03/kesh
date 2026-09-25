@@ -1038,7 +1038,7 @@ func agentStatusLabel(status string) string {
 	case "working":
 		return "Working"
 	case "finished":
-		return "Finished"
+		return "Done"
 	case "errored":
 		return "Error"
 	case "idle":

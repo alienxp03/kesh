@@ -17,6 +17,7 @@ import (
 const (
 	CurrentVersion  = 1
 	PiExtensionName = "kesh-status.ts"
+	DoneIdleTimeout = 15 * time.Minute
 )
 
 //go:embed pi_extension.ts
@@ -125,6 +126,13 @@ func ReadDirectory(directory string) (map[int]Record, error) {
 		}
 		if current, exists := records[record.WindowID]; !exists || record.UpdatedAt.After(current.UpdatedAt) {
 			records[record.WindowID] = record
+		}
+	}
+	now := time.Now()
+	for windowID, record := range records {
+		if (record.Status == "finished" || record.Status == "errored") && now.Sub(record.UpdatedAt) >= DoneIdleTimeout {
+			record.Status = "idle"
+			records[windowID] = record
 		}
 	}
 	return records, nil

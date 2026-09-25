@@ -1688,6 +1688,10 @@ func TestAgentStatusUpdatesVisiblePiRow(t *testing.T) {
 	if command == nil || m.entries[0].tabs[0].windows[0].agentStatus != "finished" {
 		t.Fatalf("finished status was not applied: command=%v model=%#v", command, m.entries)
 	}
+	line = ansi.Strip(m.renderRow(m.rows[0], 80, false))
+	if !strings.Contains(line, "pi · Done") || strings.Contains(line, "Finished") {
+		t.Fatalf("completed Pi row label = %q", line)
+	}
 }
 
 func TestDefaultListSeparatesOpenAndUnopenedProjects(t *testing.T) {
