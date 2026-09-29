@@ -3,7 +3,9 @@ package github
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os/exec"
 	"strconv"
 	"strings"
 
@@ -16,12 +18,25 @@ type Client struct {
 	Executable string
 }
 
+// ghJSONOutput keeps diagnostics on stderr out of the JSON on stdout.
+func ghJSONOutput(command *system.Process, action string) ([]byte, error) {
+	output, err := command.Output()
+	if err == nil {
+		return output, nil
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+		return nil, gitx.CommandError(action, exitErr.Stderr, err)
+	}
+	return nil, gitx.CommandError(action, output, err)
+}
+
 func (c Client) PullRequestHead(owner, repository string, number int, directory string) (string, error) {
 	command := system.Command(c.Executable, "pr", "view", strconv.Itoa(number), "--repo", owner+"/"+repository, "--json", "headRefName")
 	command.Dir = directory
-	output, err := command.CombinedOutput()
+	output, err := ghJSONOutput(command, "gh pr view")
 	if err != nil {
-		return "", gitx.CommandError("gh pr view", output, err)
+		return "", err
 	}
 	var pullRequest struct {
 		HeadRefName string `json:"headRefName"`
@@ -39,9 +54,9 @@ func (c Client) PullRequestHead(owner, repository string, number int, directory 
 func (c Client) PullRequests(directory string) (map[string]domain.PullRequest, error) {
 	command := system.Command(c.Executable, "pr", "list", "--state", "all", "--limit", "1000", "--json", "headRefName,headRefOid,state,mergedAt,number,url")
 	command.Dir = directory
-	output, err := command.CombinedOutput()
+	output, err := ghJSONOutput(command, "gh pr list")
 	if err != nil {
-		return nil, gitx.CommandError("gh pr list", output, err)
+		return nil, err
 	}
 	var records []struct {
 		HeadRefName string  `json:"headRefName"`

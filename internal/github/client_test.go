@@ -1,7 +1,10 @@
 package github
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/alienxp03/kesh/internal/domain"
@@ -53,6 +56,45 @@ func TestPullRequestsParsesMergedStatus(t *testing.T) {
 	if got.Status != "merged" || got.Number != 9 {
 		t.Fatalf("pull request = %#v", got)
 	}
+}
+
+func TestPullRequestsIgnoresStderr(t *testing.T) {
+	gh := fakeGH(t, `printf 'message from gh\n' >&2
+printf '[{"headRefName":"feature","headRefOid":"abc","state":"OPEN","mergedAt":null,"number":9,"url":"https://example.test/9"}]\n'`)
+	pullRequests, err := (Client{Executable: gh}).PullRequests(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := pullRequests[domain.PullRequestKey("feature", "abc")]; got.Status != "open" || got.Number != 9 {
+		t.Fatalf("pull request = %#v", got)
+	}
+}
+
+func TestPullRequestHeadIgnoresStderr(t *testing.T) {
+	gh := fakeGH(t, `printf 'message from gh\n' >&2
+printf '{"headRefName":"feature"}\n'`)
+	branch, err := (Client{Executable: gh}).PullRequestHead("owner", "repo", 9, t.TempDir())
+	if err != nil || branch != "feature" {
+		t.Fatalf("head = %q, %v", branch, err)
+	}
+}
+
+func TestPullRequestsReportsStderrOnFailure(t *testing.T) {
+	gh := fakeGH(t, `printf 'authentication failed\n' >&2
+exit 1`)
+	_, err := (Client{Executable: gh}).PullRequests(t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "authentication failed") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func fakeGH(t *testing.T, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "gh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }
 
 func TestParsePullRequestReference(t *testing.T) {
