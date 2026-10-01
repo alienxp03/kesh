@@ -171,6 +171,7 @@ func TestParseArgs(t *testing.T) {
 		{wantFilter: filterAll},
 		{args: []string{"init"}, wantFilter: filterAll, wantPinCommand: "init"},
 		{args: []string{"start"}, wantFilter: filterAll, wantPinCommand: "start"},
+		{args: []string{"previous-session"}, wantFilter: filterAll, wantPinCommand: "previous-session"},
 		{args: []string{"agents"}, wantFilter: filterAgents},
 		{args: []string{"agents", "setup", "pi"}, wantFilter: filterAll, wantPinCommand: "agents-setup-pi"},
 		{args: []string{"agents", "setup", "codex"}, wantFilter: filterAll, wantPinCommand: "agents-setup-codex"},
@@ -197,6 +198,32 @@ func TestParseArgs(t *testing.T) {
 		if err == nil && (filter != test.wantFilter || slot != test.wantSlot || pinCommand != test.wantPinCommand) {
 			t.Errorf("parseArgs(%q) = (%d, %q, %q), want (%d, %q, %q)", test.args, filter, slot, pinCommand, test.wantFilter, test.wantSlot, test.wantPinCommand)
 		}
+	}
+}
+
+type previousSessionRunner struct {
+	calls []system.Spec
+}
+
+func (r *previousSessionRunner) Output(spec system.Spec) ([]byte, error) {
+	r.calls = append(r.calls, spec)
+	return []byte(`[{"is_focused":true,"tabs":[{"is_active":true,"windows":[{"id":1,"session_name":"current","is_focused":true,"last_focused_at":5}]},{"windows":[{"id":2,"session_name":"previous","last_focused_at":4}]}]}]`), nil
+}
+
+func (r *previousSessionRunner) CombinedOutput(spec system.Spec) ([]byte, error) {
+	r.calls = append(r.calls, spec)
+	return nil, nil
+}
+
+func TestSwitchPreviousSession(t *testing.T) {
+	runner := &previousSessionRunner{}
+	restore := system.SetRunner(runner)
+	t.Cleanup(restore)
+	if err := switchPreviousSession("kitty"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.calls) != 2 || !reflect.DeepEqual(runner.calls[0].Args, []string{"@", "ls"}) || !reflect.DeepEqual(runner.calls[1].Args, []string{"@", "focus-window", "--match", "id:2"}) {
+		t.Fatalf("commands = %#v", runner.calls)
 	}
 }
 
@@ -900,6 +927,46 @@ func TestPRStatusCacheRoundTrip(t *testing.T) {
 	}
 	if fetchedAt.IsZero() || time.Since(fetchedAt) > time.Minute {
 		t.Fatalf("unexpected cache timestamp: %v", fetchedAt)
+	}
+}
+
+func TestFailedPRStatusRefreshLogsWithoutBlockingPicker(t *testing.T) {
+	directory := t.TempDir()
+	stateHome := filepath.Join(directory, "state")
+	t.Setenv("XDG_STATE_HOME", stateHome)
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+	git := "#!/bin/sh\nprintf '%s\\n' 'https://github.com/example/unavailable.git'\n"
+	gh := "#!/bin/sh\nprintf '%s\\n' 'GraphQL: Could not resolve to a Repository' >&2\nexit 1\n"
+	for name, content := range map[string]string{"git": git, "gh": gh} {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(content), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const repoKey = "https://github.com/example/unavailable.git"
+	message := queryPRStatusesCommand(directory, repoKey)().(prStatusMsg)
+	if message.err == nil {
+		t.Fatal("expected GitHub lookup to fail")
+	}
+	logPath := filepath.Join(stateHome, "kesh", "pr-status.log")
+	content, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(content), "GraphQL: Could not resolve to a Repository") || !strings.Contains(string(content), repoKey) {
+		t.Fatalf("PR status log = %q, %v", content, err)
+	}
+	info, err := os.Stat(logPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("PR status log permissions = %v, %v", info, err)
+	}
+	updated, command := (model{}).Update(message)
+	m := updated.(model)
+	if m.err != nil || command != nil {
+		t.Fatalf("failed background PR refresh interrupted picker: err=%v, command=%v", m.err, command)
+	}
+	if !m.prStatusLastFetch[repoKey].Equal(message.fetchedAt) {
+		t.Fatal("failed PR lookup was not throttled")
+	}
+	_, command = m.Update(prStatusCacheMsg{repoKey: repoKey, now: message.fetchedAt.Add(time.Second)})
+	if command != nil {
+		t.Fatal("failed PR lookup was retried inside throttle interval")
 	}
 }
 

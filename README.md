@@ -45,6 +45,8 @@ brew install alienxp03/tap/kesh
 
 The `c` clone action uses `git clone` directly; `gh` is not required for ordinary
 repository cloning. GitHub PR checkout and status features do require `gh`.
+Background PR-status failures do not block the picker. Kesh writes them to
+`${XDG_STATE_HOME:-~/.local/state}/kesh/pr-status.log` and retries after one minute.
 
 ## Kitty setup
 
@@ -56,6 +58,7 @@ listen_on unix:/tmp/kitty
 enabled_layouts splits,stack
 
 map cmd+shift+o launch --type=overlay kesh
+map cmd+p launch --type=background --allow-remote-control --copy-env kesh previous-session
 ```
 
 Reload Kitty after changing its configuration. Keep `splits` first and do not
@@ -316,6 +319,7 @@ kesh agents status          Show all agent integration statuses
 kesh ssh                    Show configured SSH hosts
 kesh saved                  Show saved sessions
 kesh switch SLOT             Focus pin 0–9
+kesh previous-session        Focus the last active different session
 kesh clear-pins              Clear pins
 kesh clear-pins --on-quit    Clear pins when Kitty quits
 ```

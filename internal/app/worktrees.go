@@ -660,6 +660,21 @@ func queryPRStatuses(dir string) (string, map[string]prInfo, error) {
 	return repoKey, statuses, nil
 }
 
+// logPRStatusError records optional background failures without interrupting
+// the picker. The log stays private because GitHub diagnostics can name repos.
+func logPRStatusError(repoKey string, err error) {
+	dir := config.FromEnvironment().StateDirectory
+	if os.MkdirAll(dir, 0o700) != nil {
+		return
+	}
+	file, openErr := os.OpenFile(filepath.Join(dir, "pr-status.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if openErr != nil {
+		return
+	}
+	defer file.Close()
+	fmt.Fprintf(file, "%s %s: %v\n", time.Now().Format(time.RFC3339), repoKey, err)
+}
+
 func (m *model) refreshPRStatuses(dir string, force bool) tea.Cmd {
 	if dir == "" {
 		return nil
@@ -693,6 +708,9 @@ func queryPRStatusesCommand(dir, repoKey string) tea.Cmd {
 		key, pullRequests, err := queryPRStatuses(dir)
 		if key == "" {
 			key = repoKey
+		}
+		if err != nil {
+			logPRStatusError(key, err)
 		}
 		return prStatusMsg{repoKey: key, pullRequests: pullRequests, fetchedAt: time.Now(), err: err}
 	}

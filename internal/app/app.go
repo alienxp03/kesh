@@ -35,6 +35,8 @@ func Run(args []string) error {
 		return initProject()
 	case "start":
 		return runStart(kitty)
+	case "previous-session":
+		return switchPreviousSession(kitty)
 	case "begin-run":
 		return beginKittyRun(kitty, currentKittyPID())
 	case "clear-pins":
@@ -128,6 +130,8 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 		return filterAll, "", "init", nil
 	case len(args) == 1 && args[0] == "start":
 		return filterAll, "", "start", nil
+	case len(args) == 1 && args[0] == "previous-session":
+		return filterAll, "", "previous-session", nil
 	case len(args) == 1 && args[0] == "agents":
 		return filterAgents, "", "", nil
 	case len(args) == 3 && args[0] == "agents" && args[1] == "setup" && validAgentIntegration(args[2]):
@@ -149,8 +153,21 @@ func parseArgs(args []string) (filter int, switchSlot, pinCommand string, err er
 	case len(args) == 2 && args[0] == "switch" && validSlot(args[1]):
 		return filterAll, args[1], "", nil
 	default:
-		return 0, "", "", &UsageError{message: "usage: kesh [init | start | tree <new|destroy|merge> ... | agents [setup TOOL | remove TOOL | status] | ssh | saved | clear-pins | switch SLOT] (TOOL must be pi, codex, or claude; SLOT must be 0-9)"}
+		return 0, "", "", &UsageError{message: "usage: kesh [init | start | previous-session | tree <new|destroy|merge> ... | agents [setup TOOL | remove TOOL | status] | ssh | saved | clear-pins | switch SLOT] (TOOL must be pi, codex, or claude; SLOT must be 0-9)"}
 	}
+}
+
+func switchPreviousSession(kitty string) error {
+	client := kittyx.Client{Executable: kitty}
+	state, err := client.State()
+	if err != nil {
+		return err
+	}
+	windowID, ok := state.PreviousSessionWindow()
+	if !ok {
+		return nil
+	}
+	return client.FocusWindow(windowID)
 }
 
 func validAgentIntegration(tool string) bool {

@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -534,16 +533,14 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.prStatusPending != nil {
 			m.prStatusPending[msg.repoKey] = false
 		}
-		if msg.err != nil {
-			if strings.Contains(msg.repoKey, "github.com") {
-				m.err = fmt.Errorf("refresh PR status: %w", msg.err)
-			}
-			return m, nil
-		}
 		if m.prStatusLastFetch == nil {
 			m.prStatusLastFetch = map[string]time.Time{}
 		}
+		// A failed background lookup is non-blocking. Throttle retries too.
 		m.prStatusLastFetch[msg.repoKey] = msg.fetchedAt
+		if msg.err != nil {
+			return m, nil
+		}
 		focusedWorktree := m.focusedWorktreePath()
 		m.applyPRStatuses(msg.repoKey, msg.pullRequests)
 		m.rebuildRows()
