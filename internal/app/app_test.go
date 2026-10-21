@@ -2547,7 +2547,7 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	if !strings.Contains(popup, "Checkout pull request") || !strings.Contains(popup, "Root repo path: ~/workspace/repo") {
 		t.Fatalf("PR popup missing title/summary:\n%s", popup)
 	}
-	if !strings.Contains(popup, "Worktree path: ~/worktree/owner/repo/feature-checkout") {
+	if !strings.Contains(popup, "Worktree path: selected by Worktrunk (wt)") {
 		t.Fatalf("PR popup does not show full worktree path:\n%s", popup)
 	}
 
@@ -2564,7 +2564,7 @@ func TestPRCheckoutPopupShowsResolvedTarget(t *testing.T) {
 	})
 	m = updated.(model)
 	popup = ansi.Strip(m.popupView(100))
-	if !strings.Contains(popup, "Root repo path: ~/workspace/widget (new clone)") || !strings.Contains(popup, "Worktree path: ~/worktree/other/widget/fix-widget (new clone)") {
+	if !strings.Contains(popup, "Root repo path: ~/workspace/widget (new clone)") || !strings.Contains(popup, "Worktree path: selected by Worktrunk (wt) (new clone)") {
 		t.Fatalf("PR popup does not show clone target:\n%s", popup)
 	}
 }
@@ -3567,7 +3567,7 @@ func TestSlashSearchReturnsToCommandsForSelectionAndCreation(t *testing.T) {
 	m = updated.(model)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m = updated.(model)
-	if len(m.selected) != 1 || m.mode != modeCreateSession {
+	if len(m.selected) != 1 || m.mode == modeCreateSession {
 		t.Fatalf("command mode actions failed after search: selected=%#v creating=%v", m.selected, m.mode == modeCreateSession)
 	}
 }
@@ -3618,10 +3618,10 @@ func TestSpaceTogglesTopLevelSelection(t *testing.T) {
 	if !m.selected["/projects/api"] {
 		t.Fatalf("space did not select the project: %#v", m.selected)
 	}
-	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	m = updated.(model)
-	if m.mode != modeCreateSession {
-		t.Fatal("n did not open the create-session prompt")
+	if m.mode == modeCreateSession || cmd == nil {
+		t.Fatal("n must create the session without a name prompt")
 	}
 	m.cancelMode()
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
@@ -3678,7 +3678,7 @@ func TestWorktreeTabCyclesPlainAndWorkspaces(t *testing.T) {
 	recipe := worktreeSelectedTestRecipe(t)
 	m := model{modeState: modeState{
 		mode:               modeWorktreeCreate,
-		worktreeCreateForm: &worktreeCreateForm{worktreeRecipe: recipe, worktreeRecipeMode: "none"},
+		worktreeCreateForm: &worktreeCreateForm{launchOnFolder: true, worktreeRecipe: recipe, worktreeRecipeMode: "none"},
 	}}
 	m.ensureWorktreeSelection()
 
@@ -3703,9 +3703,10 @@ func TestWorktreeTabCyclesPlainAndWorkspaces(t *testing.T) {
 
 func TestWorktreeSelectedSpaceAndEnterGuard(t *testing.T) {
 	recipe := worktreeSelectedTestRecipe(t)
-	m := model{modeState: modeState{
+	m := model{entries: []entry{{kind: "project", path: "/repo"}}, modeState: modeState{
 		mode: modeWorktreeCreate,
 		worktreeCreateForm: &worktreeCreateForm{
+			launchOnFolder: true, launchProjectPath: "/repo",
 			worktreeRecipe: recipe, worktreeRecipeMode: "selected",
 			worktreeCustomWorkspaces: true, worktreeBranch: "feat/x",
 		},
@@ -3840,6 +3841,7 @@ func writeBin(t *testing.T, dir, name, body string) {
 // the worktree under the cursor — even when the tab list is a reordered subset
 // that does not start at the entry's first worktree.
 func TestWorktreeTabXConfirmsAndTargetsSelectedWorktree(t *testing.T) {
+	t.Cleanup(system.SetRunner(wtShellTestRunner{}))
 	directory := t.TempDir()
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TMPDIR", directory)
@@ -3924,6 +3926,7 @@ esac
 // bug where `enter` in the Worktree tab opened the project's main checkout
 // because runAction ignored the row's worktreePath.
 func TestWorktreeTabEnterOpensWorktreeNotProject(t *testing.T) {
+	t.Cleanup(system.SetRunner(wtShellTestRunner{}))
 	directory := t.TempDir()
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TMPDIR", directory)
@@ -4024,6 +4027,7 @@ func TestWorktreeTabDTargetsSelectedWorktreeNotProject(t *testing.T) {
 // where `X` (remove merged) errored for open projects in the Worktree tab
 // because worktreeDirectory could not resolve an open entry.
 func TestWorktreeTabFindMergedForOpenProject(t *testing.T) {
+	t.Cleanup(system.SetRunner(wtShellTestRunner{}))
 	directory := t.TempDir()
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TMPDIR", directory)

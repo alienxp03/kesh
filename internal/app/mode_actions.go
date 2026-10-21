@@ -8,6 +8,17 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// finishProjectSelection returns to the session list without creating anything.
+func (m *model) finishProjectSelection() {
+	m.cancelMode()
+	m.filter = filterSessions
+	m.query = ""
+	m.cursor = 0
+	m.selected = map[string]bool{}
+	m.err = nil
+	m.rebuildRows()
+}
+
 func (m *model) toggleSelected() {
 	if len(m.rows) == 0 {
 		return
@@ -71,6 +82,26 @@ func (m *model) toggleSelected() {
 		m.selected[key] = true
 	}
 	m.err = nil
+}
+
+func (m model) createSelectedSession() tea.Cmd {
+	entries := m.selectedEntries()
+	return runCreateSession(m.kitty, entries, defaultSessionName(entries))
+}
+
+func defaultSessionName(entries []entry) string {
+	name := "session"
+	if len(entries) > 0 {
+		name = entries[0].name
+		if entries[0].path != "" {
+			name = filepath.Base(entries[0].path)
+		}
+		name = safeName(name)
+		if name == "" {
+			name = "session"
+		}
+	}
+	return name
 }
 
 func (m model) selectedEntries() []entry {

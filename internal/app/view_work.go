@@ -34,10 +34,20 @@ func (m model) renderWorkRow(r row, width int, focused bool) string {
 	}
 	if r.wi < 0 {
 		arrow := "▸"
-		if m.wsRepoExpanded(group) {
+		if m.wsRepoExpanded(group) || (m.query != "" && (m.filter != filterSessions || !m.mainAgents)) {
 			arrow = "▾"
 		}
-		left := arrow + " " + projectStyle.Render(truncate(group.name, max(4, width/2)))
+		nameWidth := max(4, width/2)
+		if m.filter == filterSessions {
+			nameWidth = max(4, width-2)
+		}
+		left := arrow + " " + projectStyle.Render(truncate(group.name, nameWidth))
+		if m.filter == filterSessions {
+			if focused {
+				left = focusStyle.Render(ansi.Strip(left))
+			}
+			return ansi.Truncate(left, width, "…")
+		}
 		var badges []string
 		if group.blocked > 0 {
 			badges = append(badges, errorStyle.Render(fmt.Sprintf("⊘%d", group.blocked)))
@@ -54,12 +64,22 @@ func (m model) renderWorkRow(r row, width int, focused bool) string {
 	}
 
 	leftWidth := max(8, width*55/100)
-	left := "  " + wsStateGlyph(wt.state) + " " + truncate(wt.item.branch, max(4, leftWidth-8))
+	if m.filter == filterSessions {
+		leftWidth = width
+	}
+	label := wt.item.branch
+	if label == "" && r.entryIndex >= 0 {
+		label = m.entries[r.entryIndex].name
+	}
+	left := "  " + wsStateGlyph(wt.state) + " " + truncate(label, max(4, leftWidth-8))
 	if wt.item.current {
 		left += " " + accentStyle.Render("★")
 	}
 	if focused {
 		left = focusStyle.Render(ansi.Strip(left))
+	}
+	if m.filter == filterSessions {
+		return ansi.Truncate(left, width, "…")
 	}
 	var badges []string
 	if wt.item.prNumber > 0 {
@@ -132,10 +152,10 @@ func (m model) agentPaneView(width, height int) string {
 			break
 		}
 		glyph := dimStyle.Render("○")
-		switch {
-		case r.status == "finished" || r.status == "errored":
+		switch r.status {
+		case "finished", "errored":
 			glyph = errorStyle.Render("⊘")
-		case r.status == "working":
+		case "working":
 			glyph = sshStyle.Render("⠋")
 		}
 		age := ""

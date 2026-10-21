@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 func lipglossWidth(s string) int { return lipgloss.Width(s) }
@@ -98,13 +98,13 @@ func TestWsAttributionDeepestPathWins(t *testing.T) {
 
 func TestFlattenAgentsBlockedFirstOldest(t *testing.T) {
 	old := time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC)
-	new := old.Add(5 * time.Minute)
+	recent := old.Add(5 * time.Minute)
 	sources := []wsRepoSource{
 		wsTestSource("/r/a", "a", worktreeItem{path: "/wt/a/one", branch: "one"}, worktreeItem{path: "/wt/a/two", branch: "two"}),
 	}
 	windows := []wsWindow{
 		{windowID: 1, cwd: "/wt/a/one", agent: "codex", agentStatus: "finished", since: old},
-		{windowID: 2, cwd: "/wt/a/two", agent: "claude", agentStatus: "finished", since: new},
+		{windowID: 2, cwd: "/wt/a/two", agent: "claude", agentStatus: "finished", since: recent},
 	}
 	groups := buildRepoGroups(sources, windows)
 	flat := flattenAgents(groups)
@@ -118,9 +118,9 @@ func TestFlattenAgentsBlockedFirstOldest(t *testing.T) {
 
 func TestRebuildWorkRowsSectionsAndHunt(t *testing.T) {
 	m := model{
-		filter:      filterWork,
-		wsScanDirs:  []scanRepo{{dir: "/root/oweb/kesh", owner: "oweb", repo: "kesh"}},
-		wsScan:      map[string][]worktreeItem{"/root/oweb/kesh": {}},
+		filter:        filterWork,
+		wsScanDirs:    []scanRepo{{dir: "/root/oweb/kesh", owner: "oweb", repo: "kesh"}},
+		wsScan:        map[string][]worktreeItem{"/root/oweb/kesh": {}},
 		showAgentPane: true,
 	}
 	// Seed the scan with the worktrees a porcelain fetch would return.
@@ -133,7 +133,7 @@ func TestRebuildWorkRowsSectionsAndHunt(t *testing.T) {
 	}
 	// No windows yet: the idle repo starts collapsed. Force it open to verify
 	// the row assembly, then exercise hunt below.
-	m.wsExpanded = map[string]bool{"/root/oweb/kesh": true}
+	m.wsExpanded = map[string]bool{"/wt/kesh/main": true}
 	m.rebuildRows()
 
 	var repoRows, wtRows, otherRows int
@@ -277,7 +277,7 @@ func TestToggleWsRowPersistsCollapse(t *testing.T) {
 	if m2.wsRepoExpanded(m2.wsRepos[0]) {
 		t.Fatalf("enter on repo row should collapse it")
 	}
-	if v, ok := m2.wsExpanded["/root/o/kesh"]; !ok || v {
+	if v, ok := m2.wsExpanded["/wt/kesh/main"]; !ok || v {
 		t.Fatalf("collapse state should be recorded as explicit false (got %v, present %v)", v, ok)
 	}
 	updated, _ = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})

@@ -65,9 +65,13 @@ Commands:
   kesh tree destroy <branch> [--force] [-y|--yes] [--json]
   kesh tree merge <branch> [--force] [-y|--yes] [--json]
 
-All commands require .kesh.yaml and operate on its first workspace.
-Tree commands are headless by default. tree new --session opens a session
-layout; tree new --window opens a new Kitty window in the current tab.
+All commands require Worktrunk (wt), and ignore .kesh.yaml.
+Worktrunk owns paths, hooks, and branch cleanup. Review hooks once per repo:
+  wt config approvals add
+Retry approval when hooks change. kesh -y confirms deletion/merge only;
+it never approves Worktrunk hooks.
+Tree commands are headless by default. tree new --session opens a plain Kitty
+session; --window opens a new Kitty window. New branches use wt's default base.
 `
 
 func runTreeCommand(args []string) error {
@@ -292,17 +296,17 @@ func runTreeDestroy(ctx context.Context, command treeCommand, options treeComman
 		}
 		return treeResponse{OK: false, Operation: "destroy", Branch: command.Branch, Cancelled: true}, nil
 	}
+	if err := workspace.WorktrunkClient(ctx, first.RepoRoot, options.Runner).CheckApproval(); err != nil {
+		return treeResponse{}, err
+	}
 	if err := closeTreeKittyWindows(options, kittyIDs); err != nil {
 		return treeResponse{}, err
 	}
-	if err := setup.RemoveContextEnv(first.WorktreeFolder(target.WorktreePath)); err != nil {
-		return treeResponse{}, fmt.Errorf("remove generated workspace env: %w", err)
-	}
-	if err := workspacegit.RemoveWorktree(ctx, target, command.Force, options.Runner); err != nil {
+	if err := workspace.WorktrunkClient(ctx, first.RepoRoot, options.Runner).Remove(target.WorktreePath, command.Force, command.Force); err != nil {
 		return treeResponse{}, err
 	}
 	if !command.JSON {
-		fmt.Fprintf(options.Stdout, "destroyed worktree and branch: %s\n", command.Branch)
+		fmt.Fprintf(options.Stdout, "removed worktree: %s (Worktrunk handles branch cleanup)\n", command.Branch)
 	}
 	return treeResponse{
 		OK:        true,
@@ -332,6 +336,9 @@ func runTreeMerge(ctx context.Context, command treeCommand, options treeCommandO
 		}
 		return treeResponse{OK: false, Operation: "merge", Branch: command.Branch, Target: defaultBranch, Cancelled: true}, nil
 	}
+	if err := workspace.WorktrunkClient(ctx, target.WorktreePath, options.Runner).CheckApproval(); err != nil {
+		return treeResponse{}, err
+	}
 	if err := closeTreeKittyWindows(options, kittyIDs); err != nil {
 		return treeResponse{}, err
 	}
@@ -341,18 +348,12 @@ func runTreeMerge(ctx context.Context, command treeCommand, options treeCommandO
 	if err := workspacegit.EnsureCleanWorktree(ctx, target, options.Runner); err != nil {
 		return treeResponse{}, fmt.Errorf("worktree changed after preflight: %w", err)
 	}
-	if err := workspacegit.MergeBranch(ctx, mainPath, command.Branch, options.Runner); err != nil {
+	if err := workspace.WorktrunkClient(ctx, target.WorktreePath, options.Runner).Merge(defaultBranch); err != nil {
 		return treeResponse{}, fmt.Errorf("merge %s into %s: %w", command.Branch, defaultBranch, err)
-	}
-	if err := setup.RemoveContextEnv(first.WorktreeFolder(target.WorktreePath)); err != nil {
-		return treeResponse{}, fmt.Errorf("merge succeeded but remove generated workspace env failed: %w", err)
-	}
-	if err := workspacegit.RemoveWorktree(ctx, target, command.Force, options.Runner); err != nil {
-		return treeResponse{}, fmt.Errorf("merge succeeded but destroy failed: %w", err)
 	}
 	if !command.JSON {
 		fmt.Fprintf(options.Stdout, "merged %s into %s\n", command.Branch, defaultBranch)
-		fmt.Fprintf(options.Stdout, "destroyed worktree and branch: %s\n", command.Branch)
+		fmt.Fprintf(options.Stdout, "Worktrunk scheduled cleanup: %s (see wt list for status)\n", command.Branch)
 	}
 	return treeResponse{
 		OK:        true,
@@ -375,12 +376,14 @@ func resolveTreeDestroy(ctx context.Context, command treeCommand, options treeCo
 	if err != nil {
 		return first, workspacegit.RemoveTarget{}, nil, err
 	}
-	target, err := workspacegit.ResolveRemoveTarget(ctx, workspacegit.RemoveOptions{
-		Branch: command.Branch,
-		Cwd:    mainPath,
-		Force:  command.Force,
-		Runner: options.Runner,
-	})
+	item, err := workspace.WorktrunkClient(ctx, mainPath, options.Runner).Find(command.Branch)
+	target := workspacegit.RemoveTarget{Branch: command.Branch, RepoRoot: mainPath}
+	if item.Worktree != nil {
+		target.WorktreePath = item.Worktree.Path
+	}
+	if err == nil && item.Worktree.Main {
+		err = fmt.Errorf("cannot remove primary worktree")
+	}
 	if err != nil {
 		return first, workspacegit.RemoveTarget{}, nil, err
 	}
@@ -408,11 +411,11 @@ func resolveTreeMerge(ctx context.Context, command treeCommand, options treeComm
 	if err != nil {
 		return first, workspacegit.RemoveTarget{}, "", "", nil, err
 	}
-	target, err := workspacegit.ResolveCloseTarget(ctx, workspacegit.RemoveOptions{
-		Branch: command.Branch,
-		Cwd:    mainPath,
-		Runner: options.Runner,
-	})
+	item, err := workspace.WorktrunkClient(ctx, mainPath, options.Runner).Find(command.Branch)
+	target := workspacegit.RemoveTarget{Branch: command.Branch, RepoRoot: mainPath}
+	if item.Worktree != nil {
+		target.WorktreePath = item.Worktree.Path
+	}
 	if err != nil {
 		return first, workspacegit.RemoveTarget{}, "", "", nil, err
 	}

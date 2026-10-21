@@ -2,15 +2,14 @@ package workspace
 
 import (
 	"context"
-	"fmt"
 	"path/filepath"
 
 	"github.com/alienxp03/kesh/internal/workspace/git"
 	"github.com/alienxp03/kesh/internal/workspace/run"
 )
 
-// FirstWorkspace is the repository and recipe context used by headless tree
-// commands. It deliberately resolves only the first .kesh.yaml workspace.
+// FirstWorkspace is the legacy-named repository context for headless commands.
+// Recipe fields remain empty: worktree actions do not read .kesh.yaml.
 type FirstWorkspace struct {
 	ConfigPath       string
 	Name             string
@@ -19,30 +18,16 @@ type FirstWorkspace struct {
 	WorkspaceRelPath string
 }
 
-// LoadFirstWorkspace requires a .kesh.yaml and resolves its first workspace.
-// It is shared by headless create, destroy, and merge commands so they all
-// agree on repository and configuration discovery.
-func LoadFirstWorkspace(ctx context.Context, cwd string, env map[string]string, runner run.Runner) (FirstWorkspace, error) {
-	selection, err := resolveSelection(ctx, CreateOptions{
-		Cwd:    cwd,
-		Env:    env,
-		Runner: runner,
-		Mode:   ModeSingle,
-	}, false, nil, true)
+// LoadFirstWorkspace resolves the current Git repository, without a recipe.
+func LoadFirstWorkspace(ctx context.Context, cwd string, _ map[string]string, runner run.Runner) (FirstWorkspace, error) {
+	if runner == nil {
+		runner = run.DefaultRunner{}
+	}
+	root, err := git.RepoRoot(ctx, cwd, runner)
 	if err != nil {
 		return FirstWorkspace{}, err
 	}
-	if len(selection.Workspaces) != 1 {
-		return FirstWorkspace{}, fmt.Errorf("headless tree commands require exactly one workspace")
-	}
-	workspace := selection.Workspaces[0]
-	return FirstWorkspace{
-		ConfigPath:       selection.ConfigPath,
-		Name:             workspace.Name,
-		RepoRoot:         workspace.RepoRoot,
-		FolderRoot:       workspace.WorkspaceRoot,
-		WorkspaceRelPath: workspace.WorkspaceRelPath,
-	}, nil
+	return FirstWorkspace{Name: filepath.Base(root), RepoRoot: root, FolderRoot: cwd}, nil
 }
 
 // WorktreeFolder returns the configured workspace folder inside a linked

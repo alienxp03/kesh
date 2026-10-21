@@ -1,7 +1,5 @@
-// Package workspace is the recipe-driven worktree + Kitty layout engine,
-// ported from wktree. It owns .kesh.yaml parsing, worktree creation, the
-// file/env/hook setup pipeline, and Kitty session rendering. Create is the
-// single entry point used by the rest of kesh.
+// Package workspace opens .kesh.yaml folder layouts and plain Worktrunk
+// worktree sessions. Worktrunk alone owns worktree paths, setup, and hooks.
 package workspace
 
 import (
@@ -31,17 +29,18 @@ type Config = config.Config
 type Workspace = config.Workspace
 type PaneCommand = config.PaneCommand
 
-// CreateOptions configures a recipe-driven worktree creation.
+// CreateOptions configures Worktrunk creation. Home, Mode, Selected, and
+// ShellRunner remain for source compatibility but are ignored. Recipes apply
+// only to OpenOptions folder layouts.
 type CreateOptions struct {
 	// Cwd is the repository to create the worktree in. Usually the project
 	// under the kesh cursor.
 	Cwd string
 	// Branch is the new worktree's branch name.
 	Branch string
-	// From is the optional start point (defaults to HEAD).
+	// From overrides Worktrunk's default base for a new branch.
 	From string
-	// Home overrides the worktree root; empty means use .kesh.yaml's
-	// worktree.dir or the provider default.
+	// Home is ignored: Worktrunk owns the path.
 	Home string
 	// Mode is ModeSingle, ModeAll, or ModeSelected.
 	Mode string
@@ -60,8 +59,8 @@ type CreateOptions struct {
 	ShellRunner setup.ShellRunner
 }
 
-// CreateResult describes a recipe-created worktree without coupling callers to
-// the Kitty layout implementation.
+// CreateResult describes a Worktrunk worktree and its selected project folder.
+// ConfigPath stays empty because no recipe is read.
 type CreateResult struct {
 	Branch        string
 	WorkspaceName string
@@ -98,21 +97,17 @@ func Load(cwd string, runner run.Runner) (*Config, string, error) {
 	return &cfg, configPath, nil
 }
 
-// Create runs the full recipe-driven flow for the Kitty provider: resolve the
-// .kesh.yaml selection, create a worktree per selected workspace, run the
-// setup pipeline (copy/symlink, ports, set_env, post_create hooks), optionally
-// add to zoxide, and open the assembled Kitty session. Mode is "single",
-// "all", or "selected"; selectedNames is honored only for "selected".
+// Create switches/creates through wt and opens a plain Kitty session.
+// Legacy recipe selection and setup options are ignored for worktrees.
 func Create(ctx context.Context, opts CreateOptions) error {
-	opts, selection, worktrees, err := prepareCreate(ctx, opts, false)
+	_, selection, worktrees, err := prepareSingleCreate(ctx, opts)
 	if err != nil {
 		return err
 	}
 	return openWorkspaceLayout(ctx, sessionName(selection, opts.Branch), "", kittyWindows(worktrees), opts.Env, opts.Runner)
 }
 
-// CreateAndOpen creates the first workspace from .kesh.yaml and opens its
-// layout in Kitty. It is the CLI equivalent of the interactive worktree flow.
+// CreateAndOpen switches/creates through wt and opens a plain Kitty session.
 func CreateAndOpen(ctx context.Context, opts CreateOptions) (CreateResult, error) {
 	result, selection, worktrees, err := prepareSingleCreate(ctx, opts)
 	if err != nil {
@@ -124,8 +119,7 @@ func CreateAndOpen(ctx context.Context, opts CreateOptions) (CreateResult, error
 	return result, nil
 }
 
-// CreateAndOpenWindow creates the first workspace from .kesh.yaml and opens a
-// new Kitty window in the current tab, without loading a Kitty session.
+// CreateAndOpenWindow opens a wt worktree in the current Kitty tab.
 func CreateAndOpenWindow(ctx context.Context, opts CreateOptions) (CreateResult, error) {
 	result, _, worktrees, err := prepareSingleCreate(ctx, opts)
 	if err != nil {
@@ -142,67 +136,17 @@ func CreateAndOpenWindow(ctx context.Context, opts CreateOptions) (CreateResult,
 	return result, nil
 }
 
-// CreateHeadless creates and prepares the first workspace from .kesh.yaml
-// without opening Kitty or rendering panes. It is the agent-facing equivalent
-// of Create and intentionally shares the same worktree/setup pipeline.
+// CreateHeadless switches/creates through wt without opening Kitty.
 func CreateHeadless(ctx context.Context, opts CreateOptions) (CreateResult, error) {
 	result, _, _, err := prepareSingleCreate(ctx, opts)
 	return result, err
 }
 
 func prepareSingleCreate(ctx context.Context, opts CreateOptions) (CreateResult, selection, []worktreeWithSpec, error) {
-	opts.Mode = ModeSingle
-	opts.Selected = nil
-	opts, selection, worktrees, err := prepareCreate(ctx, opts, true)
-	if err != nil {
-		return CreateResult{}, selection, nil, err
-	}
-	if len(worktrees) != 1 {
-		return CreateResult{}, selection, nil, fmt.Errorf("single-workspace creation requires exactly one workspace")
-	}
-	worktree := worktrees[0]
-	result := CreateResult{
-		Branch:        worktree.Worktree.Branch,
-		WorkspaceName: worktree.Spec.Name,
-		RepoRoot:      worktree.Worktree.RepoRoot,
-		WorktreePath:  worktree.Worktree.WorktreePath,
-		WorkspacePath: workspacePath(worktree.Spec, worktree.Worktree.WorktreePath),
-		ConfigPath:    selection.ConfigPath,
-	}
-	return result, selection, worktrees, nil
-}
-
-func prepareCreate(ctx context.Context, opts CreateOptions, requireConfig bool) (CreateOptions, selection, []worktreeWithSpec, error) {
 	if opts.Runner == nil {
 		opts.Runner = run.DefaultRunner{}
 	}
-	opts.Stdout, opts.Stderr, opts.Env = normalizeIO(opts.Stdout, opts.Stderr, opts.Env)
-
-	allWorkspaces := opts.Mode == ModeAll
-	var selectedNames []string
-	if opts.Mode == ModeSelected {
-		selectedNames = opts.Selected
-	}
-
-	selection, err := resolveSelection(ctx, opts, allWorkspaces, selectedNames, requireConfig)
-	if err != nil {
-		return opts, selection, nil, err
-	}
-
-	worktrees, err := createWorktrees(ctx, selection, opts)
-	if err != nil {
-		return opts, selection, nil, err
-	}
-	if err := runSetup(ctx, selection, worktrees, opts.Stdout, opts.Stderr, opts.ShellRunner); err != nil {
-		return opts, selection, nil, err
-	}
-
-	pathsToAdd := make([]string, 0, len(worktrees))
-	for _, wt := range worktrees {
-		pathsToAdd = append(pathsToAdd, workspacePath(wt.Spec, wt.Worktree.WorktreePath))
-	}
-	addToZoxide(ctx, pathsToAdd, opts.Runner)
-	return opts, selection, worktrees, nil
+	return prepareWorktrunkCreate(ctx, opts)
 }
 
 // Mode values for CreateOptions.Mode.
@@ -336,68 +280,6 @@ func resolveSelection(ctx context.Context, opts CreateOptions, allWorkspaces boo
 	}, nil
 }
 
-func createWorktrees(ctx context.Context, sel selection, opts CreateOptions) ([]worktreeWithSpec, error) {
-	worktrees := make([]worktreeWithSpec, 0, len(sel.Workspaces))
-	for _, ws := range sel.Workspaces {
-		target, err := git.ResolveCreateWorktree(ctx, git.CreateOptions{
-			Branch:     opts.Branch,
-			From:       opts.From,
-			HomeOption: sel.WorktreeHome,
-			Cwd:        ws.RepoRoot,
-			Runner:     opts.Runner,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", ws.Name, err)
-		}
-		worktree, err := git.CreateResolvedWorktree(ctx, target, opts.Runner)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", ws.Name, err)
-		}
-		worktrees = append(worktrees, worktreeWithSpec{Spec: ws, Worktree: worktree})
-	}
-	return worktrees, nil
-}
-
-// runSetup executes the copy/symlink, port-randomization, set_env, context-env,
-// and post_create pipeline. Failures are surfaced as an error containing the
-// captured stderr so the caller can report what went wrong.
-func runSetup(ctx context.Context, sel selection, worktrees []worktreeWithSpec, stdout io.Writer, stderr io.Writer, shellRunner setup.ShellRunner) error {
-	contexts := workspaceContexts(worktrees)
-	baseLogger := setup.Logger{Stdout: stdout, Stderr: stderr}
-	var problems []string
-	for _, wt := range worktrees {
-		files := config.WorkspaceFiles(sel.Config, wt.Spec.Config)
-		hooks := config.WorkspaceHooks(sel.Config, wt.Spec.Config)
-		logger := baseLogger
-		if sel.AllWorkspaces {
-			logger.Prefix = wt.Spec.Name
-		}
-		plan := setup.NewPlan(
-			wt.Spec.WorkspaceRoot,
-			workspacePath(wt.Spec, wt.Worktree.WorktreePath),
-			wt.Spec.Name, "", files, hooks,
-			wt.Spec.Config.Worktree.RandomizePorts, wt.Spec.Config.Worktree.SetEnv,
-			wt.Worktree.Reused, contexts[wt.Spec.Name],
-		)
-		if status := setup.RunPrepare(plan, logger); status != 0 {
-			problems = append(problems, fmt.Sprintf("%s: prepare failed", wt.Spec.Name))
-		}
-		if status := setup.SetEnvFiles(plan, logger); status != 0 {
-			problems = append(problems, fmt.Sprintf("%s: set_env failed", wt.Spec.Name))
-		}
-		if status := setup.WriteContextEnvLogged(plan, logger); status != 0 {
-			problems = append(problems, fmt.Sprintf("%s: context env failed", wt.Spec.Name))
-		}
-		if status := setup.RunPostCreate(ctx, plan, logger, shellRunner); status != 0 {
-			problems = append(problems, fmt.Sprintf("%s: post_create failed", wt.Spec.Name))
-		}
-	}
-	if len(problems) > 0 {
-		return fmt.Errorf("setup failed: %s", strings.Join(problems, "; "))
-	}
-	return nil
-}
-
 // --- selection helpers ---
 
 func addToZoxide(ctx context.Context, paths []string, runner run.Runner) {
@@ -492,18 +374,6 @@ func defaultWorkspaceName(repoRoot string, repoSlug string, configDir string) st
 }
 
 // --- layout helpers ---
-
-func workspaceContexts(worktrees []worktreeWithSpec) map[string]setup.Context {
-	workspacePaths := map[string]string{}
-	for _, wt := range worktrees {
-		workspacePaths[wt.Spec.Name] = workspacePath(wt.Spec, wt.Worktree.WorktreePath)
-	}
-	contexts := map[string]setup.Context{}
-	for _, wt := range worktrees {
-		contexts[wt.Spec.Name] = setup.Context{WorkspacePaths: workspacePaths}
-	}
-	return contexts
-}
 
 func kittyWindows(worktrees []worktreeWithSpec) []layout.Window {
 	windows := make([]layout.Window, 0, len(worktrees))

@@ -82,6 +82,27 @@ func TestAssembleUsesKeshLayoutSessionName(t *testing.T) {
 	}
 }
 
+func TestAssembleHidesInternalSessionID(t *testing.T) {
+	const internalName = "kesh-.dotfiles--733e3e65fd68"
+	for _, displayName := range []string{internalName, ".dotfiles", "renamed"} {
+		t.Run(displayName, func(t *testing.T) {
+			entries, _ := Assemble(kitty.State{{Tabs: []kitty.Tab{{
+				ID: 1, Windows: []kitty.Window{{
+					ID: 11, CWD: "/workspace/.dotfiles", SessionName: internalName,
+					Env: map[string]string{"KESH_KITTY_SESSION": displayName},
+				}},
+			}}}}, state.SavedSessions{}, nil, 999, "/home/user")
+			want := ".dotfiles"
+			if displayName == "renamed" {
+				want = displayName
+			}
+			if len(entries) != 1 || entries[0].Name != want || entries[0].Session != internalName {
+				t.Fatalf("entries = %#v, want display name %q with internal ID preserved", entries, want)
+			}
+		})
+	}
+}
+
 func TestMergeZoxideSkipsRepresentedPathsAndAddsLivePaths(t *testing.T) {
 	context := domain.CatalogContext{
 		LivePaths:    map[string]bool{"/workspace/live": true},

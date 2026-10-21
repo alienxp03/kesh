@@ -20,7 +20,19 @@ type helpSection struct {
 
 var keymapHelp = []helpSection{
 	{
-		title: "Work (main surface)",
+		title: "Projects and Agents (default)",
+		items: []helpItem{
+			{keys: "h/l, 1/2", action: "focus Projects / Agents"},
+			{keys: "j/k", action: "move within the active pane"},
+			{keys: "space", action: "expand or collapse the selected project"},
+			{keys: "enter", action: "focus/restore session; header opens listed instance"},
+			{keys: "w", action: "create worktree for selected project"},
+			{keys: "/", action: "search pane, including collapsed trees"},
+			{keys: "n", action: "select projects for a new session"},
+		},
+	},
+	{
+		title: "Work (legacy surface)",
 		items: []helpItem{
 			{keys: "enter", action: "connect: focus or open the worktree"},
 			{keys: "n", action: "new worktree for the repo under the cursor"},

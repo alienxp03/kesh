@@ -13,12 +13,26 @@ import (
 // letting addWorktreeForBranch's branch-on-origin decision be asserted without a
 // real repository. A non-empty answer means BranchExistsOnOrigin reports true.
 type appGitRunner struct {
-	specs []system.Spec
-	out   []byte
+	specs    []system.Spec
+	out      []byte
+	existing bool
 }
 
 func (r *appGitRunner) Output(spec system.Spec) ([]byte, error) {
 	r.specs = append(r.specs, spec)
+	if spec.Name == "wt" {
+		switch spec.Args[0] {
+		case "config":
+			return []byte(`{"state":"approved"}`), nil
+		case "switch":
+			return []byte(`{"path":"/custom/worktree"}`), nil
+		case "--config-set":
+			if r.existing {
+				return []byte(`{"schema":2,"items":[{"branch":"rename-session"}]}`), nil
+			}
+			return []byte(`{"schema":2,"items":[]}`), nil
+		}
+	}
 	return r.out, nil
 }
 
@@ -39,7 +53,7 @@ func TestAddWorktreeForBranch_NewBranchCreatesBranchOffHead(t *testing.T) {
 		t.Fatalf("addWorktreeForBranch: %v", err)
 	}
 	last := recorder.specs[len(recorder.specs)-1]
-	want := system.Spec{Name: "git", Args: []string{"-C", "/repo", "worktree", "add", "-b", "rename-session", "/trees/topic"}}
+	want := system.Spec{Name: "wt", Dir: "/repo", Args: []string{"switch", "--no-cd", "--format=json", "--create", "rename-session"}}
 	if !reflect.DeepEqual(last, want) {
 		t.Fatalf("new-branch spec = %#v, want %#v", last, want)
 	}
@@ -65,7 +79,7 @@ func TestFetchWorktreesDefersPerWorktreeStatus(t *testing.T) {
 // TestAddWorktreeForBranch_ExistingBranchChecksOutOrigin confirms the prior
 // behavior is preserved when the branch already lives on origin.
 func TestAddWorktreeForBranch_ExistingBranchChecksOutOrigin(t *testing.T) {
-	recorder := &appGitRunner{out: []byte("abc123\trefs/heads/rename-session\n")}
+	recorder := &appGitRunner{existing: true}
 	restore := system.SetRunner(recorder)
 	t.Cleanup(restore)
 
@@ -73,7 +87,7 @@ func TestAddWorktreeForBranch_ExistingBranchChecksOutOrigin(t *testing.T) {
 		t.Fatalf("addWorktreeForBranch: %v", err)
 	}
 	last := recorder.specs[len(recorder.specs)-1]
-	want := system.Spec{Name: "git", Args: []string{"-C", "/repo", "worktree", "add", "/trees/topic", "origin/rename-session"}}
+	want := system.Spec{Name: "wt", Dir: "/repo", Args: []string{"switch", "--no-cd", "--format=json", "rename-session"}}
 	if !reflect.DeepEqual(last, want) {
 		t.Fatalf("existing-branch spec = %#v, want %#v", last, want)
 	}

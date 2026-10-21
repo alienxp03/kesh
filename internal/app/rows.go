@@ -179,6 +179,10 @@ func preserveExpandedState(previous, refreshed []entry) {
 }
 
 func (m *model) rebuildRows() {
+	if m.filter == filterSessions {
+		m.rebuildMainRows()
+		return
+	}
 	if m.filter == filterWork {
 		m.rebuildWorkRows()
 		return
@@ -201,7 +205,7 @@ func (m *model) rebuildRows() {
 		entryIndexes = append(entryIndexes, i)
 		searchValues = append(searchValues, e.name+" "+e.originalName+" "+e.detail)
 	}
-	if m.query != "" {
+	if m.query != "" && (m.filter != filterSessions || !m.mainAgents) {
 		matches := fuzzy.Find(m.query, searchValues)
 		ranked := make([]int, 0, len(matches))
 		for _, match := range matches {
@@ -232,7 +236,7 @@ func (m *model) rebuildRows() {
 	for _, entryIndex := range entryIndexes {
 		e := &m.entries[entryIndex]
 		rows = append(rows, row{entryIndex: entryIndex, tabIndex: -1, windowIndex: -1})
-		if e.expanded && m.query == "" {
+		if m.filter != filterProjects && m.filter != filterSessions && e.expanded && m.query == "" {
 			for tabIndex := range e.tabs {
 				rows = append(rows, row{entryIndex: entryIndex, tabIndex: tabIndex, windowIndex: -1})
 				if e.tabs[tabIndex].expanded {
@@ -243,8 +247,21 @@ func (m *model) rebuildRows() {
 			}
 		}
 	}
+	if m.filter == filterSessions {
+		agents := *m
+		agents.rows = nil
+		if !m.mainAgents {
+			agents.query = ""
+		}
+		agents.cursor = 0
+		agents.rebuildAgentRows()
+		rows = append(rows, agents.rows...)
+	}
 	m.rows = rows
-	if m.cursor >= len(rows) {
+	if m.filter == filterSessions {
+		start, end := m.mainPanelBounds()
+		m.cursor = max(start, min(m.cursor, end-1))
+	} else if m.cursor >= len(rows) {
 		m.cursor = max(0, len(rows)-1)
 	}
 }
@@ -254,6 +271,18 @@ func (m model) selectedDetailPath() string {
 		return ""
 	}
 	selected := m.rows[m.cursor]
+	if selected.section == "ws" {
+		if group, wt, ok := m.wsRow(selected); ok {
+			if selected.wi >= 0 && selected.wi < len(group.worktrees) {
+				return wt.item.path
+			}
+			return group.mainPath
+		}
+		return ""
+	}
+	if selected.entryIndex < 0 || selected.entryIndex >= len(m.entries) {
+		return ""
+	}
 	entry := m.entries[selected.entryIndex]
 	if selected.windowIndex >= 0 {
 		return entry.tabs[selected.tabIndex].windows[selected.windowIndex].cwd
@@ -528,6 +557,10 @@ func (m model) matchesFilter(e entry) bool {
 		return e.kind == "ssh"
 	case filterSaved:
 		return e.saved
+	case filterSessions:
+		return (e.open && e.session != "") || e.saved
+	case filterProjects:
+		return e.kind == "project" && !e.saved
 	default:
 		return true
 	}
@@ -703,7 +736,7 @@ func (m *model) toggleWsRow() {
 	r := m.rows[m.cursor]
 	switch r.section {
 	case "ws":
-		if r.wi >= 0 || r.gi < 0 || r.gi >= len(m.wsRepos) {
+		if (r.wi >= 0 && m.filter != filterSessions) || r.gi < 0 || r.gi >= len(m.wsRepos) {
 			return
 		}
 		dir := m.wsRepos[r.gi].dir
@@ -711,6 +744,14 @@ func (m *model) toggleWsRow() {
 			m.wsExpanded = map[string]bool{}
 		}
 		m.wsExpanded[dir] = !m.wsRepoExpanded(m.wsRepos[r.gi])
+		if m.filter == filterSessions && r.wi >= 0 {
+			for i, candidate := range m.rows {
+				if candidate.section == "ws" && candidate.gi == r.gi && candidate.wi < 0 {
+					m.cursor = i
+					break
+				}
+			}
+		}
 	case "ws-other":
 		m.wsOtherExpanded = !m.wsOtherExpanded
 	default:
@@ -764,10 +805,7 @@ func (m model) wsRepoSources() []wsRepoSource {
 	sources := wsRepoSourcesFromEntries(m.entries)
 	for _, scan := range m.wsScanDirs {
 		if worktrees, ok := m.wsScan[scan.dir]; ok {
-			sources = append(sources, wsRepoSource{
-				dir: scan.dir, mainPath: scan.dir, name: scan.repo, owner: scan.owner, repo: scan.repo,
-				worktrees: worktrees,
-			})
+			sources = append(sources, wsRepoSourceFromWorktrees(scan.dir, scan.dir, scan.repo, worktrees))
 		}
 	}
 	return dedupeRepoSources(sources)
@@ -816,9 +854,8 @@ func (m model) wsEntryGrouped(e entry) bool {
 // group. Each row carries stable group/worktree indexes so actions resolve by
 // path, not by list position.
 func (m *model) rebuildWorkRows() {
-	m.wsRepos = buildRepoGroups(m.wsRepoSources(), m.collectWsWindows())
-
 	focused := m.focusedWorktreePath()
+	m.wsRepos = buildRepoGroups(m.wsRepoSources(), m.collectWsWindows())
 	var rows []row
 	appendWorktree := func(gi, wi int) {
 		rows = append(rows, row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "ws", gi: gi, wi: wi})
@@ -846,14 +883,14 @@ func (m *model) rebuildWorkRows() {
 	for gi := range m.wsRepos {
 		group := m.wsRepos[gi]
 		if m.query != "" {
-			any := false
+			matched := false
 			for _, wt := range group.worktrees {
 				if match(group, wt) {
-					any = true
+					matched = true
 					break
 				}
 			}
-			if !any {
+			if !matched {
 				continue
 			}
 		}
@@ -870,7 +907,18 @@ func (m *model) rebuildWorkRows() {
 			}
 		}
 	}
-	if m.query == "" {
+	if m.filter == filterSessions {
+		seen := map[string]bool{}
+		for i, e := range m.entries {
+			if e.path == "" || (e.kind != "project" && e.kind != "workspace") || m.wsEntryGrouped(e) || seen[cleanWorktreePath(e.path)] {
+				continue
+			}
+			seen[cleanWorktreePath(e.path)] = true
+			if m.query == "" || strings.Contains(strings.ToLower(e.name+" "+e.path), strings.ToLower(m.query)) {
+				rows = append(rows, row{entryIndex: i, tabIndex: -1, windowIndex: -1})
+			}
+		}
+	} else if m.query == "" {
 		if others := m.wsOtherEntries(); len(others) > 0 {
 			rows = append(rows, row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "ws-other", wi: -1})
 			if m.wsOtherExpanded {

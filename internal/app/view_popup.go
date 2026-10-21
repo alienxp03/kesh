@@ -130,6 +130,11 @@ func (m model) popupView(width int) string {
 			branchField = dimStyle.Render("Session: ") + focusStyle.Render(m.worktreeSessionName+sessionCursor)
 		}
 		fieldWidth := popupWidth - 6
+		if !launchAction {
+			if entries := m.worktreeEntries(); len(entries) > 0 {
+				branchField += "\n" + dimStyle.Render("Dir:    ") + mutedStyle.Render(middleTruncate(displayPath(entries[0].path, os.Getenv("HOME")), max(1, fieldWidth-8)))
+			}
+		}
 
 		var pathsField string
 		if m.worktreeRecipe != nil {

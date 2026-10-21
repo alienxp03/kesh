@@ -13,6 +13,9 @@ import (
 )
 
 func (m model) View() string {
+	if m.filter == filterSessions {
+		return m.mainPanelsView()
+	}
 	outerWidth := max(40, m.width-4)
 	workspaceWidth := min(140, outerWidth)
 	selectedPRURL, _ := m.selectedPullRequest()
@@ -38,7 +41,7 @@ func (m model) View() string {
 	}
 
 	hdr := accentStyle.Render("Kesh")
-	if m.filter != filterWork {
+	if m.filter != filterWork && m.filter != filterSessions && m.filter != filterProjects {
 		tabs := []string{"All", "Agents", "SSH", "Saved"}
 		// In the worktree drill-in no flat filter is active, so highlight the one
 		// the user came from (previousFilter). This keeps the active indicator in
@@ -83,8 +86,24 @@ func (m model) View() string {
 		header += "  " + accentStyle.Render(truncate(summary, max(12, workspaceWidth-lipgloss.Width(header)-2)))
 	}
 
+	inlineSearch := m.filter == filterProjects || m.filter == filterSessions
+	showInlineSearch := inlineSearch && (m.filter == filterProjects || m.mode == modeSearch || m.query != "")
 	available := max(1, listHeight-3)
+	if showInlineSearch {
+		available = max(1, available-2)
+	}
 	gap := m.openProjectGap()
+	sessionCount, agentCount := 0, 0
+	if m.filter == filterSessions {
+		for _, item := range m.rows {
+			if item.windowIndex >= 0 {
+				agentCount++
+			} else {
+				sessionCount++
+			}
+		}
+		gap = sessionCount
+	}
 	focusedPosition := m.cursor
 	totalRows := len(m.rows)
 	if gap >= 0 {
@@ -99,6 +118,12 @@ func (m model) View() string {
 	// with that folder and its count rather than the generic "List". The main
 	// work surface gets its own title, including hunt state.
 	listTitle := accentStyle.Render(fmt.Sprintf("List (%d)", len(m.rows)))
+	if m.filter == filterSessions {
+		listTitle = accentStyle.Render(fmt.Sprintf("Sessions (%d)", sessionCount))
+	}
+	if m.filter == filterProjects {
+		listTitle = accentStyle.Render("Select projects")
+	}
 	if m.filter == filterWork {
 		if m.wsHunt {
 			listTitle = errorStyle.Render(fmt.Sprintf("Hunt · blocked worktrees (%d)", len(m.rows)))
@@ -112,6 +137,9 @@ func (m model) View() string {
 		listTitle = projectStyle.Render(fmt.Sprintf("󰉋 %s · worktrees (%d)", name, len(m.rows)))
 	}
 	listLines := []string{listTitle}
+	if showInlineSearch {
+		listLines = append(listLines, ansi.Truncate("Search: "+promptValue, max(1, listWidth-4), "…"), "")
+	}
 	if m.filter == filterWorktrees && len(m.rows) > 0 {
 		// Label the columns so the branch reads as a first-class table column
 		// rather than an unlabeled leading field. Keep Branch and Path evenly
@@ -123,6 +151,10 @@ func (m model) View() string {
 	}
 	for position := start; position < end; position++ {
 		if position == gap {
+			if m.filter == filterSessions {
+				listLines = append(listLines, accentStyle.Render(fmt.Sprintf("Agents (%d)", agentCount)))
+				continue
+			}
 			panelWidth := max(12, listWidth-2)
 			ruleWidth := panelWidth / 2
 			listLines = append(listLines, dimStyle.Render(strings.Repeat(" ", (panelWidth-ruleWidth)/2)+strings.Repeat("─", ruleWidth)))
@@ -139,7 +171,9 @@ func (m model) View() string {
 		focusedWorking := row.entryIndex >= 0 && row.entryIndex < len(m.entries) && row.windowIndex >= 0 &&
 			m.entries[row.entryIndex].tabs[row.tabIndex].windows[row.windowIndex].agentStatus == "working"
 		if focused {
-			if focusedOpen || focusedWorking {
+			if inlineSearch {
+				line = projectStyle.Render("▌") + " " + line
+			} else if focusedOpen || focusedWorking {
 				line = accentStyle.Render("▌") + " " + line
 			} else {
 				line = accentStyle.Render("▌") + " " + focusStyle.Render(ansi.Strip(line))
@@ -151,6 +185,9 @@ func (m model) View() string {
 	}
 	if len(m.rows) == 0 {
 		empty := "  No matching sessions"
+		if m.filter == filterProjects {
+			empty = "  No matching projects"
+		}
 		if m.filter == filterWork {
 			empty = "  No worktrees yet — press n on a repo, or wait for the scan"
 			if m.wsHunt {
@@ -184,20 +221,30 @@ func (m model) View() string {
 	footer := m.footerView(workspaceWidth, hasSelectedPR)
 	if m.mode == modeSearch {
 		footer = dimStyle.Render("type to filter  ctrl+j/k move  backspace delete  ctrl+u clear  enter open  esc command mode")
+		if m.filter == filterSessions {
+			footer = dimStyle.Render("type to filter  ctrl+j/k move  backspace delete  ctrl+u clear  enter open  esc close")
+		}
+		if m.filter == filterProjects {
+			footer = dimStyle.Render("type to search  ctrl+j/k move  tab select  enter create  esc close")
+		}
 	}
 	if m.saving {
 		footer = dimStyle.Render("Saving workspace…")
 	}
-	if m.zoxidePending && m.mode != modeSearch {
+	if m.zoxidePending && m.filter != filterSessions && m.mode != modeSearch {
 		footer += dimStyle.Render("  · loading projects…")
 	}
 	if m.err != nil && m.mode != modeRename && m.mode != modeCreateSession && m.mode != modeClone && m.mode != modeSaveConfirm && m.mode != modePin && m.mode != modeCloseConfirm && m.mode != modeWorktreeCreate && !m.mergedWorktreeBusy && !m.worktreePullBusy {
 		footer = errorStyle.Render("Error: " + m.err.Error())
 	}
 
+	searchLine := ansi.Truncate(fmt.Sprintf("%-6s  %s", "Search", promptValue), workspaceWidth, "…")
+	if inlineSearch {
+		searchLine = ""
+	}
 	content := strings.Join([]string{
 		ansi.Truncate(header, workspaceWidth, "…"),
-		ansi.Truncate(fmt.Sprintf("%-6s  %s", "Search", promptValue), workspaceWidth, "…"),
+		searchLine,
 		strings.Repeat("─", workspaceWidth),
 		body,
 		ansi.Truncate(footer, workspaceWidth, "…"),
@@ -245,6 +292,12 @@ func (m model) openProjectGap() int {
 }
 
 func (m model) footerView(width int, hasSelectedPR bool) string {
+	if m.filter == filterSessions {
+		return dimStyle.Render("/ search  n create session  enter open  esc/q close  j/k move  a agents")
+	}
+	if m.filter == filterProjects {
+		return dimStyle.Render("j/k move  space select  enter create  / search  esc close")
+	}
 	items := []string{"j/k move", "enter open"}
 	dangerous := make([]string, 0, 2)
 
@@ -341,7 +394,13 @@ func (m model) previewView(width, height int) string {
 	path := displayPath(m.selectedAgentPath(), os.Getenv("HOME"))
 	pathLine := dimStyle.Render("Path  ") + mutedStyle.Render(middleTruncate(path, max(1, width-6)))
 	header := accentStyle.Render("Agent screen")
-	body := lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(max(1, height-3)).Render(content)
+	bodyHeight := max(1, height-3)
+	content = lipgloss.NewStyle().Width(width).MaxWidth(width).Render(content)
+	lines := strings.Split(content, "\n")
+	if len(lines) > bodyHeight {
+		lines = lines[len(lines)-bodyHeight:]
+	}
+	body := strings.Join(lines, "\n")
 	return lipgloss.NewStyle().Width(width).Height(height).Render(pathLine + "\n" + header + "\n" + strings.Repeat("─", width) + "\n" + body)
 }
 
@@ -944,7 +1003,7 @@ func (m model) renderRow(r row, width int, focused bool) string {
 	}
 	if r.windowIndex >= 0 {
 		window := e.tabs[r.tabIndex].windows[r.windowIndex]
-		if m.filter == filterAgents {
+		if m.filter == filterAgents || m.filter == filterSessions {
 			return m.renderAgentRow(e, e.tabs[r.tabIndex], window, width)
 		}
 		branch := "├─"
@@ -979,12 +1038,29 @@ func (m model) renderRow(r row, width int, focused bool) string {
 		left := fmt.Sprintf("       %s %s %s %s", branch, arrow, projectStyle.Render("󱂬"), truncate(tab.title, nameWidth))
 		return ansi.Truncate(left, width, "…")
 	}
+	if m.filter == filterSessions {
+		left := projectStyle.Render("") + " " + truncate(e.name, max(8, width/2-4))
+		if e.open {
+			left = openStyle.Render(ansi.Strip(left))
+		}
+		if focused {
+			left = focusStyle.Render(ansi.Strip(left))
+		}
+		return padColumns(left, dimStyle.Render(displayPath(e.path, os.Getenv("HOME"))), width)
+	}
 	selection := " "
 	if m.selected[e.key] {
 		selection = accentStyle.Render("✓")
 	}
+	if m.filter == filterProjects {
+		left := fmt.Sprintf("%s   %s %s", selection, projectStyle.Render(""), truncate(e.name, max(8, width*45/100-10)))
+		if width >= 52 {
+			return padColumns(left, dimStyle.Render(displayPath(e.path, os.Getenv("HOME"))), width)
+		}
+		return ansi.Truncate(left, width, "…")
+	}
 	arrow := " "
-	if len(e.tabs) > 0 {
+	if len(e.tabs) > 0 && m.filter != filterSessions {
 		arrow = "▸"
 		if e.expanded {
 			arrow = "▾"
@@ -1015,6 +1091,9 @@ func (m model) renderRow(r row, width int, focused bool) string {
 		arrow = focusStyle.Render(arrow)
 	}
 	left := fmt.Sprintf("%s   %s %s %s %s", selection, pin, arrow, icon, name)
+	if m.filter == filterSessions {
+		return ansi.Truncate(icon+" "+name, width, "…")
+	}
 	// A live session (tabs present) can span multiple tabs and windows across
 	// different directories, so a single folder path on the row misrepresents
 	// it. Saved snapshots can contain multiple folders too, so keep their rows
@@ -1142,6 +1221,24 @@ func (m model) renderAgentRow(e entry, tab tabItem, window windowItem, width int
 	state := agentStatusLabel(window.agentStatus)
 	if state == "" {
 		state = "Detected"
+	}
+	if m.filter == filterSessions {
+		parent := "—"
+		if e.session != "" {
+			parent = e.name
+		}
+		agentWidth := min(12, max(4, width/4))
+		parentWidth := min(24, max(1, width/4))
+		titleWidth := min(40, max(1, width-agentWidth-parentWidth-4))
+		agent := ansi.Truncate(status+" "+agentLabel(window.agent), agentWidth, "…")
+		agent += strings.Repeat(" ", max(0, agentWidth-lipgloss.Width(agent)))
+		conversation := ansi.Truncate(window.title, titleWidth, "…")
+		if window.title == "" {
+			conversation = "—"
+		}
+		conversation += strings.Repeat(" ", max(0, titleWidth-lipgloss.Width(conversation)))
+		line := agent + "  " + conversation + "  " + dimStyle.Render(ansi.Truncate(parent, parentWidth, "…"))
+		return ansi.Truncate(line, width, "…")
 	}
 	right := dimStyle.Render(agentLabel(window.agent) + " · " + state + " · done " + compactDoneAge(window.lastDoneAt))
 

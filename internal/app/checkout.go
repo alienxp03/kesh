@@ -9,9 +9,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/alienxp03/kesh/internal/catalog"
 	gitx "github.com/alienxp03/kesh/internal/git"
 	githubx "github.com/alienxp03/kesh/internal/github"
+	"github.com/alienxp03/kesh/internal/worktrunk"
 )
 
 func repositoryName(repository string) (string, error) {
@@ -270,54 +270,11 @@ func runCheckoutPR(kitty, zoxide, owner, repo string, number int, repoPathOverri
 
 // checkoutPRBranch is the worktree-creating half of runCheckoutPR, split out so
 // the head branch is the only PR detail it needs.
-func checkoutPRBranch(kitty, zoxide, owner, repo string, number int, branch, repoPath, cloneURL string, matchesRepo func(string) bool) tea.Msg {
-	// 4. Idempotency: a worktree on this branch already exists → focus it.
-	listOutput, err := (gitx.Repository{Path: repoPath}).WorktreePorcelain()
-	if err != nil {
-		return prCheckoutMsg{err: err}
+func checkoutPRBranch(kitty, zoxide, owner, repo string, number int, _, repoPath, _ string, _ func(string) bool) tea.Msg {
+	target := fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number)
+	path, err := (worktrunk.Client{Path: repoPath}).SwitchTarget(target)
+	if err == nil {
+		err = openProjectSession(kitty, zoxide, path, false)
 	}
-	for _, wt := range parseWorktreePorcelain(listOutput) {
-		if wt.branch == branch {
-			_ = (catalog.Zoxide{Executable: zoxide}).Add(wt.path)
-			return prCheckoutMsg{err: openProjectSession(kitty, zoxide, wt.path, false)}
-		}
-	}
-
-	// 5. Fetch the PR head into a local branch and create a worktree for it.
-	worktreeRoot, err := loadWorktreeRoot()
-	if err != nil {
-		return prCheckoutMsg{err: err}
-	}
-	wtPath := filepath.Join(worktreeRoot, owner, repo, worktreeDirectoryName(branch))
-	if _, err := os.Stat(wtPath); err == nil {
-		return prCheckoutMsg{err: fmt.Errorf("worktree already exists at %s", displayPath(wtPath, os.Getenv("HOME")))}
-	} else if !os.IsNotExist(err) {
-		return prCheckoutMsg{err: fmt.Errorf("check worktree path: %w", err)}
-	}
-	if err := os.MkdirAll(filepath.Dir(wtPath), 0o755); err != nil {
-		return prCheckoutMsg{err: fmt.Errorf("create worktree directory: %w", err)}
-	}
-	// Fork-origin checkouts still resolve the PR via the canonical GitHub URL.
-	fetchSource := "origin"
-	if !matchesRepo(repoPath) {
-		fetchSource = cloneURL
-	}
-	// The local PR branch may have been fetched previously and rewritten since;
-	// PR refs are not guaranteed to fast-forward, so update this managed ref
-	// explicitly rather than rejecting a valid re-checkout.
-	repository := gitx.Repository{Path: repoPath}
-	if err := repository.FetchPullRequest(fetchSource, number, branch); err != nil {
-		return prCheckoutMsg{err: err}
-	}
-	if err := repository.AddWorktree(wtPath, branch); err != nil {
-		return prCheckoutMsg{err: err}
-	}
-
-	// 6. Open the workspace.
-	_ = (catalog.Zoxide{Executable: zoxide}).Add(wtPath)
-	return prCheckoutMsg{err: openProjectSession(kitty, zoxide, wtPath, false)}
+	return prCheckoutMsg{err: err}
 }
-
-// worktreeDirectoryName keeps a PR branch in one directory. Git branch names
-// commonly contain slashes (for example fix/widget), which should not create
-// an accidental nested directory tree beneath the worktree root.

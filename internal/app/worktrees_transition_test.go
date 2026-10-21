@@ -52,23 +52,19 @@ func TestWorktreeSearchAndReturnToOriginatingFilter(t *testing.T) {
 	}
 }
 
-func TestWorktreeCreateRunsRecipeAndClosesPickerAfterHandoff(t *testing.T) {
+func TestWorktreeCreateIgnoresRecipeAndClosesPickerAfterHandoff(t *testing.T) {
 	directory := t.TempDir()
 	repository := filepath.Join(directory, "repo")
 	if err := os.Mkdir(repository, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	var captured workspace.CreateOptions
-	original := worktreeCreate
-	worktreeCreate = func(_ context.Context, opts workspace.CreateOptions) error {
-		captured = opts
-		return nil
-	}
-	t.Cleanup(func() { worktreeCreate = original })
+	recorder := &appGitRunner{out: []byte(repository + "\n")}
+	t.Cleanup(system.SetRunner(recorder))
 
 	m := model{
-		filter:                   filterWorktrees,
+		filter: filterWorktrees,
+		kitty:  "kitty", zoxide: "zoxide",
 		worktreeFilterEntryIndex: 0,
 		entries: []entry{{
 			key: repository, name: "repo", path: repository, kind: "project",
@@ -86,11 +82,20 @@ func TestWorktreeCreateRunsRecipeAndClosesPickerAfterHandoff(t *testing.T) {
 	if command == nil || !m.worktreeBusy {
 		t.Fatalf("create transition: command=%v busy=%t", command, m.worktreeBusy)
 	}
-	message := command()
-	if captured.Cwd != repository || captured.Branch != "feat/create" || captured.Mode != "single" {
-		t.Fatalf("workspace.Create opts = %#v", captured)
+	updated, create := m.Update(command())
+	m = updated.(model)
+	if create == nil {
+		t.Fatal("no create command")
 	}
-
+	message := create().(worktreeMsg)
+	if message.err != nil {
+		t.Fatal(message.err)
+	}
+	for _, spec := range recorder.specs {
+		if spec.Name != "wt" && spec.Name != "git" && spec.Name != "kitty" && spec.Name != "zoxide" && spec.Name != "" {
+			t.Fatalf("unexpected recipe action %v", spec)
+		}
+	}
 	updated, post := m.Update(message)
 	m = updated.(model)
 	if m.mode != modeNormal || m.worktreeCreateForm != nil {
@@ -152,7 +157,7 @@ func TestPlainWorktreeCreateOpensSelectedMonorepoProject(t *testing.T) {
 	var sessionFile string
 	for _, spec := range recorder.specs {
 		arguments := strings.Join(spec.Args, " ")
-		added = added || (spec.Name == "git" && strings.Contains(arguments, "worktree add") && strings.Contains(arguments, "/trees/user/frontier/fix-setup-device-dev"))
+		added = added || (spec.Name == "wt" && strings.Contains(arguments, "switch --no-cd --format=json --create fix/setup-device-dev"))
 		if spec.Name == "kitty" && strings.Contains(arguments, "goto_session") {
 			sessionFile = spec.Args[len(spec.Args)-1]
 		}
@@ -164,7 +169,7 @@ func TestPlainWorktreeCreateOpensSelectedMonorepoProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(session), "cd /trees/user/frontier/fix-setup-device-dev/projects/frontier") {
+	if !strings.Contains(string(session), "cd /custom/worktree/projects/frontier") {
 		t.Fatalf("session opened wrong monorepo path:\n%s", session)
 	}
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/alienxp03/kesh/internal/state"
 	"github.com/alienxp03/kesh/internal/system"
 	"github.com/alienxp03/kesh/internal/workspace"
+	"github.com/alienxp03/kesh/internal/worktrunk"
 )
 
 func worktreeDirectoryName(branch string) string {
@@ -47,34 +48,8 @@ func sameWorktreePath(left, right string) bool {
 	return leftErr == nil && rightErr == nil && os.SameFile(leftInfo, rightInfo)
 }
 
-// worktreeCreate is the workspace entry point used by runWktreeNew. It is a
-// package-level variable so tests can substitute a fake without exercising git
-// or Kitty.
-var worktreeCreate = workspace.Create
-
-// workspaceOpen is the no-worktree launch entry point used by runLaunchLayout.
-// Like worktreeCreate, it is a package-level variable for test substitution.
+// workspaceOpen is the folder-layout entry point, replaceable in tests.
 var workspaceOpen = workspace.Open
-
-// runWktreeNew drives recipe-driven worktree creation and Kitty layout setup
-// through the in-process workspace package. Kesh owns the interactive branch
-// prompt and refresh afterward.
-func runWktreeNew(recipePath, mode, branch string, selected []string) tea.Cmd {
-	return func() tea.Msg {
-		worktreeHome, err := loadWorktreeRoot()
-		if err != nil {
-			return worktreeMsg{err: err}
-		}
-		err = worktreeCreate(context.Background(), workspace.CreateOptions{
-			Cwd:      filepath.Dir(recipePath),
-			Branch:   branch,
-			Home:     worktreeHome,
-			Mode:     mode,
-			Selected: selected,
-		})
-		return worktreeMsg{err: err}
-	}
-}
 
 // runLaunchLayout drives the no-worktree launch: it opens the .kesh.yaml
 // layout against each selected workspace's existing folder through the
@@ -123,7 +98,7 @@ func runCreateSession(kitty string, entries []entry, name string) tea.Cmd {
 			return createMsg{err: fmt.Errorf("create session file: %w", err)}
 		}
 		defer os.Remove(path)
-		if _, err := file.WriteString(composedSessionContent(internalName, entries)); err != nil {
+		if _, err := file.WriteString(composedSessionContent(name, entries)); err != nil {
 			file.Close()
 			return createMsg{err: fmt.Errorf("write session file: %w", err)}
 		}
@@ -144,7 +119,11 @@ func runAction(kitty, zoxide string, e entry, selected row) tea.Cmd {
 		// would target the wrong tree). Open it directly instead of falling
 		// through to the project's main checkout.
 		if selected.worktreePath != "" {
-			return actionMsg{err: openProjectSession(kitty, zoxide, selected.worktreePath, false)}
+			path, err := (worktrunk.Client{Path: e.path}).SwitchTarget(selected.worktreePath)
+			if err == nil {
+				err = openProjectSession(kitty, zoxide, path, false)
+			}
+			return actionMsg{err: err}
 		}
 		if selected.windowIndex >= 0 {
 			window := e.tabs[selected.tabIndex].windows[selected.windowIndex]
@@ -286,23 +265,7 @@ func displayPath(path, home string) string {
 }
 
 func (m *model) calculateWorktreePaths() []string {
-	entries := m.worktreeEntries()
-	paths := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		if entry.kind != "project" {
-			continue
-		}
-		identity := m.worktreeRepositories[entry.path]
-		if identity.owner == "" {
-			identity = repoIdentity{owner: "user", repo: filepath.Base(entry.path)}
-		}
-		// filepath.Join drops a trailing empty segment, so with no branch typed
-		// yet the preview resolves to the repo directory and fills in as the
-		// branch is entered — keeping the popup layout stable from the start.
-		worktreePath := filepath.Join(m.worktreeRoot, identity.owner, identity.repo, worktreeDirectoryName(m.worktreeBranch))
-		paths = append(paths, displayPath(worktreePath, os.Getenv("HOME")))
-	}
-	return paths
+	return nil
 }
 
 func (m *model) validateWorktreeBranch() tea.Cmd {
@@ -313,33 +276,12 @@ func (m *model) validateWorktreeBranch() tea.Cmd {
 	if len(entries) == 0 {
 		return nil
 	}
-	branch := m.worktreeBranch
-	worktreeRoot := m.worktreeRoot
-	home := os.Getenv("HOME")
-
-	return func() tea.Msg {
-		for _, entry := range entries {
-			if entry.kind != "project" {
-				continue
-			}
-			// A fresh branch name is valid: it is created off each project's
-			// HEAD at worktree-add time. Only a path collision is rejected, so
-			// validation stays local and network-free.
-			owner, repo := getRepoOwner(entry.path)
-			worktreePath := filepath.Join(worktreeRoot, owner, repo, worktreeDirectoryName(branch))
-			if _, err := os.Stat(worktreePath); err == nil {
-				return worktreeMsg{err: fmt.Errorf("worktree already exists at %s", displayPath(worktreePath, home)), validation: true}
-			}
-		}
-		// Validation successful - return nil error to indicate valid.
-		return worktreeMsg{validation: true}
-	}
+	return func() tea.Msg { return worktreeMsg{validation: true} }
 
 }
 func (m *model) createWorktree() tea.Cmd {
 	entries := m.worktreeEntries()
 	branch := m.worktreeBranch
-	worktreeRoot := m.worktreeRoot
 	kitty := m.kitty
 	zoxide := m.zoxide
 	return func() tea.Msg {
@@ -348,20 +290,18 @@ func (m *model) createWorktree() tea.Cmd {
 			if entry.kind != "project" {
 				continue
 			}
-			owner, repo := getRepoOwner(entry.path)
-			worktreePath := filepath.Join(worktreeRoot, owner, repo, worktreeDirectoryName(branch))
-
 			repository := gitx.Repository{Path: entry.path}
 			repositoryRoot, err := repository.Root()
 			if err != nil {
 				return worktreeMsg{err: fmt.Errorf("find repository root for %s: %w", entry.name, err)}
 			}
+			worktreePath, err := (worktrunk.Client{Path: entry.path}).Switch(branch, "")
+			if err != nil {
+				return worktreeMsg{err: fmt.Errorf("worktree for %s: %w", entry.name, err)}
+			}
 			projectPath, err := projectPathInWorktree(repositoryRoot, entry.path, worktreePath)
 			if err != nil {
 				return worktreeMsg{err: fmt.Errorf("resolve project path for %s: %w", entry.name, err)}
-			}
-			if err := addWorktreeForBranch(repository, worktreePath, branch); err != nil {
-				return worktreeMsg{err: fmt.Errorf("failed to create worktree for %s: %w", entry.name, err)}
 			}
 
 			created = append(created, projectPath)
@@ -369,9 +309,7 @@ func (m *model) createWorktree() tea.Cmd {
 		if len(created) == 0 {
 			return worktreeMsg{err: fmt.Errorf("no project selected for worktree creation")}
 		}
-		// Native creation has no recipe engine to perform the Kitty handoff.
-		// Open the new folder explicitly so Enter behaves like recipe-backed
-		// creation instead of silently returning to the worktree list.
+		// Worktrunk owns setup; kesh owns the Kitty handoff.
 		if err := openProjectSession(kitty, zoxide, created[0], false); err != nil {
 			return worktreeMsg{err: fmt.Errorf("open created worktree: %w", err)}
 		}
@@ -395,19 +333,10 @@ func projectPathInWorktree(repositoryRoot, projectPath, worktreePath string) (st
 	return filepath.Join(worktreePath, relative), nil
 }
 
-// addWorktreeForBranch checks out an existing remote branch when origin has it;
-// otherwise it creates a new branch off the repository's current HEAD. This lets
-// the worktree popup accept brand-new branch names instead of only those already
-// pushed to origin.
-func addWorktreeForBranch(repository gitx.Repository, worktreePath, branch string) error {
-	exists, err := repository.BranchExistsOnOrigin(branch)
-	if err != nil {
-		return fmt.Errorf("check origin for %s: %w", branch, err)
-	}
-	if exists {
-		return repository.AddWorktree(worktreePath, "origin/"+branch)
-	}
-	return repository.CreateBranchWorktree(worktreePath, branch)
+// addWorktreeForBranch is a legacy adapter; wt alone selects the path and base.
+func addWorktreeForBranch(repository gitx.Repository, _ string, branch string) error {
+	_, err := (worktrunk.Client{Path: repository.Path}).Switch(branch, "")
+	return err
 }
 func getRepoOwner(repoPath string) (owner, repo string) {
 	remoteURL, err := (gitx.Repository{Path: repoPath}).RemoteURL()
@@ -442,14 +371,19 @@ func (m model) selectedPullRequest() (string, string) {
 		return "", ""
 	}
 	selected := m.rows[m.cursor]
+	if selected.section == "ws" {
+		if group, wt, ok := m.wsRow(selected); ok && selected.wi >= 0 && selected.wi < len(group.worktrees) {
+			return wt.item.prURL, wt.item.branch
+		}
+		return "", ""
+	}
+	if selected.entryIndex < 0 || selected.entryIndex >= len(m.entries) {
+		return "", ""
+	}
 	entry := m.entries[selected.entryIndex]
 	pullRequestURL := ""
 	branch := entry.pathPR.Branch
 	switch {
-	case selected.section == "ws" && selected.wi >= 0:
-		if _, wt, ok := m.wsRow(selected); ok {
-			pullRequestURL, branch = wt.item.prURL, wt.item.branch
-		}
 	case selected.section == "wt-filter" && selected.wt >= 0 && selected.wt < len(m.worktreeFilterRows):
 		worktree := m.worktreeFilterRows[selected.wt].worktree
 		pullRequestURL, branch = worktree.prURL, worktree.branch
@@ -486,10 +420,12 @@ func (m *model) openWorktreePR() tea.Cmd {
 }
 
 // beginWorktreeCreate opens the create-worktree form for the project whose
-// Worktree tab is open. While the tab is active, worktreeEntries() resolves
-// that project, so the paths, recipe, and validation pipeline target it
-// unchanged. The form overlays the tab; cancelling returns there because the
+// Worktree tab is open. worktreeEntries() resolves that project.
+// Worktrunk owns its path and setup. The form overlays the tab; cancelling
+// returns there because the
 // filter is left on filterWorktrees.
+//
+//nolint:unparam // Callers share the Bubble Tea form-entry command contract.
 func (m *model) beginWorktreeCreate() tea.Cmd {
 	if len(m.worktreeEntries()) == 0 {
 		m.err = fmt.Errorf("no project in this worktree tab")
@@ -502,24 +438,7 @@ func (m *model) beginWorktreeCreate() tea.Cmd {
 	m.worktreeRecipePath = ""
 	m.worktreeRecipeMode = ""
 	m.worktreeCustomWorkspaces = false
-	entries := m.worktreeEntries()
-	if len(entries) == 1 && entries[0].path != "" {
-		projectPath := entries[0].path
-		entries = append([]entry(nil), entries...)
-		m.err = nil
-		return func() tea.Msg {
-			recipe, recipePath, err := loadRecipe(projectPath)
-			repositories := make(map[string]repoIdentity, len(entries))
-			for _, entry := range entries {
-				owner, repo := getRepoOwner(entry.path)
-				repositories[entry.path] = repoIdentity{owner: owner, repo: repo}
-			}
-			return worktreeRecipeMsg{
-				projectPath: projectPath, recipe: recipe, recipePath: recipePath,
-				repositories: repositories, err: err,
-			}
-		}
-	}
+	// Worktree actions do not load .kesh.yaml. Folder layouts still do.
 	m.err = nil
 	return nil
 }
@@ -721,9 +640,18 @@ func worktreePriority(worktree worktreeItem) int {
 }
 
 func sortWorktreeItems(worktrees []worktreeItem) {
+	primary := ""
+	for _, wt := range worktrees {
+		if wt.primary {
+			primary = wt.path
+		}
+	}
 	domainWorktrees := toDomainWorktrees(worktrees)
 	domain.SortWorktrees(domainWorktrees)
 	copy(worktrees, fromDomainWorktrees(domainWorktrees))
+	for i := range worktrees {
+		worktrees[i].primary = worktrees[i].path == primary
+	}
 }
 
 func (m *model) applyPRStatuses(repoKey string, pullRequests map[string]prInfo) {
@@ -845,7 +773,7 @@ func (m *model) runRemoveMergedWorktrees(force bool) tea.Cmd {
 		var failures []string
 		var remaining []worktreeItem
 		for _, target := range targets {
-			if err := (gitx.Repository{Path: dir}).RemoveWorktree(target.path, force); err != nil {
+			if err := (worktrunk.Client{Path: dir}).Remove(target.path, force, false); err != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", target.branch, err).Error())
 				remaining = append(remaining, target)
 			}
@@ -872,7 +800,7 @@ func (m *model) runRemoveWorktrees() tea.Cmd {
 	return func() tea.Msg {
 		var failures []string
 		for _, target := range targets {
-			if err := (gitx.Repository{Path: dir}).RemoveWorktree(target.path, false); err != nil {
+			if err := (worktrunk.Client{Path: dir}).Remove(target.path, false, false); err != nil {
 				failures = append(failures, fmt.Errorf("%s: %w", target.branch, err).Error())
 			}
 		}
@@ -1058,6 +986,15 @@ func detectDestroyPlan(e entry) destroyPlan {
 // worktree is never removed from within itself.
 func runDestroy(kitty, zoxide string, e entry, plan destroyPlan) tea.Cmd {
 	return func() tea.Msg {
+		targets := plan.worktrees
+		if len(targets) == 0 && plan.worktreePath != "" {
+			targets = []domain.LinkedWorktree{{Path: plan.worktreePath}}
+		}
+		for _, target := range targets {
+			if err := (worktrunk.Client{Path: worktreeMainPath(target.Path)}).CheckApproval(); err != nil {
+				return destroyMsg{err: err}
+			}
+		}
 		if plan.closeSession {
 			if args, err := closeArgs(e, row{tabIndex: -1, windowIndex: -1}); err == nil {
 				if err := (kittyx.Client{Executable: kitty}).Run(args...); err != nil {
@@ -1077,14 +1014,8 @@ func runDestroy(kitty, zoxide string, e entry, plan destroyPlan) tea.Cmd {
 				}
 			}
 			repoDir := worktreeMainPath(worktree.Path)
-			repository := gitx.Repository{Path: repoDir}
-			if err := repository.RemoveWorktree(worktree.Path, true); err != nil {
+			if err := (worktrunk.Client{Path: repoDir}).Remove(worktree.Path, true, true); err != nil {
 				return destroyMsg{err: err}
-			}
-			if worktree.Branch != "" {
-				if err := repository.DeleteBranch(worktree.Branch); err != nil {
-					return destroyMsg{err: err}
-				}
 			}
 		}
 		if plan.saved {
@@ -1097,7 +1028,7 @@ func runDestroy(kitty, zoxide string, e entry, plan destroyPlan) tea.Cmd {
 	}
 }
 
-// runRemoveWorktree deletes the selected worktree via git. It first protects
+// runRemoveWorktree deletes the selected worktree through Worktrunk. It first protects
 // live Kitty windows from being left in a deleted working directory; force
 // removal closes those windows, then removes the worktree.
 func (m *model) runRemoveWorktree(force bool) tea.Cmd {
@@ -1123,6 +1054,9 @@ func (m *model) runRemoveWorktree(force bool) tea.Cmd {
 		if len(windowIDs) > 0 && !force {
 			return worktreeRemoveMsg{dir: sourceDir, targetPath: targetPath, entryIndex: entryIndex, tabIndex: tabIndex, windowIndex: windowIndex, err: fmt.Errorf("%d Kitty window(s) are open in this worktree; press f to close them and force-remove", len(windowIDs))}
 		}
+		if err := (worktrunk.Client{Path: repoDir}).CheckApproval(); err != nil {
+			return worktreeRemoveMsg{dir: sourceDir, targetPath: targetPath, entryIndex: entryIndex, tabIndex: tabIndex, windowIndex: windowIndex, forceTried: force, err: err}
+		}
 		if force {
 			for _, id := range windowIDs {
 				if err := (kittyx.Client{Executable: kitty}).CloseWindow(id); err != nil {
@@ -1130,7 +1064,7 @@ func (m *model) runRemoveWorktree(force bool) tea.Cmd {
 				}
 			}
 		}
-		if err := (gitx.Repository{Path: repoDir}).RemoveWorktree(targetPath, force); err != nil {
+		if err := (worktrunk.Client{Path: repoDir}).Remove(targetPath, force, false); err != nil {
 			return worktreeRemoveMsg{dir: sourceDir, targetPath: targetPath, entryIndex: entryIndex, tabIndex: tabIndex, windowIndex: windowIndex, forceTried: force, err: err}
 		}
 		return worktreeRemoveMsg{dir: sourceDir, targetPath: targetPath, entryIndex: entryIndex, tabIndex: tabIndex, windowIndex: windowIndex, forceTried: force}
@@ -1356,7 +1290,11 @@ func fetchWorktreeSyncStatuses(dir string, worktrees []worktreeItem) tea.Cmd {
 }
 
 func parseWorktreePorcelain(output string) []worktreeItem {
-	return fromDomainWorktrees(domain.ParseWorktreePorcelain(output))
+	items := fromDomainWorktrees(domain.ParseWorktreePorcelain(output))
+	if len(items) > 0 {
+		items[0].primary = true
+	}
+	return items
 }
 
 // worktreeSyncStatus reports whether a worktree has uncommitted changes and how

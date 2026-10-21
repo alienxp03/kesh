@@ -147,7 +147,7 @@ func Assemble(
 		// files can therefore look like composed sessions (for example
 		// kesh-63c760d5). The explicit layout name carried in the environment is
 		// the authoritative user-facing name.
-		if composedName, ok := domain.ComposedSessionName(sessionName); ok && session.displayName == "" {
+		if composedName, ok := domain.ComposedSessionName(sessionName); ok && (session.displayName == "" || session.displayName == sessionName) {
 			name = composedName
 		}
 		record, savedSession := state.SavedSessionForName(saved, sessionName)

@@ -317,7 +317,7 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cancelMode()
 		m.err = nil
 	case "tab", "shift+tab":
-		if m.worktreeRecipe != nil {
+		if m.launchOnFolder && m.worktreeRecipe != nil {
 			modes := []string{"native", "workspaces"}
 			current := "workspaces"
 			if m.worktreeRecipeMode == "none" {
@@ -367,18 +367,6 @@ func (m model) updateWorktreeCreateKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		if m.worktreeRecipe != nil && m.worktreeRecipeMode != "none" {
-			var selected []string
-			if m.worktreeRecipeMode == "selected" {
-				selected = m.selectedWorkspaceNames()
-				if len(selected) == 0 {
-					m.err = fmt.Errorf("select at least one workspace")
-					return m, nil
-				}
-			}
-			m.worktreeBusy = true
-			return m, runWktreeNew(m.worktreeRecipePath, m.worktreeRecipeMode, m.worktreeBranch, selected)
-		}
 		validation := m.validateWorktreeBranch()
 		if validation == nil {
 			return m, nil
@@ -501,6 +489,9 @@ func (m model) updateCreateSessionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.cancelMode()
+		if m.filter == filterProjects {
+			m.activateMode(modeSearch)
+		}
 		m.err = nil
 	case "enter":
 		name := safeName(m.createValue)
@@ -549,9 +540,23 @@ func (m model) updateRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.filter == filterSessions {
+		switch msg.String() {
+		case "up", "down", "ctrl+j", "ctrl+k", "tab", "shift+tab":
+			m.mainPanelKey(msg.String())
+			return m, nil
+		}
+	}
 	switch msg.String() {
 	case "esc":
+		if m.filter == filterProjects || m.filter == filterSessions {
+			return m, tea.Quit
+		}
 		m.cancelMode()
+	case "tab":
+		if m.filter == filterProjects {
+			m.toggleSelected()
+		}
 	case "enter":
 		m.cancelMode()
 		return m.openSelected()

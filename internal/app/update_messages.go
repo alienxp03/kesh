@@ -30,7 +30,7 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applyPins(m.entries, m.pins)
 			m.rebuildRows()
 		}
-		return m, nil
+		return m, prefetchEntryWorktrees(msg.entries)
 	case actionMsg:
 		if msg.err != nil {
 			m.err = msg.err
@@ -175,7 +175,7 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentStatusMsg:
 		if msg.err == nil {
 			m.applyAgentStatuses(msg.statuses)
-			if m.filter == filterWork {
+			if m.filter == filterWork || m.filter == filterSessions {
 				m.rebuildRows()
 			}
 			if m.filter == filterAgents {
@@ -358,13 +358,23 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.wsScan = map[string][]worktreeItem{}
 		}
 		m.wsScan[msg.dir] = msg.worktrees
-		if m.filter == filterWork {
+		if m.filter == filterWork || m.filter == filterSessions {
 			m.rebuildRows()
 		}
+		primary := repoKeyFromEntry(entry{path: msg.dir, worktrees: msg.worktrees})
 		return m, tea.Batch(
-			m.refreshPRStatuses(msg.dir, false),
+			m.refreshPRStatuses(primary, false),
 			fetchWorktreeSyncStatuses(msg.dir, msg.worktrees),
 		)
+	case prefetchedWorktreesMsg:
+		if msg.result.err != nil {
+			return m, nil
+		}
+		previousError := m.err
+		updated, cmd := m.Update(msg.result)
+		result := updated.(model)
+		result.err = previousError
+		return result, cmd
 	case worktreeListMsg:
 		updated := false
 		entryIndex, _, _ := m.resolveWorktreeDirectory(msg.dir)
@@ -384,6 +394,12 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			e.worktrees = msg.worktrees
 			e.worktreesLoaded = true
+			for i := range m.entries {
+				if m.entries[i].path == msg.dir {
+					m.entries[i].worktrees = msg.worktrees
+					m.entries[i].worktreesLoaded = true
+				}
+			}
 			updated = true
 		}
 		// Handle worktree filter mode
@@ -421,7 +437,7 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.wsScan[msg.dir] = scan
-			if m.filter == filterWork {
+			if m.filter == filterWork || m.filter == filterSessions {
 				m.rebuildRows()
 			}
 		}
@@ -445,6 +461,8 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.filter == filterWorktrees && entryIndex == m.worktreeFilterEntryIndex {
 			m.rebuildWorktreeRows()
+		} else if m.filter == filterSessions {
+			m.rebuildRows()
 		}
 		return m, nil
 	case worktreeFetchedMsg:

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alienxp03/kesh/internal/workspace/run"
 )
@@ -54,6 +55,47 @@ func TestParseTreeCommand(t *testing.T) {
 				t.Fatalf("parseTreeCommand(%q) = %#v", test.args, got)
 			}
 		})
+	}
+}
+
+func TestTreeNewIgnoresInvalidRecipeAndUsesWorktrunkPath(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, ".kesh.yaml"), []byte("invalid: [yaml"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var switched bool
+	runner := run.RunnerFunc(func(_ context.Context, name string, args []string, _ run.Options) run.Result {
+		if name == "git" && strings.Join(args, " ") == "rev-parse --show-toplevel" {
+			return run.Result{Stdout: repo}
+		}
+		if name != "wt" {
+			t.Fatalf("unexpected command %s %v", name, args)
+		}
+		for _, arg := range args {
+			if arg == "--yes" || arg == "--no-hooks" {
+				t.Fatalf("unsafe flag %s", arg)
+			}
+		}
+		switch args[0] {
+		case "--config-set":
+			return run.Result{Stdout: `{"schema":2,"items":[]}`}
+		case "config":
+			return run.Result{Stdout: `{"state":"approved"}`}
+		case "switch":
+			switched = true
+			return run.Result{Stdout: `{"path":"/custom location/tree"}`}
+		}
+		t.Fatalf("unexpected wt args %v", args)
+		return run.Result{}
+	})
+	stdout := &bytes.Buffer{}
+	err := runTreeCommandWithOptions([]string{"new", "fix/example", "--json"}, treeCommandOptions{Cwd: repo, Runner: runner, Stdout: stdout})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := decodeTreeResponse(t, stdout.Bytes())
+	if !switched || result.Worktree != "/custom location/tree" || result.ConfigPath != "" {
+		t.Fatalf("result=%#v", result)
 	}
 }
 
@@ -139,8 +181,8 @@ func TestTreeNewJSONKeepsHookOutputOffStdout(t *testing.T) {
 	if !response.OK {
 		t.Fatalf("create response = %#v", response)
 	}
-	if !strings.Contains(stderr.String(), "hook-output") {
-		t.Fatalf("hook output did not reach stderr: %q", stderr.String())
+	if strings.Contains(stderr.String(), "hook-output") {
+		t.Fatalf("legacy .kesh.yaml hook ran: %q", stderr.String())
 	}
 }
 
@@ -163,8 +205,17 @@ func TestTreeMergeJSONMergesThenDestroys(t *testing.T) {
 	if !merged.OK || !merged.Merged || !merged.Destroyed || merged.Target == "" {
 		t.Fatalf("merge response = %#v", merged)
 	}
-	if _, err := os.Stat(created.Worktree); !os.IsNotExist(err) {
-		t.Fatalf("merged worktree still exists: %q, err=%v", created.Worktree, err)
+	// wt merge owns background cleanup. Wait only in this integration test.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := os.Stat(created.Worktree)
+		if os.IsNotExist(err) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("merged worktree still exists: %q, err=%v", created.Worktree, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 	if branchExists(t, repo, "feature/merge") {
 		t.Fatal("merge left the local branch behind")
@@ -181,7 +232,9 @@ func initTreeTestRepo(t *testing.T, withHook bool) string {
 	if err := os.MkdirAll(repo, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	mustTreeRun(t, repo, "init", "-q")
+	mustTreeRun(t, repo, "init", "-q", "-b", "main")
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("WORKTRUNK_CONFIG", "")
 	mustTreeRun(t, repo, "config", "user.name", "tree-test")
 	mustTreeRun(t, repo, "config", "user.email", "tree-test@example.com")
 	if err := os.WriteFile(filepath.Join(repo, "README.md"), []byte("initial\n"), 0o644); err != nil {
@@ -255,6 +308,9 @@ type treeTestRunner struct {
 }
 
 func (r treeTestRunner) Run(ctx context.Context, command string, args []string, options run.Options) run.Result {
+	if command == "wt" {
+		args = append([]string{"--config-set", `worktree-path="{{ repo_path }}/../trees/{{ branch | sanitize }}"`}, args...)
+	}
 	if command == "zoxide" {
 		return run.Result{ExitCode: 0, Stdout: "zoxide 0.0.0-test"}
 	}

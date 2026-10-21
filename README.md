@@ -8,7 +8,7 @@ powered by [Kitty session](https://sw.kovidgoyal.net/kitty/sessions).
 ## Features
 
 - **Keyboard-driven Kitty picker** — browse and switch projects, sessions, tabs, windows, SSH hosts, and saved layouts.
-- **Project layouts** — define workspaces, panes, startup commands, and worktree setup in `.kesh.yaml`.
+- **Project layouts** — define folder workspaces, panes, and startup commands in `.kesh.yaml`.
 - **Zoxide integration** — discover and open your frequently used projects quickly.
 - **Save and restore sessions** — build on Kitty’s [session support](https://sw.kovidgoyal.net/kitty/sessions/) to save tabs, splits, and working directories, with optional foreground command restoration.
 - **Git worktrees and pull requests** — create worktrees, clone repositories, and check out GitHub pull requests.
@@ -38,7 +38,8 @@ brew install alienxp03/tap/kesh
 | Dependency | Status | Used for |
 | --- | --- | --- |
 | [Kitty](https://sw.kovidgoyal.net/kitty/) | **Required** | Running kesh and opening workspaces; remote control must be enabled below |
-| [Git](https://git-scm.com/) | **Required for Git features** | Cloning repositories, Git worktrees, and repository metadata |
+| [Git](https://git-scm.com/) | **Required for Git features** | Cloning repositories and repository metadata |
+| [Worktrunk](https://worktrunk.dev/) (`wt`) | **Required for worktree actions** | Creation, switching, hooks, paths, removal, and merge; current schema-2 JSON support required |
 | [zoxide](https://github.com/ajeetdsouza/zoxide) | Optional | Frecency-ranked project discovery; without it, Kitty, saved-session, and SSH sources still work |
 | [GitHub CLI (`gh`)](https://cli.github.com/) | Optional | GitHub pull-request status and the `C` checkout action; run `gh auth login` first |
 | OpenSSH client (`ssh`) | Optional | Opening configured SSH hosts |
@@ -73,9 +74,9 @@ kesh
 
 ## First use
 
-1. Open kesh with `cmd+shift+o`, or run `kesh` from a shell.
-2. Select a project and press `enter`. Kesh uses its `.kesh.yaml` layout when one is available.
-3. Use `l` and `h` to move through sessions, tabs, and windows.
+1. Open kesh with `cmd+shift+o`, or run `kesh`. The top **Projects** pane shows only open named sessions and saved sessions, grouped by project/folder. History folders and unrelated disk worktrees do not appear. Source projects are available through `n` only.
+2. Use `j`/`k` to move, `space` to expand/collapse a project, and `enter` to open the folder or focus its existing window. A project header opens one of its listed session instances. `/` searches project and worktree names, including collapsed children. Active projects expand by default.
+3. Use `h` for Projects and `l` for Agents. The bottom Agents list and its right-side terminal preview stay separate. Press `w` on a Git project or child to create a worktree. Press `n` for the project-selection flow (`Tab` selects multiple folders; `enter` creates the session).
 
 ## Common keybindings
 
@@ -84,10 +85,10 @@ kesh
 | `enter`          | Open with its layout, focus, or restore the selected item       |
 | `O`              | Open an unopened project folder without its configured layout   |
 | `o`              | Open the pull request associated with the selected item         |
-| `n`              | Create a named session; use `space` to select multiple projects |
+| `n`              | Search projects and create a named session; use `Tab` to select multiple projects |
 | `s`              | Save the current layout                                         |
 | `S`              | Save the layout and restart foreground commands when restored   |
-| `w`              | Open worktrees from a window or unopened project folder         |
+| `w`              | Create a worktree in Projects; elsewhere, open the Worktrees view |
 | `c`              | Clone a repository                                              |
 | `C`              | Check out a GitHub pull request                                 |
 | `p` then `0`–`9` | Pin a session                                                   |
@@ -104,13 +105,13 @@ restoring the session can run those commands again. See Kitty's
 [`--use-foreground-process` documentation](https://sw.kovidgoyal.net/kitty/sessions/#the-save_as_session-action)
 before using it with commands that have side effects.
 
-Saved sessions remain in the list after Kitty closes. Select one and press
-`enter` to restore it.
+Saved sessions remain in Projects after Kitty closes. Select a saved session
+and press `enter` to restore it. `kesh saved` also lists saved sessions.
 
 ### Worktrees
 
-Press `w`, then `n`, to create a branch worktree. kesh opens it in Kitty and
-uses the project layout when one is configured. In the Worktrees view, use `f`
+In Projects, select a Git project or worktree and press `w` to create a branch worktree. In the separate Worktrees view, press `n`. kesh opens it in Kitty and
+uses a plain folder session. Worktree actions ignore `.kesh.yaml`. In the Worktrees view, use `f`
 to pull the selected worktree with fetch/rebase behavior.
 
 Press `C` to check out a GitHub pull request. Enter a full PR URL,
@@ -120,7 +121,7 @@ as Git repositories before fetching or creating the worktree.
 
 ### Headless worktrees
 
-Use the first workspace in a required `.kesh.yaml` without opening Kitty:
+Use the current Git repository without opening Kitty. `.kesh.yaml` is not read:
 
 ```sh
 kesh tree new feature/example
@@ -129,8 +130,7 @@ kesh tree destroy feature/example --force
 kesh tree merge feature/example -y
 ```
 
-Use `--session` (`-s`) to create the worktree and open its configured layout
-as a Kitty session. Use `--window` (`-w`) to open a new Kitty window in the
+Use `--session` (`-s`) to open the worktree as a plain Kitty session. Use `--window` (`-w`) to open a new Kitty window in the
 current tab without loading a session:
 
 ```sh
@@ -138,12 +138,31 @@ kesh tree new feature/example --session
 kesh tree new feature/example --window
 ```
 
-Tree creation runs worktree setup (files, environment, ports, and
-`post_create` hooks) and ignores `panes` unless `--session` is used. Destructive
-commands perform safety checks first; `destroy --force` allows destroying dirty
-or unmerged worktrees, while `merge --force` permits forced cleanup after a
-successful merge. Use `--json` for strict machine-readable output. Destructive
-JSON commands also require `-y` or `--yes`.
+Worktrunk selects paths from its configuration, opens existing local/remote
+branches, and creates missing branches from its detected default branch
+(`--from` overrides the base). No native fallback is used. PR checkout also
+uses Worktrunk, including fork handling. Kesh keeps its UI, Kitty sessions,
+Projects scope, and Agents preview.
+
+Review project hooks once per repository in a terminal:
+
+```sh
+wt config approvals add
+```
+
+Kesh checks Worktrunk approval state before each action. Missing or changed
+hooks stop the action with this command; retry after review. Worktrunk stores
+and validates approvals. Kesh never passes approval-bypass or hook-skip flags.
+
+`destroy --force` permits dirty removal and unmerged branch deletion. Normal
+removal lets Worktrunk retain unmerged branches. Merge requires clean source
+and target, and uses `wt merge --no-commit --no-squash --no-rebase`; it does not
+create a commit for dirty changes. Worktrunk owns merge and cleanup; merge
+cleanup runs in the background (see `.git/wt/logs` if cleanup fails). Other
+removals wait with `--foreground`. Subprocess switching uses `--no-cd`;
+remove/merge use `switch.cd=false` because they have no `--no-cd` flag. Use
+`--json` for machine-readable output. Destructive JSON commands require kesh's
+`-y`/`--yes` to confirm the requested action only, **not hook approval**.
 
 ### Agents
 
@@ -221,9 +240,10 @@ splits kesh opens.
 
 ### Worktree setup
 
-Worktree settings run once when creating a worktree with `w`, then `n`. Shared
-defaults can copy files into every worktree; workspace-specific settings can
-also symlink files and run post-create hooks:
+Legacy `.kesh.yaml` worktree settings are **ignored** for worktree actions.
+Move setup and path rules to Worktrunk's `.config/wt.toml` and user config
+(`wt config create --project`, `wt config create`). For example, use Worktrunk
+hooks and `wt step copy-ignored` for setup. This old configuration no longer runs:
 
 ```yaml
 worktree:
@@ -244,8 +264,9 @@ workspaces:
           - pnpm install
 ```
 
-Other setup options include randomized ports and generated environment values.
-These settings do not run when opening an existing folder.
+Legacy file copies, symlinks, generated ports/environment, and `post_create`
+hooks do not run. `.kesh.yaml` remains supported for non-worktree folder
+layouts, including workspace and pane selection.
 
 Global paths and default Kitty startup sessions are configured in `~/.config/kesh/config.yaml`:
 
@@ -253,7 +274,7 @@ Global paths and default Kitty startup sessions are configured in `~/.config/kes
 clone:
   root: ~/workspace # repository clones and PR checkouts
 worktree:
-  root: ~/workspace/worktrees # worktrees created through the picker
+  root: ~/workspace/worktrees # legacy discovery only; wt owns action paths
 
 startup:
   sessions:

@@ -11,8 +11,8 @@ import (
 	"github.com/alienxp03/kesh/internal/workspace"
 )
 
-func prCheckoutPreview(value, branch string, newClone bool, cloneRoot, worktreeRoot string, fieldWidth int) string {
-	owner, repo, _, useSelected, err := parsePullRequestInput(value)
+func prCheckoutPreview(value, _ string, newClone bool, _, _ string, fieldWidth int) string {
+	owner, _, _, useSelected, err := parsePullRequestInput(value)
 	if err != nil || useSelected || owner == "" {
 		return ""
 	}
@@ -20,18 +20,7 @@ func prCheckoutPreview(value, branch string, newClone bool, cloneRoot, worktreeR
 	if newClone {
 		rootNote = " (new clone)"
 	}
-	// Worktrees land under <worktreeRoot>/<owner>/<repo>/<branch>; fall back to
-	// the clone root when the worktree root is unconfigured so the path is still
-	// informative.
-	root := worktreeRoot
-	if root == "" {
-		root = cloneRoot
-	}
-	if branch == "" {
-		return renderPreviewLines([]string{"Worktree path: resolving PR branch…"}, fieldWidth)
-	}
-	worktreePath := displayPath(filepath.Join(root, owner, repo, worktreeDirectoryName(branch)), os.Getenv("HOME"))
-	return renderPreviewLines([]string{"Worktree path: " + worktreePath + rootNote}, fieldWidth)
+	return renderPreviewLines([]string{"Worktree path: selected by Worktrunk (wt)" + rootNote}, fieldWidth)
 }
 
 func paneLabel(pane workspace.PaneCommand) string {

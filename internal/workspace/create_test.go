@@ -19,6 +19,9 @@ type featureRunner struct {
 }
 
 func (r *featureRunner) Run(ctx context.Context, command string, args []string, options run.Options) run.Result {
+	if command == "wt" {
+		args = append([]string{"--config-set", `worktree-path="{{ repo_path }}/../trees/{{ branch | sanitize }}"`}, args...)
+	}
 	if command == "zoxide" {
 		return run.Result{ExitCode: 0, Stdout: "zoxide 0.0.0-feature"}
 	}
@@ -44,6 +47,7 @@ func (r *featureRunner) Run(ctx context.Context, command string, args []string, 
 // the worktrees are created and the Kitty session file is assembled correctly.
 func TestCreate_Feature_RealGitAndKittySession(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	repoA := filepath.Join(root, "backend-repo")
 	repoB := filepath.Join(root, "frontend-repo")
 	initGitRepo(t, repoA)
@@ -86,7 +90,9 @@ func TestCreate_Feature_RealGitAndKittySession(t *testing.T) {
 
 	// Both repositories gained a real worktree on the new branch.
 	assertWorktreeBranch(t, repoA, "feat/integration")
-	assertWorktreeBranch(t, repoB, "feat/integration")
+	if out := mustOutput(t, "git", "-C", repoB, "worktree", "list", "--porcelain"); strings.Contains(out, "feat/integration") {
+		t.Fatal("legacy second workspace was created")
+	}
 
 	// Kitty was asked to open exactly one session, and its file renders both
 	// workspaces as tabs with their pane commands.
@@ -106,9 +112,14 @@ func TestCreate_Feature_RealGitAndKittySession(t *testing.T) {
 	t.Logf("assembled kitty session:\n%s", session)
 	// The first workspace is the implicit initial tab (no `new_tab` line); the
 	// second gets an explicit `new_tab frontend`. Both contribute their panes.
-	for _, want := range []string{"--title=backend", "new_tab frontend", "nvim", "pnpm test", "layout splits"} {
+	for _, want := range []string{"--title=backend-repo", "layout splits"} {
 		if !strings.Contains(session, want) {
 			t.Fatalf("session missing %q:\n%s", want, session)
+		}
+	}
+	for _, unwanted := range []string{"new_tab frontend", "nvim", "pnpm test"} {
+		if strings.Contains(session, unwanted) {
+			t.Fatalf("recipe command ran: %s", session)
 		}
 	}
 }

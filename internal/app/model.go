@@ -39,6 +39,7 @@ type tabItem struct {
 }
 
 type worktreeItem struct {
+	primary   bool // primary checkout from Git's porcelain order, independent of display sorting
 	path      string
 	branch    string
 	head      string
@@ -149,6 +150,7 @@ func fromDomainEntries(entries []domain.Entry) []entry {
 }
 
 type row struct {
+	mainKey      string // stable selection identity across catalog sorting
 	entryIndex   int
 	tabIndex     int
 	windowIndex  int
@@ -516,6 +518,9 @@ func (m *model) activateMode(kind modeKind) {
 }
 
 type model struct {
+	mainAgents        bool
+	mainSessionCursor int
+	mainAgentCursor   int
 	modeState
 	entries                  []entry
 	rows                     []row
@@ -596,6 +601,8 @@ const (
 	filterSaved
 	filterWorktrees
 	filterWork
+	filterSessions
+	filterProjects
 )
 
 // cycleFilters are the flat filters reachable by cycling Tab/Shift+tab.

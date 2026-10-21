@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	kittyx "github.com/alienxp03/kesh/internal/kitty"
+	"github.com/alienxp03/kesh/internal/worktrunk"
 )
 
 func connectWorktree(kitty, zoxide, path string, windowID int) tea.Cmd {
@@ -16,7 +17,11 @@ func connectWorktree(kitty, zoxide, path string, windowID int) tea.Cmd {
 				return actionMsg{}
 			}
 		}
-		return actionMsg{err: openProjectSession(kitty, zoxide, path, false)}
+		resolved, err := (worktrunk.Client{Path: path}).SwitchTarget(path)
+		if err == nil {
+			err = openProjectSession(kitty, zoxide, resolved, false)
+		}
+		return actionMsg{err: err}
 	}
 }
 
@@ -48,6 +53,43 @@ func (m *model) wsRefreshGroup() tea.Cmd {
 
 func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
+	if m.filter == filterSessions && m.mainPanelKey(key) {
+		return m, m.queuePreview()
+	}
+	if m.filter == filterSessions && m.mainAgents {
+		start, end := m.mainPanelBounds()
+		if start == end {
+			switch key {
+			case "ctrl+c", "q", "?", "esc", "/", "a", "n", "c", "C":
+			default:
+				return m, nil
+			}
+		}
+	}
+	if m.filter == filterSessions && !m.mainAgents {
+		switch key {
+		case " ":
+			m.toggleWsRow()
+			return m, nil
+		case "w":
+			if m.cursor >= 0 && m.cursor < len(m.rows) {
+				if group, _, ok := m.wsRow(m.rows[m.cursor]); ok {
+					for _, source := range m.wsRepoSources() {
+						if sameWorktreePath(source.dir, group.dir) {
+							m.wsCreateRepo = group.mainPath
+							return m, m.beginWorktreeCreate()
+						}
+					}
+				}
+			}
+			m.err = fmt.Errorf("select a Git project or worktree")
+			return m, nil
+		case "r", "s", "S", "x", "X", "D", "O", "p", "e", "right", "left":
+			// Project groups have no session entry index. Session actions remain
+			// available on Agents and in the saved-session filter.
+			return m, nil
+		}
+	}
 	if m.pendingG {
 		m.pendingG = false
 		if key == "g" {
@@ -64,6 +106,13 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case "esc":
+		if m.filter == filterProjects || m.filter == filterSessions {
+			return m, tea.Quit
+		}
+		if m.filter == filterAgents && m.previousFilter == filterSessions {
+			m.finishProjectSelection()
+			return m, nil
+		}
 		// Escape returns to command mode from transient modes; once there,
 		// it is intentionally a no-op so a repeated key cannot close Kesh.
 		if m.filter == filterWork && m.wsHunt {
@@ -113,6 +162,14 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ":
 		m.toggleSelected()
 	case "a":
+		if m.filter == filterSessions {
+			m.previousFilter = filterSessions
+			m.filter = filterAgents
+			m.query = ""
+			m.cursor = 0
+			m.rebuildRows()
+			return m, m.queuePreview()
+		}
 		if m.filter == filterWork {
 			m.wsHunt = !m.wsHunt
 			m.err = nil
@@ -123,6 +180,16 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		return m.openSelected()
 	case "n":
+		if m.filter == filterSessions {
+			m.filter = filterProjects
+			m.query = ""
+			m.cursor = 0
+			m.selected = map[string]bool{}
+			m.err = nil
+			m.activateMode(modeSearch)
+			m.rebuildRows()
+			return m, nil
+		}
 		if m.filter == filterWork {
 			if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
 				return m, nil
@@ -148,10 +215,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("select at least one project or SSH host first")
 			return m, nil
 		}
-		m.activateMode(modeCreateSession)
-		m.createValue = ""
-		m.err = nil
-		return m, nil
+		return m, m.createSelectedSession()
 	case "o":
 		return m, m.openWorktreePR()
 	case "O":
@@ -193,7 +257,7 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.prCheckoutPathEdited = false
 		m.prCheckoutClone = false
 		if len(m.rows) > 0 && m.cursor >= 0 && m.cursor < len(m.rows) {
-			m.prCheckoutPath = displayPath(m.entries[m.rows[m.cursor].entryIndex].path, os.Getenv("HOME"))
+			m.prCheckoutPath = displayPath(m.selectedDetailPath(), os.Getenv("HOME"))
 		}
 		m.checkoutCloneRoot = m.cloneBaseRoot
 		m.checkoutRoot = m.cloneBaseRoot
@@ -477,6 +541,9 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.beginPin()
 		}
 	case "tab", "shift+tab":
+		if m.filter == filterSessions || m.filter == filterProjects {
+			return m, nil
+		}
 		// The main surface has no filter chips to cycle; Tab toggles the agent
 		// pane. The Worktrees drill-in keeps Tab for its preview queue.
 		if m.filter != filterWorktrees {
@@ -497,10 +564,51 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) openSelected() (tea.Model, tea.Cmd) {
+	if m.filter == filterSessions {
+		start, end := m.mainPanelBounds()
+		if start == end {
+			return m, nil
+		}
+	}
 	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
 		return m, nil
 	}
 	selected := m.rows[m.cursor]
+	if m.filter == filterProjects {
+		if len(m.selected) == 0 {
+			m.selected = map[string]bool{m.entries[selected.entryIndex].key: true}
+		}
+		return m, m.createSelectedSession()
+	}
+	if m.filter == filterSessions && !m.mainAgents && selected.section == "ws" {
+		group, wt, ok := m.wsRow(selected)
+		if !ok {
+			return m, nil
+		}
+		if selected.wi < 0 {
+			// Headers open an eligible instance, never an unscoped main checkout.
+			for _, candidate := range group.worktrees {
+				for i, e := range m.entries {
+					if m.matchesFilter(e) && sameWorktreePath(e.path, candidate.item.path) {
+						selected.entryIndex = i
+						wt = candidate
+						break
+					}
+				}
+				if selected.entryIndex >= 0 {
+					break
+				}
+			}
+		}
+		if selected.entryIndex < 0 {
+			return m, nil
+		}
+		e := m.entries[selected.entryIndex]
+		if !e.saved && wt.windowID > 0 {
+			return m, connectWorktree(m.kitty, m.zoxide, e.path, wt.windowID)
+		}
+		selected.section = ""
+	}
 	if m.filter == filterWork {
 		switch selected.section {
 		case "ws":
@@ -537,7 +645,7 @@ func (m model) openSelected() (tea.Model, tea.Cmd) {
 		return m, findWorktreeWindow(m.kitty, entry.key, worktree.path)
 	}
 	entry := m.entries[selected.entryIndex]
-	unopenedProject := selected.section == "" && selected.tabIndex < 0 && selected.windowIndex < 0 && entry.kind == "project" && !entry.open
+	unopenedProject := selected.section == "" && selected.tabIndex < 0 && selected.windowIndex < 0 && entry.kind == "project" && !entry.open && !entry.saved
 	if unopenedProject {
 		return m, m.beginLaunchLayoutForEntry(entry)
 	}

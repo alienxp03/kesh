@@ -23,11 +23,10 @@ type wsAgent struct {
 
 // wsWorktree is a worktree row in the main surface with its derived state.
 type wsWorktree struct {
-	item      worktreeItem
-	state     string // blocked|working|open|idle
-	agents    []wsAgent
-	windowID  int // first live kitty window inside the worktree, 0 if none
-	entryName string
+	item     worktreeItem
+	state    string // blocked|working|open|idle
+	agents   []wsAgent
+	windowID int // first live kitty window inside the worktree, 0 if none
 }
 
 // wsRepo is a repo group: the unit the main surface is organized by.
@@ -35,7 +34,6 @@ type wsRepo struct {
 	dir       string // canonical key: repo dir under the worktree root, or main path
 	mainPath  string
 	name      string
-	expanded  bool
 	worktrees []wsWorktree
 	blocked   int
 	working   int
@@ -195,7 +193,7 @@ func wsRepoSourcesFromEntries(entries []entry) []wsRepoSource {
 	sources := make([]wsRepoSource, 0, len(entries))
 	for _, e := range entries {
 		if e.worktreesLoaded && len(e.worktrees) > 0 {
-			sources = append(sources, wsRepoSourceFromWorktrees(repoKeyFromEntry(e), e.path, e.name, e.worktrees))
+			sources = append(sources, wsRepoSourceFromWorktrees(repoKeyFromEntry(e), repoKeyFromEntry(e), filepath.Base(repoKeyFromEntry(e)), e.worktrees))
 		}
 	}
 	return dedupeRepoSources(sources)
@@ -205,10 +203,11 @@ func wsRepoSourcesFromEntries(entries []entry) []wsRepoSource {
 // worktree list: git reports the primary checkout first, and every worktree
 // shares its metadata root.
 func wsRepoSourceFromWorktrees(dir, mainPath, name string, worktrees []worktreeItem) wsRepoSource {
-	if len(worktrees) > 0 && dir == "" {
+	if len(worktrees) > 0 {
+		mainPath = repoKeyFromEntry(entry{path: mainPath, worktrees: worktrees})
 		dir = mainPath
 	}
-	owner, repo := getRepoOwner(mainPath)
+	owner, repo := filepath.Base(filepath.Dir(mainPath)), filepath.Base(mainPath)
 	if name == "" {
 		name = repo
 	}
@@ -216,6 +215,11 @@ func wsRepoSourceFromWorktrees(dir, mainPath, name string, worktrees []worktreeI
 }
 
 func repoKeyFromEntry(e entry) string {
+	for _, wt := range e.worktrees {
+		if wt.primary {
+			return wt.path
+		}
+	}
 	if len(e.worktrees) > 0 {
 		return e.worktrees[0].path
 	}
@@ -360,7 +364,21 @@ func fetchScanWorktrees(dir string) tea.Cmd {
 		repository := gitx.Repository{Path: dir}
 		output, err := repository.WorktreePorcelain()
 		if err != nil {
-			return scanWorktreeMsg{dir: dir, err: err}
+			// A managed repo directory contains branch checkouts, not .git.
+			children, _ := os.ReadDir(dir)
+			for _, child := range children {
+				if !child.IsDir() {
+					continue
+				}
+				repository.Path = filepath.Join(dir, child.Name())
+				output, err = repository.WorktreePorcelain()
+				if err == nil {
+					break
+				}
+			}
+			if err != nil {
+				return scanWorktreeMsg{dir: dir, err: err}
+			}
 		}
 		worktrees := parseWorktreePorcelain(output)
 		if len(worktrees) == 0 {
@@ -396,8 +414,8 @@ func wsRepoCoveredByEntries(dir string, entries []entry) bool {
 			continue
 		}
 		if e.worktreesLoaded && len(e.worktrees) > 0 {
-			if cleanWorktreePath(e.worktrees[0].path) == cleanWorktreePath(dir) ||
-				sameWorktreePath(e.worktrees[0].path, dir) {
+			if cleanWorktreePath(repoKeyFromEntry(e)) == cleanWorktreePath(dir) ||
+				sameWorktreePath(repoKeyFromEntry(e), dir) {
 				return true
 			}
 			continue
@@ -409,18 +427,40 @@ func wsRepoCoveredByEntries(dir string, entries []entry) bool {
 	return false
 }
 
-// prefetchEntryWorktrees eagerly loads worktree lists for open projects so the
-// main surface groups them without waiting for a drill-in. Closed projects
-// stay in the other group until opened.
+// prefetchedWorktreesMsg keeps optional discovery errors out of the picker.
+// Open project folders are not necessarily Git repositories.
+type prefetchedWorktreesMsg struct {
+	result worktreeListMsg
+}
+
+// prefetchEntryWorktrees enriches open named and saved sessions off the UI
+// thread. Source-only folders are available through the creation picker.
 func prefetchEntryWorktrees(entries []entry) tea.Cmd {
 	var cmds []tea.Cmd
+	seen := map[string]bool{}
 	for i, e := range entries {
-		if e.open && (e.kind == "project" || e.kind == "workspace") && e.path != "" {
-			cmds = append(cmds, fetchWorktrees(e.path, i, -1, -1))
+		if !seen[e.path] && ((e.open && e.session != "") || e.saved) && e.path != "" {
+			seen[e.path] = true
+			fetch := fetchWorktrees(e.path, i, -1, -1)
+			cmds = append(cmds, func() tea.Msg {
+				return prefetchedWorktreesMsg{result: fetch().(worktreeListMsg)}
+			})
 		}
 	}
 	if len(cmds) == 0 {
 		return nil
 	}
-	return tea.Batch(cmds...)
+	// Bound Git subprocess fan-out when zoxide returns many folders.
+	if len(cmds) <= 4 {
+		return tea.Batch(cmds...)
+	}
+	lanes := make([]tea.Cmd, 4)
+	for lane := range lanes {
+		var sequence []tea.Cmd
+		for i := lane; i < len(cmds); i += len(lanes) {
+			sequence = append(sequence, cmds[i])
+		}
+		lanes[lane] = tea.Sequence(sequence...)
+	}
+	return tea.Batch(lanes...)
 }

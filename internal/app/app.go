@@ -103,15 +103,18 @@ func Run(args []string) error {
 		}
 		m.applyAgentStatuses(statuses)
 	}
-	// The redesigned main surface is the default; explicit CLI filters still win.
+	// The default surface groups open named and saved sessions.
 	if m.filter == filterAll {
-		m.filter = filterWork
-		m.showAgentPane = true
+		m.filter = filterSessions
 	}
 	m.rebuildRows()
+	var scan tea.Cmd
+	if m.filter == filterWork && worktreeRoot != "" {
+		scan = scanWorktreeRoot(worktreeRoot)
+	}
 	m.startupCmd = tea.Batch(
 		m.queuePreview(), queueAgentStatusRefresh(), m.queueAgentSpinner(),
-		scanWorktreeRoot(worktreeRoot), prefetchEntryWorktrees(m.entries),
+		prefetchEntryWorktrees(m.entries), scan,
 	)
 	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
