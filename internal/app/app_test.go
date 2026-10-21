@@ -4057,13 +4057,13 @@ func TestMergedWorktreeRemovalFailureOffersForceInPopup(t *testing.T) {
 }
 
 func TestWorktreeTabNotableBugFixes(t *testing.T) {
-	t.Run("shift-tab moves back one filter", func(t *testing.T) {
-		m := model{filter: filterAll}
+	t.Run("shift-tab toggles the agent pane on the main surface", func(t *testing.T) {
+		m := model{filter: filterWork}
 		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
-		// Worktrees is no longer a cycle filter, so wrapping backwards from All
-		// lands on the last flat filter (Saved), not on Worktrees.
-		if got := updated.(model).filter; got != filterSaved {
-			t.Fatalf("shift-tab filter = %d, want %d", got, filterSaved)
+		// Filter chips are gone on the main surface; shift-tab toggles the
+		// agent pane instead of cycling filters.
+		if !updated.(model).showAgentPane {
+			t.Fatalf("shift-tab should toggle the agent pane on")
 		}
 	})
 

@@ -176,6 +176,9 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case agentStatusMsg:
 		if msg.err == nil {
 			m.applyAgentStatuses(msg.statuses)
+			if m.filter == filterWork {
+				m.rebuildRows()
+			}
 			if m.filter == filterAgents {
 				m.rebuildRows()
 			}
@@ -325,6 +328,44 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ensureWorktreeSelection()
 		}
 		return m, nil
+	case scanReposMsg:
+		// Scanned repos without a picker entry of their own fetch their worktree
+		// list now; covered ones arrive through the entry flow instead.
+		if msg.err != nil {
+			return m, nil
+		}
+		m.wsScanDirs = msg.repos
+		var cmds []tea.Cmd
+		for _, repo := range msg.repos {
+			if wsRepoCoveredByEntries(repo.dir, m.entries) {
+				continue
+			}
+			if m.wsScanPending[repo.dir] || m.wsScan[repo.dir] != nil {
+				continue
+			}
+			if m.wsScanPending == nil {
+				m.wsScanPending = map[string]bool{}
+			}
+			m.wsScanPending[repo.dir] = true
+			cmds = append(cmds, fetchScanWorktrees(repo.dir))
+		}
+		return m, tea.Batch(cmds...)
+	case scanWorktreeMsg:
+		delete(m.wsScanPending, msg.dir)
+		if msg.err != nil {
+			return m, nil
+		}
+		if m.wsScan == nil {
+			m.wsScan = map[string][]worktreeItem{}
+		}
+		m.wsScan[msg.dir] = msg.worktrees
+		if m.filter == filterWork {
+			m.rebuildRows()
+		}
+		return m, tea.Batch(
+			m.refreshPRStatuses(msg.dir, false),
+			fetchWorktreeSyncStatuses(msg.dir, msg.worktrees),
+		)
 	case worktreeListMsg:
 		updated := false
 		entryIndex, _, _ := m.resolveWorktreeDirectory(msg.dir)
@@ -370,6 +411,21 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case worktreeSyncMsg:
+		// Scanned repos have no picker entry; apply statuses to the scan cache.
+		if scan, ok := m.wsScan[msg.dir]; ok {
+			for index := range scan {
+				if status, sok := msg.statuses[scan[index].path]; sok {
+					scan[index].dirty = status.dirty
+					scan[index].ahead = status.ahead
+					scan[index].behind = status.behind
+					scan[index].changes = status.changes
+				}
+			}
+			m.wsScan[msg.dir] = scan
+			if m.filter == filterWork {
+				m.rebuildRows()
+			}
+		}
 		entryIndex, _, _ := m.resolveWorktreeDirectory(msg.dir)
 		if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) && m.entries[m.worktreeFilterEntryIndex].path == msg.dir {
 			entryIndex = m.worktreeFilterEntryIndex
@@ -409,6 +465,10 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.worktreePullBusy = false
 		entryIndex, _, _ := m.resolveWorktreeDirectory(msg.dir)
 		if entryIndex < 0 {
+			// Scanned-repo pulls reload through the scan cache instead of an entry.
+			if _, ok := m.wsScan[msg.dir]; ok {
+				return m, fetchScanWorktrees(msg.dir)
+			}
 			return m, nil
 		}
 		if msg.err != nil {
@@ -552,6 +612,9 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if entryIndex >= 0 {
 			return m, fetchWorktrees(msg.dir, entryIndex, -1, -1)
 		}
+		if _, ok := m.wsScan[msg.dir]; ok {
+			return m, fetchScanWorktrees(msg.dir)
+		}
 		m.rebuildRows()
 		return m, nil
 	case worktreeRemoveMsg:
@@ -573,10 +636,14 @@ func (m model) updateMessage(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		// In the Worktree tab the removal targets the tab's project; windowAt
 		// and closedEntryAt do not resolve it (open entries, tabIndex -1), so
-		// refetch the tab's worktree list directly.
+		// refetch the tab's worktree list directly. Scanned repos reload their
+		// scan cache instead.
 		entryIndex, tabIndex, windowIndex := m.resolveWorktreeDirectory(msg.dir)
 		if entryIndex >= 0 {
 			return m, fetchWorktrees(msg.dir, entryIndex, tabIndex, windowIndex)
+		}
+		if _, ok := m.wsScan[msg.dir]; ok {
+			return m, fetchScanWorktrees(msg.dir)
 		}
 		return m, nil
 	case saveSessionMsg:

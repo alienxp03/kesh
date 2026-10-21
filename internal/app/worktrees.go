@@ -446,6 +446,10 @@ func (m model) selectedPullRequest() (string, string) {
 	pullRequestURL := ""
 	branch := entry.pathPR.Branch
 	switch {
+	case selected.section == "ws" && selected.wi >= 0:
+		if _, wt, ok := m.wsRow(selected); ok {
+			pullRequestURL, branch = wt.item.prURL, wt.item.branch
+		}
 	case selected.section == "wt-filter" && selected.wt >= 0 && selected.wt < len(m.worktreeFilterRows):
 		worktree := m.worktreeFilterRows[selected.wt].worktree
 		pullRequestURL, branch = worktree.prURL, worktree.branch
@@ -717,6 +721,10 @@ func (m *model) applyPRStatuses(repoKey string, pullRequests map[string]prInfo) 
 		}
 		sortWorktreeItems(worktrees)
 	}
+	for dir, scan := range m.wsScan {
+		apply(scan)
+		m.wsScan[dir] = scan
+	}
 	applyPath := func(info *pathPRInfo) {
 		if info.RepoKey == repoKey && info.Branch != "" {
 			info.PullRequest, info.Exact = matchPullRequest(pullRequests, info.Branch, info.Head)
@@ -858,6 +866,12 @@ func (m *model) runRemoveWorktrees() tea.Cmd {
 }
 
 func (m *model) worktreeDirectory(r row) string {
+	if r.section == "ws" {
+		if group, _, ok := m.wsRow(r); ok {
+			return group.mainPath
+		}
+		return ""
+	}
 	if m.filter == filterWorktrees && r.entryIndex >= 0 && r.entryIndex < len(m.entries) {
 		// The tab lists one project's worktrees regardless of whether it is
 		// open; closedEntryAt skips open entries, so resolve the repo from the
@@ -1187,6 +1201,17 @@ func (m *model) closedEntryAt(entryIndex, tabIndex, windowIndex int) *entry {
 // does not silently drop selections from a bulk action. Stale paths (worktrees
 // removed since selection) are skipped.
 func (m model) selectedWorktreeItems() []worktreeItem {
+	if m.filter == filterWork {
+		var items []worktreeItem
+		for _, group := range m.wsRepos {
+			for _, wt := range group.worktrees {
+				if m.wtBulkSelected[wt.item.path] {
+					items = append(items, wt.item)
+				}
+			}
+		}
+		return items
+	}
 	if len(m.wtBulkSelected) == 0 {
 		return nil
 	}
@@ -1207,6 +1232,12 @@ func (m model) focusedWorktreePath() string {
 		return ""
 	}
 	selected := m.rows[m.cursor]
+	if selected.section == "ws" && selected.wi >= 0 {
+		if _, wt, ok := m.wsRow(selected); ok {
+			return wt.item.path
+		}
+		return ""
+	}
 	if selected.section == "wt-filter" && selected.wt >= 0 && selected.wt < len(m.worktreeFilterRows) {
 		return m.worktreeFilterRows[selected.wt].worktree.path
 	}
@@ -1218,6 +1249,12 @@ func (m *model) restoreFocusedWorktree(path string) {
 		return
 	}
 	for index, candidate := range m.rows {
+		if candidate.section == "ws" && candidate.wi >= 0 {
+			if _, wt, ok := m.wsRow(candidate); ok && wt.item.path == path {
+				m.cursor = index
+				return
+			}
+		}
 		if candidate.section == "wt-filter" && candidate.wt >= 0 && candidate.wt < len(m.worktreeFilterRows) && m.worktreeFilterRows[candidate.wt].worktree.path == path {
 			m.cursor = index
 			return
@@ -1228,6 +1265,12 @@ func (m *model) restoreFocusedWorktree(path string) {
 // worktreeForRow resolves a Worktrees-surface row by its stable path. The
 // visible list can be filtered or re-sorted independently of the full cache.
 func (m model) worktreeForRow(r row) (worktreeItem, bool) {
+	if r.section == "ws" {
+		if _, wt, ok := m.wsRow(r); ok && r.wi >= 0 {
+			return wt.item, true
+		}
+		return worktreeItem{}, false
+	}
 	if r.worktreePath != "" && r.entryIndex >= 0 && r.entryIndex < len(m.entries) {
 		for _, wt := range m.entries[r.entryIndex].worktrees {
 			if wt.path == r.worktreePath {

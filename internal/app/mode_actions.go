@@ -12,6 +12,32 @@ func (m *model) toggleSelected() {
 	if len(m.rows) == 0 {
 		return
 	}
+	// On the main work surface, space bulk-selects worktree paths for x/p just
+	// like the Worktree tab. Other-group leaf rows fall through to the normal
+	// project selection below.
+	if m.filter == filterWork {
+		r := m.rows[m.cursor]
+		if r.section == "ws" {
+			if r.wi < 0 {
+				return
+			}
+			if _, wt, ok := m.wsRow(r); ok && wt.item.path != "" {
+				if m.wtBulkSelected == nil {
+					m.wtBulkSelected = map[string]bool{}
+				}
+				if m.wtBulkSelected[wt.item.path] {
+					delete(m.wtBulkSelected, wt.item.path)
+				} else {
+					m.wtBulkSelected[wt.item.path] = true
+				}
+				m.err = nil
+			}
+			return
+		}
+		if r.section == "ws-other" {
+			return
+		}
+	}
 	// In the Worktree tab, space bulk-selects worktree paths for x (remove)
 	// and p (pull) instead of toggling project selection.
 	if m.filter == filterWorktrees && m.cursor >= 0 && m.cursor < len(m.worktreeFilterRows) {
@@ -62,6 +88,9 @@ func (m model) selectedEntries() []entry {
 // multi-project worktrees, and with nothing selected the project under the
 // cursor is used so a single worktree needs no explicit selection.
 func (m *model) worktreeEntries() []entry {
+	if m.wsCreateRepo != "" {
+		return []entry{{key: "ws-create", kind: "project", path: m.wsCreateRepo, name: filepath.Base(m.wsCreateRepo)}}
+	}
 	if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
 		e := m.entries[m.worktreeFilterEntryIndex]
 		if e.path == "" {

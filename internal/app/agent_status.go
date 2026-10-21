@@ -24,6 +24,7 @@ func fetchAgentStatuses(directory string) tea.Cmd {
 				tool:       record.Tool,
 				status:     record.Status,
 				lastDoneAt: lastDoneAt,
+				since:      record.UpdatedAt,
 			}
 		}
 		return agentStatusMsg{statuses: statuses, err: err}
@@ -60,6 +61,9 @@ func (m model) hasWorkingAgent() bool {
 }
 
 func (m *model) applyAgentStatuses(statuses map[int]agentLifecycleStatus) {
+	if m.agentSince == nil {
+		m.agentSince = map[int]time.Time{}
+	}
 	for entryIndex := range m.entries {
 		for tabIndex := range m.entries[entryIndex].tabs {
 			for windowIndex := range m.entries[entryIndex].tabs[tabIndex].windows {
@@ -70,6 +74,7 @@ func (m *model) applyAgentStatuses(statuses map[int]agentLifecycleStatus) {
 				if agentStatusTool(window.agent) == status.tool {
 					window.agentStatus = status.status
 					window.lastDoneAt = status.lastDoneAt
+					m.agentSince[window.id] = status.since
 				}
 			}
 		}

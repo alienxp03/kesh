@@ -20,6 +20,21 @@ type helpSection struct {
 
 var keymapHelp = []helpSection{
 	{
+		title: "Work (main surface)",
+		items: []helpItem{
+			{keys: "enter", action: "connect: focus or open the worktree"},
+			{keys: "n", action: "new worktree for the repo under the cursor"},
+			{keys: "a", action: "hunt: show only blocked worktrees"},
+			{keys: "tab", action: "toggle the agent pane"},
+			{keys: "f", action: "pull (fetch and rebase)"},
+			{keys: "o", action: "open PR"},
+			{keys: "space", action: "bulk-select worktrees"},
+			{keys: "x then y", action: "remove worktree"},
+			{keys: "D then y", action: "destroy worktree and branch", dangerous: true},
+			{keys: "X then y", action: "remove merged worktrees", dangerous: true},
+		},
+	},
+	{
 		title: "Navigation",
 		items: []helpItem{
 			{keys: "j/k, arrows", action: "move"},

@@ -23,6 +23,10 @@ func (m *model) expandOrDescend() {
 		return
 	}
 	r := m.rows[m.cursor]
+	if r.section == "ws" || r.section == "ws-other" {
+		m.toggleWsRow()
+		return
+	}
 	e := &m.entries[r.entryIndex]
 	if r.windowIndex >= 0 {
 		return
@@ -60,6 +64,10 @@ func (m *model) ascendOrCollapse() {
 		return
 	}
 	r := m.rows[m.cursor]
+	if r.section == "ws" || r.section == "ws-other" {
+		m.toggleWsRow()
+		return
+	}
 	e := &m.entries[r.entryIndex]
 	if r.windowIndex >= 0 {
 		for m.cursor > 0 {
@@ -105,6 +113,10 @@ func (m *model) toggleExpandAtCursor() {
 		return
 	}
 	r := m.rows[m.cursor]
+	if r.section == "ws" || r.section == "ws-other" {
+		m.toggleWsRow()
+		return
+	}
 	if r.entryIndex < 0 || r.entryIndex >= len(m.entries) {
 		return
 	}
@@ -167,6 +179,10 @@ func preserveExpandedState(previous, refreshed []entry) {
 }
 
 func (m *model) rebuildRows() {
+	if m.filter == filterWork {
+		m.rebuildWorkRows()
+		return
+	}
 	if m.filter == filterAgents {
 		m.rebuildAgentRows()
 		return
@@ -676,4 +692,213 @@ func plural(count int) string {
 		return ""
 	}
 	return "s"
+}
+
+// toggleWsRow expands/collapses the repo or other group under the cursor on
+// the main work surface. Worktree rows have nothing to toggle.
+func (m *model) toggleWsRow() {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return
+	}
+	r := m.rows[m.cursor]
+	switch r.section {
+	case "ws":
+		if r.wi >= 0 || r.gi < 0 || r.gi >= len(m.wsRepos) {
+			return
+		}
+		dir := m.wsRepos[r.gi].dir
+		if m.wsExpanded == nil {
+			m.wsExpanded = map[string]bool{}
+		}
+		m.wsExpanded[dir] = !m.wsRepoExpanded(m.wsRepos[r.gi])
+	case "ws-other":
+		m.wsOtherExpanded = !m.wsOtherExpanded
+	default:
+		return
+	}
+	m.rebuildRows()
+}
+
+// wsRepoExpanded resolves a repo's expansion: explicit user state wins, and an
+// untouched repo auto-expands only while it has activity (blocked, working, or
+// open work).
+func (m model) wsRepoExpanded(group wsRepo) bool {
+	if explicit, ok := m.wsExpanded[group.dir]; ok {
+		return explicit
+	}
+	if group.blocked > 0 || group.working > 0 {
+		return true
+	}
+	for _, wt := range group.worktrees {
+		if wt.state == "open" {
+			return true
+		}
+	}
+	return false
+}
+
+// collectWsWindows flattens every live kitty window into the per-window input
+// the main surface merges on. Agent ages come from the last status write.
+func (m model) collectWsWindows() []wsWindow {
+	var windows []wsWindow
+	for entryIndex := range m.entries {
+		for tabIndex := range m.entries[entryIndex].tabs {
+			for windowIndex := range m.entries[entryIndex].tabs[tabIndex].windows {
+				w := m.entries[entryIndex].tabs[tabIndex].windows[windowIndex]
+				if w.cwd == "" {
+					continue
+				}
+				windows = append(windows, wsWindow{
+					windowID: w.id, cwd: w.cwd, agent: w.agent, agentStatus: w.agentStatus,
+					since: m.agentSince[w.id],
+				})
+			}
+		}
+	}
+	return windows
+}
+
+// wsRepoSources assembles the merge input: project entries with a loaded
+// worktree cache plus every scanned worktree-root repo.
+func (m model) wsRepoSources() []wsRepoSource {
+	sources := wsRepoSourcesFromEntries(m.entries)
+	for _, scan := range m.wsScanDirs {
+		if worktrees, ok := m.wsScan[scan.dir]; ok {
+			sources = append(sources, wsRepoSource{
+				dir: scan.dir, mainPath: scan.dir, name: scan.repo, owner: scan.owner, repo: scan.repo,
+				worktrees: worktrees,
+			})
+		}
+	}
+	return dedupeRepoSources(sources)
+}
+
+// wsOtherEntries lists entries the main surface does not group by repo: SSH
+// hosts, saved sessions, and projects whose repository has no group (no
+// worktrees under the root and none fetched).
+func (m model) wsOtherEntries() []int {
+	var others []int
+	for entryIndex := range m.entries {
+		e := m.entries[entryIndex]
+		if e.kind == "ssh" || e.saved {
+			others = append(others, entryIndex)
+			continue
+		}
+		if e.kind != "project" && e.kind != "workspace" {
+			continue
+		}
+		if !m.wsEntryGrouped(e) {
+			others = append(others, entryIndex)
+		}
+	}
+	return others
+}
+
+func (m model) wsEntryGrouped(e entry) bool {
+	for _, group := range m.wsRepos {
+		if sameWorktreePath(e.path, group.mainPath) || sameWorktreePath(e.path, group.dir) {
+			return true
+		}
+		if e.path != "" && group.mainPath != "" && strings.HasPrefix(e.path, group.mainPath+string(filepath.Separator)) {
+			return true
+		}
+		for _, wt := range group.worktrees {
+			if sameWorktreePath(e.path, wt.item.path) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// rebuildWorkRows builds the main work surface: repo groups with nested
+// worktree rows, an optional hunt (blocked-only) flattening, and the other
+// group. Each row carries stable group/worktree indexes so actions resolve by
+// path, not by list position.
+func (m *model) rebuildWorkRows() {
+	m.wsRepos = buildRepoGroups(m.wsRepoSources(), m.collectWsWindows())
+
+	focused := m.focusedWorktreePath()
+	var rows []row
+	appendWorktree := func(gi, wi int) {
+		rows = append(rows, row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "ws", gi: gi, wi: wi})
+	}
+	match := func(group wsRepo, wt wsWorktree) bool {
+		if m.query == "" {
+			return true
+		}
+		haystack := wt.item.branch + " " + wt.item.path + " " + group.name
+		return strings.Contains(strings.ToLower(haystack), strings.ToLower(m.query))
+	}
+	if m.wsHunt {
+		for gi := range m.wsRepos {
+			for wi, wt := range m.wsRepos[gi].worktrees {
+				if wt.state == "blocked" && match(m.wsRepos[gi], wt) {
+					appendWorktree(gi, wi)
+				}
+			}
+		}
+		m.rows = rows
+		m.clampCursor()
+		m.restoreFocusedWorktree(focused)
+		return
+	}
+	for gi := range m.wsRepos {
+		group := m.wsRepos[gi]
+		if m.query != "" {
+			any := false
+			for _, wt := range group.worktrees {
+				if match(group, wt) {
+					any = true
+					break
+				}
+			}
+			if !any {
+				continue
+			}
+		}
+		// Searching reveals matches inside otherwise-collapsed repos.
+		expanded := m.wsRepoExpanded(group) || m.query != ""
+		if !expanded {
+			rows = append(rows, row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "ws", gi: gi, wi: -1})
+			continue
+		}
+		rows = append(rows, row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "ws", gi: gi, wi: -1})
+		for wi, wt := range group.worktrees {
+			if match(group, wt) {
+				appendWorktree(gi, wi)
+			}
+		}
+	}
+	if m.query == "" {
+		if others := m.wsOtherEntries(); len(others) > 0 {
+			rows = append(rows, row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "ws-other", wi: -1})
+			if m.wsOtherExpanded {
+				for _, entryIndex := range others {
+					rows = append(rows, row{entryIndex: entryIndex, tabIndex: -1, windowIndex: -1})
+				}
+			}
+		}
+	}
+	m.rows = rows
+	m.clampCursor()
+	m.restoreFocusedWorktree(focused)
+}
+
+func (m *model) clampCursor() {
+	if m.cursor >= len(m.rows) {
+		m.cursor = max(0, len(m.rows)-1)
+	}
+}
+
+// wsRow resolves the repo and worktree behind a "ws" row.
+func (m model) wsRow(r row) (wsRepo, wsWorktree, bool) {
+	if r.section != "ws" || r.gi < 0 || r.gi >= len(m.wsRepos) {
+		return wsRepo{}, wsWorktree{}, false
+	}
+	group := m.wsRepos[r.gi]
+	if r.wi < 0 || r.wi >= len(group.worktrees) {
+		return group, wsWorktree{}, true
+	}
+	return group, group.worktrees[r.wi], true
 }

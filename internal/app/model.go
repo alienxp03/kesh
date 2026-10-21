@@ -152,9 +152,11 @@ type row struct {
 	entryIndex   int
 	tabIndex     int
 	windowIndex  int
-	section      string // "" or "wt-filter"
+	section      string // "", "wt-filter", "ws", or "ws-other"
 	wt           int    // index into worktreeFilterRows for "wt-filter" rows
 	worktreePath string // for worktree filter mode
+	gi           int    // index into wsRepos for "ws" rows
+	wi           int    // index into group worktrees for "ws" rows (-1 = repo row)
 }
 
 type actionMsg struct{ err error }
@@ -192,6 +194,7 @@ type agentLifecycleStatus struct {
 	tool       string
 	status     string
 	lastDoneAt *time.Time
+	since      time.Time
 }
 
 type agentStatusMsg struct {
@@ -480,6 +483,7 @@ type modeState struct {
 
 func (m *model) cancelMode() {
 	m.modeState = modeState{}
+	m.wsCreateRepo = ""
 }
 
 // activateMode is the only transition into a modal state. Resetting first
@@ -547,6 +551,16 @@ type model struct {
 	agentSpinnerPending      bool
 	cloneBaseRoot            string
 	worktreeRoot             string
+	wsScanDirs               []scanRepo
+	wsScan                   map[string][]worktreeItem
+	wsScanPending            map[string]bool
+	wsRepos                  []wsRepo
+	wsExpanded               map[string]bool
+	wsOtherExpanded          bool
+	wsHunt                   bool
+	showAgentPane            bool
+	wsCreateRepo             string
+	agentSince               map[int]time.Time
 	mergedWorktreeBusy       bool
 	worktreePullBusy         bool
 	destroyPlanning          bool
@@ -581,6 +595,7 @@ const (
 	filterSSH
 	filterSaved
 	filterWorktrees
+	filterWork
 )
 
 // cycleFilters are the flat filters reachable by cycling Tab/Shift+tab.

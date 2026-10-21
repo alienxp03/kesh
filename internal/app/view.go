@@ -22,6 +22,11 @@ func (m model) View() string {
 	listWidth, detailWidth := workspaceWidth, workspaceWidth
 	listHeight, detailHeight := bodyHeight, bodyHeight
 	showAgentPreviewSideBySide := showAgentPreview && m.filter == filterAgents
+	agentPaneHeight := 0
+	if m.showAgentPane && m.filter == filterWork && !showAgentPreview {
+		agentPaneHeight = min(len(m.agentPaneRows())+1, max(2, bodyHeight/3))
+		listHeight = max(5, bodyHeight-agentPaneHeight-1)
+	}
 	if showAgentPreviewSideBySide {
 		// Agent browsing benefits from a compact chooser and a wide live screen.
 		listWidth = max(42, min(60, workspaceWidth*42/100))
@@ -32,21 +37,27 @@ func (m model) View() string {
 		detailHeight = max(6, bodyHeight-listHeight-1)
 	}
 
-	tabs := []string{"All", "Agents", "SSH", "Saved"}
-	// In the worktree drill-in no flat filter is active, so highlight the one
-	// the user came from (previousFilter). This keeps the active indicator in
-	// place instead of leaping to an appended [Worktrees] chip; the surface is
-	// named in the list title instead.
-	activeFilter := m.filter
-	if activeFilter == filterWorktrees {
-		activeFilter = m.previousFilter
-	}
-	for i := range tabs {
-		if i == activeFilter {
-			tabs[i] = accentStyle.Render("[" + tabs[i] + "]")
-		} else {
-			tabs[i] = dimStyle.Render(" " + tabs[i] + " ")
+	hdr := accentStyle.Render("Kesh")
+	if m.filter != filterWork {
+		tabs := []string{"All", "Agents", "SSH", "Saved"}
+		// In the worktree drill-in no flat filter is active, so highlight the one
+		// the user came from (previousFilter). This keeps the active indicator in
+		// place instead of leaping to an appended [Worktrees] chip; the surface is
+		// named in the list title instead.
+		activeFilter := m.filter
+		if activeFilter == filterWorktrees {
+			activeFilter = m.previousFilter
 		}
+		for i := range tabs {
+			if i == activeFilter {
+				tabs[i] = accentStyle.Render("[" + tabs[i] + "]")
+			} else {
+				tabs[i] = dimStyle.Render(" " + tabs[i] + " ")
+			}
+		}
+		hdr += "  " + strings.Join(tabs, " ")
+	} else if m.wsHunt {
+		hdr += "  " + accentStyle.Render("[hunt · esc clears]")
 	}
 	promptValue := dimStyle.Render("/ to search")
 	if m.query != "" {
@@ -55,7 +66,7 @@ func (m model) View() string {
 	if m.mode == modeSearch {
 		promptValue = accentStyle.Render(m.query+"█") + "  " + dimStyle.Render("SEARCH")
 	}
-	header := accentStyle.Render("Kesh") + "  " + strings.Join(tabs, " ")
+	header := hdr
 	if m.filter == filterWorktrees && len(m.wtBulkSelected) > 0 {
 		// Bulk-selection count is the only worktree status shown in the header;
 		// the surface itself is named in the list title.
@@ -85,8 +96,16 @@ func (m model) View() string {
 	start := max(0, focusedPosition-available+1)
 	end := min(totalRows, start+available)
 	// On the Worktrees surface the list is one project's worktrees, so title it
-	// with that folder and its count rather than the generic "List".
+	// with that folder and its count rather than the generic "List". The main
+	// work surface gets its own title, including hunt state.
 	listTitle := accentStyle.Render(fmt.Sprintf("List (%d)", len(m.rows)))
+	if m.filter == filterWork {
+		if m.wsHunt {
+			listTitle = errorStyle.Render(fmt.Sprintf("Hunt · blocked worktrees (%d)", len(m.rows)))
+		} else {
+			listTitle = projectStyle.Render(fmt.Sprintf(" Work (%d)", len(m.rows)))
+		}
+	}
 	if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
 		entry := m.entries[m.worktreeFilterEntryIndex]
 		name := truncate(entry.name, max(8, listWidth-20))
@@ -116,9 +135,11 @@ func (m model) View() string {
 		row := m.rows[i]
 		focused := i == m.cursor
 		line := m.renderRow(row, max(8, listWidth-4), focused)
+		focusedOpen := row.entryIndex >= 0 && row.entryIndex < len(m.entries) && row.tabIndex < 0 && m.entries[row.entryIndex].open
+		focusedWorking := row.entryIndex >= 0 && row.entryIndex < len(m.entries) && row.windowIndex >= 0 &&
+			m.entries[row.entryIndex].tabs[row.tabIndex].windows[row.windowIndex].agentStatus == "working"
 		if focused {
-			if (row.tabIndex < 0 && m.entries[row.entryIndex].open) ||
-				(row.windowIndex >= 0 && m.entries[row.entryIndex].tabs[row.tabIndex].windows[row.windowIndex].agentStatus == "working") {
+			if focusedOpen || focusedWorking {
 				line = accentStyle.Render("▌") + " " + line
 			} else {
 				line = accentStyle.Render("▌") + " " + focusStyle.Render(ansi.Strip(line))
@@ -130,6 +151,12 @@ func (m model) View() string {
 	}
 	if len(m.rows) == 0 {
 		empty := "  No matching sessions"
+		if m.filter == filterWork {
+			empty = "  No worktrees yet — press n on a repo, or wait for the scan"
+			if m.wsHunt {
+				empty = "  Nothing blocked. Enjoy the quiet."
+			}
+		}
 		if m.filter == filterWorktrees {
 			// Worktrees is only ever opened scoped to a project (via w). Distinguish
 			// the initial asynchronous load from a genuinely empty repository.
@@ -142,6 +169,9 @@ func (m model) View() string {
 	}
 	listPanel := renderListPanel(listLines, listWidth, listHeight)
 	body := listPanel
+	if agentPaneHeight > 0 {
+		body += "\n" + m.agentPaneView(listWidth, agentPaneHeight)
+	}
 	if showAgentPreview {
 		previewPanel := m.previewView(detailWidth, detailHeight)
 		if showAgentPreviewSideBySide {
@@ -219,6 +249,17 @@ func (m model) footerView(width int, hasSelectedPR bool) string {
 	dangerous := make([]string, 0, 2)
 
 	switch {
+	case m.filter == filterWork:
+		items = []string{"j/k move", "enter connect", "n new"}
+		if m.wsHunt {
+			items = append(items, "esc back")
+		} else {
+			items = append(items, "a hunt", "tab agents")
+		}
+		if width >= 90 {
+			items = append(items, "f pull", "space select")
+		}
+		dangerous = append(dangerous, "D destroy")
 	case m.filter == filterAgents && m.hasSelectedAgentWindow():
 		items = []string{"j/k move", "enter focus", "p preview"}
 	case m.filter == filterWorktrees:
@@ -837,6 +878,12 @@ func overlayPopup(lines []string, popup string, width int) []string {
 }
 
 func (m model) renderRow(r row, width int, focused bool) string {
+	switch r.section {
+	case "ws":
+		return m.renderWorkRow(r, width, focused)
+	case "ws-other":
+		return m.renderWsOtherHeader(width, focused)
+	}
 	e := m.entries[r.entryIndex]
 	switch r.section {
 	case "wt-filter":

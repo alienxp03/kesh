@@ -5,7 +5,46 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	kittyx "github.com/alienxp03/kesh/internal/kitty"
 )
+
+func connectWorktree(kitty, zoxide, path string, windowID int) tea.Cmd {
+	return func() tea.Msg {
+		if windowID > 0 {
+			if err := (kittyx.Client{Executable: kitty}).FocusWindow(windowID); err == nil {
+				return actionMsg{}
+			}
+		}
+		return actionMsg{err: openProjectSession(kitty, zoxide, path, false)}
+	}
+}
+
+// wsRefreshGroup refetches the worktree list for the repo under the cursor:
+// entry-backed groups reload through the entry flow, scanned repos refetch by
+// directory.
+func (m *model) wsRefreshGroup() tea.Cmd {
+	if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+		return nil
+	}
+	group, _, ok := m.wsRow(m.rows[m.cursor])
+	if !ok {
+		return nil
+	}
+	for i, e := range m.entries {
+		if e.worktreesLoaded && len(e.worktrees) > 0 && sameWorktreePath(e.worktrees[0].path, group.dir) {
+			return fetchOriginThenReload(e.path, i)
+		}
+	}
+	if m.wsScanPending[group.dir] {
+		return nil
+	}
+	if m.wsScanPending == nil {
+		m.wsScanPending = map[string]bool{}
+	}
+	m.wsScanPending[group.dir] = true
+	return fetchScanWorktrees(group.dir)
+}
 
 func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
@@ -27,6 +66,12 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		// Escape returns to command mode from transient modes; once there,
 		// it is intentionally a no-op so a repeated key cannot close Kesh.
+		if m.filter == filterWork && m.wsHunt {
+			// Leave hunt mode before anything else.
+			m.wsHunt = false
+			m.rebuildRows()
+			return m, nil
+		}
 		if m.filter == filterWorktrees {
 			// Worktree rows are not selectable; discard any main-list selection
 			// before returning so it cannot affect subsequent bulk actions.
@@ -67,9 +112,29 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.toggleExpandAtCursor()
 	case " ":
 		m.toggleSelected()
+	case "a":
+		if m.filter == filterWork {
+			m.wsHunt = !m.wsHunt
+			m.err = nil
+			m.query = ""
+			m.rebuildRows()
+			return m, nil
+		}
 	case "enter":
 		return m.openSelected()
 	case "n":
+		if m.filter == filterWork {
+			if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+				return m, nil
+			}
+			group, _, ok := m.wsRow(m.rows[m.cursor])
+			if !ok {
+				m.err = fmt.Errorf("place the cursor on a repo or worktree")
+				return m, nil
+			}
+			m.wsCreateRepo = group.mainPath
+			return m, m.beginWorktreeCreate()
+		}
 		if m.filter == filterWorktrees {
 			return m, m.beginWorktreeCreate()
 		}
@@ -135,6 +200,9 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.err = nil
 		return m, nil
 	case "r":
+		if m.filter == filterWork {
+			return m, m.wsRefreshGroup()
+		}
 		if m.filter == filterWorktrees && m.worktreeFilterEntryIndex >= 0 && m.worktreeFilterEntryIndex < len(m.entries) {
 			return m, fetchOriginThenReload(m.entries[m.worktreeFilterEntryIndex].path, m.worktreeFilterEntryIndex)
 		}
@@ -164,6 +232,40 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "g":
 		m.pendingG = true
 	case "x":
+		if m.filter == filterWork {
+			if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+				return m, nil
+			}
+			r := m.rows[m.cursor]
+			if r.section != "ws" || r.wi < 0 {
+				return m, nil
+			}
+			if len(m.wtBulkSelected) > 0 {
+				targets := m.selectedWorktreeItems()
+				if len(targets) == 0 {
+					m.err = fmt.Errorf("no matching worktrees to remove")
+					return m, nil
+				}
+				m.activateMode(modeCloseConfirm)
+				m.bulkWorktrees = targets
+				m.closeRow = row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "wt-bulk"}
+				m.closeBusy = false
+				m.worktreeForcePrompt = false
+				m.mergedWorktrees = nil
+				m.destroyPlan = nil
+				m.err = nil
+				return m, nil
+			}
+			if _, wt, ok := m.wsRow(r); ok {
+				m.activateMode(modeCloseConfirm)
+				m.closeRow = row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "wt-filter", worktreePath: wt.item.path, gi: r.gi, wi: r.wi}
+				m.closeBusy = false
+				m.worktreeForcePrompt = false
+				m.mergedWorktrees = nil
+				m.err = nil
+				return m, nil
+			}
+		}
 		if m.filter == filterWorktrees && len(m.wtBulkSelected) > 0 {
 			// Bulk remove every selected worktree. The tab list can be a
 			// filtered subset, so resolve targets from worktreeFilterRows by
@@ -223,6 +325,30 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "X":
 		return m, m.findMergedWorktrees()
 	case "D":
+		if m.filter == filterWork {
+			if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+				return m, nil
+			}
+			r := m.rows[m.cursor]
+			if r.section != "ws" || r.wi < 0 {
+				return m, nil
+			}
+			if _, wt, ok := m.wsRow(r); ok {
+				branch := wt.item.branch
+				if branch == "" || branch == "(detached)" {
+					branch = ""
+				}
+				plan := destroyPlan{entryName: wt.item.branch, worktreePath: wt.item.path, branch: branch}
+				m.activateMode(modeCloseConfirm)
+				m.closeRow = row{entryIndex: -1, tabIndex: -1, windowIndex: -1, section: "wt-filter", worktreePath: wt.item.path, gi: r.gi, wi: r.wi}
+				m.destroyPlan = &plan
+				m.closeBusy = false
+				m.worktreeForcePrompt = false
+				m.mergedWorktrees = nil
+				m.err = nil
+				return m, nil
+			}
+		}
 		if m.filter == filterWorktrees && len(m.worktreeFilterRows) > 0 && m.cursor >= 0 && m.cursor < len(m.worktreeFilterRows) {
 			// In the Worktree tab, destroy the selected worktree only — not
 			// the whole project. The tab list can be a filtered subset, so
@@ -290,6 +416,33 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.rebuildWorktreeRows()
 		return m, nil
 	case "f":
+		if m.filter == filterWork {
+			if len(m.rows) == 0 || m.cursor < 0 || m.cursor >= len(m.rows) {
+				return m, nil
+			}
+			if m.worktreePullBusy {
+				return m, nil
+			}
+			if len(m.wtBulkSelected) > 0 {
+				targets := m.selectedWorktreeItems()
+				if len(targets) == 0 {
+					m.err = fmt.Errorf("no matching worktrees to pull")
+					return m, nil
+				}
+				group, _, _ := m.wsRow(m.rows[m.cursor])
+				m.worktreePullBusy = true
+				m.err = nil
+				return m, pullWorktrees(targets, group.mainPath, -1)
+			}
+			group, wt, ok := m.wsRow(m.rows[m.cursor])
+			if !ok || wt.item.path == "" {
+				m.err = fmt.Errorf("place the cursor on a worktree to pull")
+				return m, nil
+			}
+			m.worktreePullBusy = true
+			m.err = nil
+			return m, pullWorktree(wt.item.path, group.mainPath, -1)
+		}
 		if m.filter == filterWorktrees && len(m.wtBulkSelected) > 0 {
 			if m.worktreePullBusy {
 				return m, nil
@@ -324,8 +477,12 @@ func (m model) updateNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.beginPin()
 		}
 	case "tab", "shift+tab":
-		// Worktrees is a drill-in surface, not a cycle filter: ignore Tab there
-		// and let esc return to the originating filter.
+		// The main surface has no filter chips to cycle; Tab toggles the agent
+		// pane. The Worktrees drill-in keeps Tab for its preview queue.
+		if m.filter != filterWorktrees {
+			m.showAgentPane = !m.showAgentPane
+			return m, m.queuePreview()
+		}
 		if m.filter == filterWorktrees {
 			return m, m.queuePreview()
 		}
@@ -344,6 +501,33 @@ func (m model) openSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	selected := m.rows[m.cursor]
+	if m.filter == filterWork {
+		switch selected.section {
+		case "ws":
+			if selected.wi < 0 {
+				mm := m
+				mm.toggleWsRow()
+				return mm, nil
+			}
+			if group, wt, ok := m.wsRow(selected); ok {
+				// Connect focuses the live session or opens the folder; blocked
+				// agents on the way are acknowledged so the badge clears.
+				action := connectWorktree(m.kitty, m.zoxide, wt.item.path, wt.windowID)
+				for _, a := range wt.agents {
+					if wsAgentBlocked(a) {
+						m.acknowledgeAgentStatus(a.windowID)
+						action = acknowledgeThen(m.agentStatusDir, a.tool, a.windowID, action)
+					}
+				}
+				_ = group
+				return m, action
+			}
+		case "ws-other":
+			mm := m
+			mm.toggleWsRow()
+			return mm, nil
+		}
+	}
 	if m.filter == filterWorktrees && selected.section == "wt-filter" {
 		if m.cursor >= len(m.worktreeFilterRows) {
 			return m, nil

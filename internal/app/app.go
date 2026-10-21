@@ -97,12 +97,20 @@ func Run(args []string) error {
 	if records, statusErr := agentstatus.ReadDirectory(agentStatusDir); statusErr == nil {
 		statuses := make(map[int]agentLifecycleStatus, len(records))
 		for windowID, record := range records {
-			statuses[windowID] = agentLifecycleStatus{tool: record.Tool, status: record.Status}
+			statuses[windowID] = agentLifecycleStatus{tool: record.Tool, status: record.Status, since: record.UpdatedAt}
 		}
 		m.applyAgentStatuses(statuses)
 	}
+	// The redesigned main surface is the default; explicit CLI filters still win.
+	if m.filter == filterAll {
+		m.filter = filterWork
+		m.showAgentPane = true
+	}
 	m.rebuildRows()
-	m.startupCmd = tea.Batch(m.queuePreview(), queueAgentStatusRefresh(), m.queueAgentSpinner())
+	m.startupCmd = tea.Batch(
+		m.queuePreview(), queueAgentStatusRefresh(), m.queueAgentSpinner(),
+		scanWorktreeRoot(worktreeRoot), prefetchEntryWorktrees(m.entries),
+	)
 	_, err = tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
 }
