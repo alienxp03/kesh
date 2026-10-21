@@ -19,16 +19,16 @@ lint:
 vet:
 	go vet ./...
 
-## test: race-enabled test suite.
-test:
+## test: rebuild the development binary, then run race-enabled tests.
+test: build
 	go test -race ./...
 
-## build: compile the CLI into ./bin.
+## build: compile the CLI into ~/.local/bin/kesh.
 build:
 	go build -o ~/.local/bin/kesh ./cmd/kesh
 
-## ci: the full local gate — lint, test, build.
-ci: lint test build
+## ci: the full local gate — lint and build-before-test.
+ci: lint test
 
 ## check: quick formatting sanity (non-zero exit if not formatted).
 check:

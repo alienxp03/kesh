@@ -29,13 +29,17 @@ Tooling is pinned in `.mise.toml` (Go, golangci-lint); run `mise install` to
 provision. The full local gate is:
 
 ```sh
-make ci   # golangci-lint run ./... + go test -race ./... + go build ./cmd/kesh
+make ci   # lint + make build + go test -race ./...
 make fmt  # apply gofmt + goimports (local imports grouped under third-party)
 ```
 
 After every local code change, run `make build` before testing or manually
 launching kesh so the development binary at `~/.local/bin/kesh` is rebuilt.
 Use `make build` rather than invoking `go build` directly for this workflow.
+Use `make test` for the full test suite; its required build step must pass before
+tests run. For focused tests, use `make build && go test ./internal/app -run 'TestName'`.
+Do not run a bare `go test` command. Before reporting completion, state the build
+and test results. If either step fails, report the failure.
 
 The pre-push hook (`.pre-commit-config.yaml`) runs formatting, lint, and tests
 before every push. Activate once with `prek install --hook-type pre-push` (or
